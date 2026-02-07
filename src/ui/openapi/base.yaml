@@ -1,0 +1,8 @@
+openapi: '3.0.3'
+info:
+  title: Kazibee
+  version: '1.0.0'
+
+x-fallback-view: error/404.svelte
+
+paths: {}

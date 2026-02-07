@@ -1,0 +1,8 @@
+openapi: 3.0.0
+info:
+  title: kazibee API
+  version: '1.0.0'
+  description: Base OpenAPI document stitched with feature specs.
+servers:
+  - url: http://localhost:3000
+    description: Local development server

@@ -1,0 +1,45 @@
+root: .
+
+mode: production
+outDir: dist
+
+app:
+  boot: src/index.ts
+  watch:
+    - src/index.ts
+    - noego.config.yml
+
+server:
+  main: src/server/server.ts
+  controllers: src/server/controller
+  middleware: src/middleware
+  openapi: src/server/stitch.yaml
+  watch:
+    - src/server/**/*.ts
+    - src/middleware/**/*.ts
+    - src/server/stitch.yaml
+    - src/server/openapi/**/*.yaml
+    - migrations/**/*.sql
+
+client:
+  main: src/ui/frontend.ts
+  shell: src/ui/index.html
+  openapi: src/ui/stitch.yaml
+  componentDir: src/ui
+  watch:
+    - src/ui/**/*.ts
+    - src/ui/stitch.yaml
+    - src/ui/openapi/**/*.yaml
+    - vite.config.js
+  exclude:
+    - src/server/**
+    - src/middleware/**
+
+assets:
+  - src/ui/resources/**
+  - migrations/**/*.sql
+
+dev:
+  watch: true
+  splitServe: true
+  port: 3000

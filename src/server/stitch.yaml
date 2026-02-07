@@ -1,0 +1,3 @@
+stitch:
+  - openapi/base.yaml
+  - openapi/status/**/*.yaml

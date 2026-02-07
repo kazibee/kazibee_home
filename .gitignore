@@ -1,0 +1,57 @@
+# Node / TypeScript
+node_modules/
+dist/
+build/
+.turbo/
+.cache/
+*.tsbuildinfo
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+server.log
+
+# Env files
+.env
+.env.*
+.env.local
+.env.*.local
+
+# Coverage
+coverage/
+.nyc_output/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Generated API artifacts
+server/openapi.yaml
+
+# Test output
+test/output/
+!test/output/.gitkeep
+test/output/screenshots/
+
+# SQLite databases
+database/*.sqlite
+database/*.db
+*.sqlite
+*.db
+
+# Migration backups
+migration_backup/
+
+# Private keys
+key/
+
+# IDE
+.idea/
+.vscode/
+
+# Misc
+todo.md

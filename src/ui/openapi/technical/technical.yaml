@@ -1,0 +1,8 @@
+paths:
+  /technical-details:
+    get:
+      summary: Technical Details
+      description: Technical details for how Kazibee constrains model behavior
+      x-view: pages/technical-details/main.svelte
+      x-layout:
+        - layout/public_layout.svelte

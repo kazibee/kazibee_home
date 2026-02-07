@@ -1,0 +1,42 @@
+module:
+  status:
+    basePath: '/api/status'
+    paths:
+      '/':
+        get:
+          x-controller: status.controller
+          x-action: getStatus
+          summary: 'Get server status'
+          responses:
+            '200':
+              description: 'Server is running'
+              content:
+                application/json:
+                  schema:
+                    type: object
+                    properties:
+                      status:
+                        type: string
+                        enum: ['OK']
+      '/deep':
+        get:
+          x-controller: status.controller
+          x-action: getDatabaseStatus
+          summary: 'Get server and database status'
+          responses:
+            '200':
+              description: 'Server and database are running'
+              content:
+                application/json:
+                  schema:
+                    type: object
+                    properties:
+                      status:
+                        type: string
+                        enum: ['OK', 'ERROR']
+                      database:
+                        type: string
+                        enum: ['connected', 'disconnected']
+                      error:
+                        type: string
+                        nullable: true

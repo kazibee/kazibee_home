@@ -1,0 +1,8 @@
+paths:
+  /:
+    get:
+      summary: Home Page
+      description: Welcome page for the Kazibee application
+      x-view: pages/home/main.svelte
+      x-layout:
+        - layout/public_layout.svelte

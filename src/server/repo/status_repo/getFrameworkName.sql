@@ -1,0 +1,1 @@
+SELECT 'NoEgo Framework' as name

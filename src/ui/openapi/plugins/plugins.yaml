@@ -1,0 +1,14 @@
+openapi: '3.0.3'
+info:
+  title: Plugins
+  version: '1.0.0'
+
+modules:
+  - basePath: /plugins
+    paths:
+      /:
+        get:
+          summary: Official Plugins
+          x-view: pages/plugins/main.svelte
+          x-layout:
+            - layout/public_layout.svelte

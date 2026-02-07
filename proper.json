@@ -1,0 +1,8 @@
+{
+  "migration_folder": "migrations",
+  "migration_table": "proper_migrations",
+  "database": "sqlite",
+  "sqlite": {
+    "database": "database/db.sqlite"
+  }
+}

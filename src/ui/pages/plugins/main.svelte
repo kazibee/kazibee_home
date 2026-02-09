@@ -33,18 +33,36 @@
                 A manager wakes up to 40 customer emails. Kazibee groups themes, drafts replies,
                 and prepares a clean handoff document for the team.
               </p>
-              <div class="mt-4 rounded-lg border border-neutral-800 bg-neutral-900 p-4 font-mono text-xs leading-6">
-                <p><span class="text-purple-400">const</span> <span class="text-blue-300">weekTask</span> <span class="text-neutral-400">=</span> <span class="text-purple-400">await</span> <span class="text-blue-300">tools</span><span class="text-neutral-400">[</span><span class="text-green-300">"task-docs"</span><span class="text-neutral-400">].</span><span class="text-blue-300">getWeekTaskDocument</span><span class="text-neutral-400">(</span><span class="text-green-300">"this-week"</span><span class="text-neutral-400">);</span></p>
-                <p class="mt-2"><span class="text-purple-400">const</span> <span class="text-blue-300">rankedInbox</span> <span class="text-neutral-400">=</span> <span class="text-purple-400">await</span> <span class="text-blue-300">tools</span><span class="text-neutral-400">[</span><span class="text-green-300">"mail-ranker"</span><span class="text-neutral-400">].</span><span class="text-blue-300">getRankedMessages</span><span class="text-neutral-400">(</span></p>
-                <p class="pl-4"><span class="text-green-300">"label:inbox newer_than:1d"</span><span class="text-neutral-400">,</span></p>
-                <p class="pl-4"><span class="text-amber-300">60</span><span class="text-neutral-400">,</span> <span class="text-blue-300">weekTask</span><span class="text-neutral-400">.</span><span class="text-blue-300">documentId</span></p>
-                <p><span class="text-neutral-400">);</span></p>
-                <p class="mt-2"><span class="text-purple-400">const</span> <span class="text-blue-300">appointments</span> <span class="text-neutral-400">=</span> <span class="text-purple-400">await</span> <span class="text-blue-300">tools</span><span class="text-neutral-400">[</span><span class="text-green-300">"google-calendar"</span><span class="text-neutral-400">].</span><span class="text-blue-300">listEvents</span><span class="text-neutral-400">(</span><span class="text-green-300">"today"</span><span class="text-neutral-400">);</span></p>
-                <p class="mt-2"><span class="text-purple-400">const</span> <span class="text-blue-300">todayMemo</span> <span class="text-neutral-400">=</span> <span class="text-purple-400">await</span> <span class="text-blue-300">tools</span><span class="text-neutral-400">[</span><span class="text-green-300">"today-summarizer"</span><span class="text-neutral-400">].</span><span class="text-blue-300">buildTodayMemo</span><span class="text-neutral-400">(</span></p>
-                <p class="pl-4"><span class="text-blue-300">rankedInbox</span><span class="text-neutral-400">.</span><span class="text-blue-300">items</span><span class="text-neutral-400">,</span> <span class="text-blue-300">appointments</span></p>
-                <p><span class="text-neutral-400">);</span></p>
-                <p class="mt-2"><span class="text-purple-400">await</span> <span class="text-blue-300">tools</span><span class="text-neutral-400">[</span><span class="text-green-300">"memo-writer"</span><span class="text-neutral-400">].</span><span class="text-blue-300">appendToTodayMemo</span><span class="text-neutral-400">(</span><span class="text-blue-300">todayMemo</span><span class="text-neutral-400">.</span><span class="text-blue-300">todaySection</span><span class="text-neutral-400">);</span></p>
-                <p><span class="text-purple-400">await</span> <span class="text-blue-300">tools</span><span class="text-neutral-400">[</span><span class="text-green-300">"memo-writer"</span><span class="text-neutral-400">].</span><span class="text-blue-300">appendToWeeklyMemo</span><span class="text-neutral-400">(</span><span class="text-blue-300">todayMemo</span><span class="text-neutral-400">.</span><span class="text-blue-300">weeklySection</span><span class="text-neutral-400">);</span></p>
+              <div class="mt-4 space-y-3">
+                <div class="ml-auto max-w-[88%] text-right">
+                  <p class="mb-1 text-[10px] font-bold uppercase tracking-[0.08em] text-[#8a3b00]">You</p>
+                  <div class="inline-block max-w-full rounded-xl border border-[#f2b94b] bg-[#fff2cc] px-3.5 py-2.5 text-left">
+                    <p class="text-sm text-ink">Get my top inbox priorities and draft today's memo with calendar context.</p>
+                  </div>
+                </div>
+                <div class="max-w-[88%]">
+                  <p class="mb-1 text-[10px] font-bold uppercase tracking-[0.08em] text-[#0f4f85]">Kazibee</p>
+                  <div class="inline-block max-w-full rounded-xl border border-[#7bb7e6] bg-[#dff1ff] px-3.5 py-2.5">
+                    <p class="text-sm text-ink">Absolutely. I'll look into that now and share what I find before updating both memos.</p>
+                  </div>
+                </div>
+                <div class="rounded-xl border border-[#7da2c4]/55 bg-gradient-to-b from-[#4d6783]/95 to-[#2f455d]/95 px-3.5 py-3 shadow-lg shadow-[#213244]/30">
+                  <p class="text-[10px] font-bold uppercase tracking-[0.14em] text-[#c8dcf1]">Working in the background</p>
+                  <div class="mt-2 rounded-lg border border-[#a9c1d9]/30 bg-[#22374d]/70 px-3 py-2.5 font-mono text-[11px] leading-6 text-[#e4edf7]">
+                    <p><span class="text-[#a6c0da]">const</span> weekTask = <span class="text-[#e8f2fc]">await</span> tools["task-docs"].getWeekTaskDocument("this-week");</p>
+                    <p><span class="text-[#a6c0da]">const</span> rankedInbox = <span class="text-[#e8f2fc]">await</span> tools["mail-ranker"].getRankedMessages("label:inbox newer_than:1d", 60, weekTask.documentId);</p>
+                    <p><span class="text-[#a6c0da]">const</span> appointments = <span class="text-[#e8f2fc]">await</span> tools["google-calendar"].listEvents("today");</p>
+                    <p><span class="text-[#a6c0da]">const</span> todayMemo = <span class="text-[#e8f2fc]">await</span> tools["today-summarizer"].buildTodayMemo(rankedInbox.items, appointments);</p>
+                    <p><span class="text-[#e8f2fc]">await</span> tools["memo-writer"].appendToTodayMemo(todayMemo.todaySection);</p>
+                    <p><span class="text-[#e8f2fc]">await</span> tools["memo-writer"].appendToWeeklyMemo(todayMemo.weeklySection);</p>
+                  </div>
+                </div>
+                <div class="max-w-[88%]">
+                  <p class="mb-1 text-[10px] font-bold uppercase tracking-[0.08em] text-[#0f4f85]">Kazibee</p>
+                  <div class="inline-block max-w-full rounded-xl border border-[#7bb7e6] bg-[#dff1ff] px-3.5 py-2.5">
+                    <p class="text-sm text-ink">Done. I ranked fresh inbox items, combined them with today's appointments, and prepared updates for today and weekly memos.</p>
+                  </div>
+                </div>
               </div>
             </div>
           </article>
@@ -62,21 +80,35 @@
                 Every Monday, Kazibee pulls KPI ranges from Sheets, generates a visual update,
                 and drafts the stakeholder email with the latest assets attached.
               </p>
-              <div class="mt-4 rounded-lg border border-neutral-800 bg-neutral-900 p-4 font-mono text-xs leading-6">
-                <p><span class="text-purple-400">const</span> <span class="text-blue-300">metrics</span> <span class="text-neutral-400">=</span> <span class="text-purple-400">await</span> <span class="text-blue-300">tools</span><span class="text-neutral-400">[</span><span class="text-green-300">"metrics-hub"</span><span class="text-neutral-400">].</span><span class="text-blue-300">fetchWeeklyKPIs</span><span class="text-neutral-400">(</span><span class="text-green-300">"this-week"</span><span class="text-neutral-400">);</span></p>
-                <p class="mt-2"><span class="text-purple-400">await</span> <span class="text-blue-300">tools</span><span class="text-neutral-400">[</span><span class="text-green-300">"google-sheets"</span><span class="text-neutral-400">].</span><span class="text-blue-300">writeRange</span><span class="text-neutral-400">(</span></p>
-                <p class="pl-4"><span class="text-green-300">"WEEKLY_METRICS"</span><span class="text-neutral-400">,</span> <span class="text-green-300">"Summary!A1:F20"</span><span class="text-neutral-400">,</span> <span class="text-blue-300">metrics</span><span class="text-neutral-400">.</span><span class="text-blue-300">rows</span></p>
-                <p><span class="text-neutral-400">);</span></p>
-                <p class="mt-2"><span class="text-purple-400">const</span> <span class="text-blue-300">chart</span> <span class="text-neutral-400">=</span> <span class="text-purple-400">await</span> <span class="text-blue-300">tools</span><span class="text-neutral-400">[</span><span class="text-green-300">"google-sheets"</span><span class="text-neutral-400">].</span><span class="text-blue-300">exportChart</span><span class="text-neutral-400">(</span></p>
-                <p class="pl-4"><span class="text-green-300">"WEEKLY_METRICS"</span><span class="text-neutral-400">,</span> <span class="text-green-300">"KPI_Trend"</span><span class="text-neutral-400">,</span> <span class="text-green-300">"/tmp/weekly-kpi.jpg"</span></p>
-                <p><span class="text-neutral-400">);</span></p>
-                <p class="mt-2"><span class="text-purple-400">const</span> <span class="text-blue-300">draft</span> <span class="text-neutral-400">=</span> <span class="text-purple-400">await</span> <span class="text-blue-300">tools</span><span class="text-neutral-400">[</span><span class="text-green-300">"gmail"</span><span class="text-neutral-400">].</span><span class="text-blue-300">createDraftWithAttachments</span><span class="text-neutral-400">(</span></p>
-                <p class="pl-4"><span class="text-green-300">"ops@company.com"</span><span class="text-neutral-400">,</span> <span class="text-green-300">"Weekly KPI Update"</span><span class="text-neutral-400">,</span> <span class="text-green-300">"Draft attached for review."</span><span class="text-neutral-400">,</span></p>
-                <p class="pl-4"><span class="text-neutral-400">[&#123;</span><span class="text-blue-300">path</span><span class="text-neutral-400">:</span> <span class="text-blue-300">chart</span><span class="text-neutral-400">.</span><span class="text-blue-300">path</span><span class="text-neutral-400">&#125;]</span></p>
-                <p><span class="text-neutral-400">);</span></p>
-                <p class="mt-2"><span class="text-purple-400">await</span> <span class="text-blue-300">tools</span><span class="text-neutral-400">[</span><span class="text-green-300">"slack"</span><span class="text-neutral-400">].</span><span class="text-blue-300">sendMessage</span><span class="text-neutral-400">(</span></p>
-                <p class="pl-4"><span class="text-green-300">"#ops-reviews"</span><span class="text-neutral-400">,</span> <span class="text-green-300">"Weekly KPI draft ready"</span><span class="text-neutral-400">,</span> <span class="text-blue-300">draft</span><span class="text-neutral-400">.</span><span class="text-blue-300">webLink</span></p>
-                <p><span class="text-neutral-400">);</span></p>
+              <div class="mt-4 space-y-3">
+                <div class="ml-auto max-w-[88%] text-right">
+                  <p class="mb-1 text-[10px] font-bold uppercase tracking-[0.08em] text-[#8a3b00]">You</p>
+                  <div class="inline-block max-w-full rounded-xl border border-[#f2b94b] bg-[#fff2cc] px-3.5 py-2.5 text-left">
+                    <p class="text-sm text-ink">Refresh this week's KPI sheet, generate a chart, and prep the update email for review.</p>
+                  </div>
+                </div>
+                <div class="max-w-[88%]">
+                  <p class="mb-1 text-[10px] font-bold uppercase tracking-[0.08em] text-[#0f4f85]">Kazibee</p>
+                  <div class="inline-block max-w-full rounded-xl border border-[#7bb7e6] bg-[#dff1ff] px-3.5 py-2.5">
+                    <p class="text-sm text-ink">On it. I'll sync the KPI data first, then build the chart and prepare the draft for review.</p>
+                  </div>
+                </div>
+                <div class="rounded-xl border border-[#7da2c4]/55 bg-gradient-to-b from-[#4d6783]/95 to-[#2f455d]/95 px-3.5 py-3 shadow-lg shadow-[#213244]/30">
+                  <p class="text-[10px] font-bold uppercase tracking-[0.14em] text-[#c8dcf1]">Working in the background</p>
+                  <div class="mt-2 rounded-lg border border-[#a9c1d9]/30 bg-[#22374d]/70 px-3 py-2.5 font-mono text-[11px] leading-6 text-[#e4edf7]">
+                    <p><span class="text-[#a6c0da]">const</span> metrics = <span class="text-[#e8f2fc]">await</span> tools["metrics-hub"].fetchWeeklyKPIs("this-week");</p>
+                    <p><span class="text-[#e8f2fc]">await</span> tools["google-sheets"].writeRange("WEEKLY_METRICS", "Summary!A1:F20", metrics.rows);</p>
+                    <p><span class="text-[#a6c0da]">const</span> chart = <span class="text-[#e8f2fc]">await</span> tools["google-sheets"].exportChart("WEEKLY_METRICS", "KPI_Trend", "/tmp/weekly-kpi.jpg");</p>
+                    <p><span class="text-[#a6c0da]">const</span> draft = <span class="text-[#e8f2fc]">await</span> tools["gmail"].createDraftWithAttachments("ops@company.com", "Weekly KPI Update", "Draft attached for review.", [&#123;path: chart.path&#125;]);</p>
+                    <p><span class="text-[#e8f2fc]">await</span> tools["slack"].sendMessage("#ops-reviews", "Weekly KPI draft ready", draft.webLink);</p>
+                  </div>
+                </div>
+                <div class="max-w-[88%]">
+                  <p class="mb-1 text-[10px] font-bold uppercase tracking-[0.08em] text-[#0f4f85]">Kazibee</p>
+                  <div class="inline-block max-w-full rounded-xl border border-[#7bb7e6] bg-[#dff1ff] px-3.5 py-2.5">
+                    <p class="text-sm text-ink">Done. Metrics were synced into Sheets, a chart was exported, and a draft with attachment was posted to Slack for signoff.</p>
+                  </div>
+                </div>
               </div>
             </div>
           </article>
@@ -94,16 +126,33 @@
                 Marketing gets source video in Drive and voice notes via Gmail.
                 Kazibee pulls both inputs and assembles a publishable cut.
               </p>
-              <div class="mt-4 rounded-lg border border-neutral-800 bg-neutral-900 p-4 font-mono text-xs leading-6">
-                <p><span class="text-purple-400">const</span> <span class="text-blue-300">parts</span> <span class="text-neutral-400">=</span> <span class="text-purple-400">await</span> <span class="text-blue-300">tools</span><span class="text-neutral-400">[</span><span class="text-green-300">"gmail"</span><span class="text-neutral-400">].</span><span class="text-blue-300">listAttachments</span><span class="text-neutral-400">(</span><span class="text-green-300">"VOICE_NOTE_MESSAGE_ID"</span><span class="text-neutral-400">);</span></p>
-                <p class="mt-2"><span class="text-purple-400">await</span> <span class="text-blue-300">tools</span><span class="text-neutral-400">[</span><span class="text-green-300">"gmail"</span><span class="text-neutral-400">].</span><span class="text-blue-300">downloadAttachmentPart</span><span class="text-neutral-400">(</span></p>
-                <p class="pl-4"><span class="text-green-300">"VOICE_NOTE_MESSAGE_ID"</span><span class="text-neutral-400">,</span> <span class="text-blue-300">parts</span><span class="text-neutral-400">[</span><span class="text-amber-300">0</span><span class="text-neutral-400">].</span><span class="text-blue-300">partId</span><span class="text-neutral-400">,</span> <span class="text-green-300">"/tmp/voice.wav"</span></p>
-                <p><span class="text-neutral-400">);</span></p>
-                <p class="mt-2"><span class="text-purple-400">await</span> <span class="text-blue-300">tools</span><span class="text-neutral-400">[</span><span class="text-green-300">"video-editor"</span><span class="text-neutral-400">].</span><span class="text-blue-300">mixAudioAndVideo</span><span class="text-neutral-400">(</span><span class="text-neutral-400">&#123;</span></p>
-                <p class="pl-4"><span class="text-blue-300">videoPath</span><span class="text-neutral-400">:</span> <span class="text-green-300">"/tmp/source.mp4"</span><span class="text-neutral-400">,</span></p>
-                <p class="pl-4"><span class="text-blue-300">audioPath</span><span class="text-neutral-400">:</span> <span class="text-green-300">"/tmp/voice.wav"</span><span class="text-neutral-400">,</span></p>
-                <p class="pl-4"><span class="text-blue-300">outputPath</span><span class="text-neutral-400">:</span> <span class="text-green-300">"/tmp/final-cut.mp4"</span></p>
-                <p><span class="text-neutral-400">&#125;);</span></p>
+              <div class="mt-4 space-y-3">
+                <div class="ml-auto max-w-[88%] text-right">
+                  <p class="mb-1 text-[10px] font-bold uppercase tracking-[0.08em] text-[#8a3b00]">You</p>
+                  <div class="inline-block max-w-full rounded-xl border border-[#f2b94b] bg-[#fff2cc] px-3.5 py-2.5 text-left">
+                    <p class="text-sm text-ink">Use the voice note from Gmail and merge it into the source video for today's publish.</p>
+                  </div>
+                </div>
+                <div class="max-w-[88%]">
+                  <p class="mb-1 text-[10px] font-bold uppercase tracking-[0.08em] text-[#0f4f85]">Kazibee</p>
+                  <div class="inline-block max-w-full rounded-xl border border-[#7bb7e6] bg-[#dff1ff] px-3.5 py-2.5">
+                    <p class="text-sm text-ink">Great - I'll pull the latest voice note, merge it with the source clip, and get the final export ready.</p>
+                  </div>
+                </div>
+                <div class="rounded-xl border border-[#7da2c4]/55 bg-gradient-to-b from-[#4d6783]/95 to-[#2f455d]/95 px-3.5 py-3 shadow-lg shadow-[#213244]/30">
+                  <p class="text-[10px] font-bold uppercase tracking-[0.14em] text-[#c8dcf1]">Working in the background</p>
+                  <div class="mt-2 rounded-lg border border-[#a9c1d9]/30 bg-[#22374d]/70 px-3 py-2.5 font-mono text-[11px] leading-6 text-[#e4edf7]">
+                    <p><span class="text-[#a6c0da]">const</span> parts = <span class="text-[#e8f2fc]">await</span> tools["gmail"].listAttachments("VOICE_NOTE_MESSAGE_ID");</p>
+                    <p><span class="text-[#e8f2fc]">await</span> tools["gmail"].downloadAttachmentPart("VOICE_NOTE_MESSAGE_ID", parts[0].partId, "/tmp/voice.wav");</p>
+                    <p><span class="text-[#e8f2fc]">await</span> tools["video-editor"].mixAudioAndVideo(&#123;videoPath: "/tmp/source.mp4", audioPath: "/tmp/voice.wav", outputPath: "/tmp/final-cut.mp4"&#125;);</p>
+                  </div>
+                </div>
+                <div class="max-w-[88%]">
+                  <p class="mb-1 text-[10px] font-bold uppercase tracking-[0.08em] text-[#0f4f85]">Kazibee</p>
+                  <div class="inline-block max-w-full rounded-xl border border-[#7bb7e6] bg-[#dff1ff] px-3.5 py-2.5">
+                    <p class="text-sm text-ink">Done. I pulled the latest audio attachment, mixed it into the source clip, and produced a final export path for publishing.</p>
+                  </div>
+                </div>
               </div>
             </div>
           </article>
@@ -340,6 +389,24 @@
             <p class="mt-1 text-sm text-ink-muted">Manage droplets, domains, and cloud infrastructure programmatically.</p>
             <div class="mt-3 rounded-lg border border-neutral-800 bg-neutral-900 p-2 font-mono text-xs">
               <span class="text-cyan-400">kazibee</span> <span class="text-green-400">install</span> <span class="text-amber-300">digitalocean</span> <span class="text-purple-300">github:kazibee/digitalocean</span>
+            </div>
+          </div>
+        </div>
+      </article>
+
+      <!-- Chrome Browser -->
+      <article class="rounded-2xl bg-white p-6" data-test-id="plugin-chrome-browser">
+        <div class="flex items-start gap-4">
+          <div class="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-ink">
+            <svg class="h-6 w-6 text-honey-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M3 5h18M4 5h16a1 1 0 011 1v12a1 1 0 01-1 1H4a1 1 0 01-1-1V6a1 1 0 011-1zm4 14h8" />
+            </svg>
+          </div>
+          <div class="flex-1">
+            <h3 class="text-lg font-bold text-ink">Chrome Browser</h3>
+            <p class="mt-1 text-sm text-ink-muted">Automate browser tasks with CDP. Navigate pages, inspect elements, and run UI actions.</p>
+            <div class="mt-3 rounded-lg border border-neutral-800 bg-neutral-900 p-2 font-mono text-xs">
+              <span class="text-cyan-400">kazibee</span> <span class="text-green-400">install</span> <span class="text-amber-300">chrome-browser</span> <span class="text-purple-300">github:kazibee/chrome-browser</span>
             </div>
           </div>
         </div>

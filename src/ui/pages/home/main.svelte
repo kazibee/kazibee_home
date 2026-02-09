@@ -1,3 +1,8 @@
+<script lang="ts">
+  import TerminalFrame from '../../component/terminal_frame.svelte';
+  import TerminalLine from '../../component/terminal_line.svelte';
+</script>
+
 <section class="bg-transparent">
   <!-- Hero -->
   <div class="relative overflow-hidden">
@@ -242,25 +247,22 @@
     <div class="mx-auto max-w-7xl px-5 py-14 sm:px-8 sm:py-16">
       <div class="mx-auto max-w-2xl text-center">
         <h2 class="text-3xl font-bold tracking-tight text-white sm:text-4xl">Turn functions into outcomes.</h2>
-        <p class="mt-4 text-neutral-400">Build a connector once, use it everywhere. Bounded execution from day one.</p>
+        <p class="mt-4 text-neutral-600">Build a connector once, use it everywhere. Bounded execution from day one.</p>
 
-        <div class="mx-auto mt-8 max-w-lg rounded-xl border border-neutral-700 bg-ink-light p-5" data-test-id="install-block">
-          <div class="flex items-center gap-2 mb-3">
-            <span class="h-3 w-3 rounded-full bg-red-400/70"></span>
-            <span class="h-3 w-3 rounded-full bg-honey-400/70"></span>
-            <span class="h-3 w-3 rounded-full bg-green-400/70"></span>
-            <span class="ml-2 text-xs text-neutral-500 font-mono">terminal</span>
-          </div>
-          <code class="block text-left text-sm font-mono">
-            <span class="text-neutral-500">$</span> <span class="text-honey-400">npx kazibee init my-project</span>
-          </code>
+        <div data-test-id="install-block">
+          <TerminalFrame class="mx-auto mt-8 max-w-lg">
+            <TerminalLine>
+              <span class="inline-flex items-center rounded-md border border-white/45 bg-white/15 px-2 py-0.5 align-middle text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.24)]">npx</span>{' '}
+              <span class="text-white">kazibee init my-project</span>
+            </TerminalLine>
+          </TerminalFrame>
         </div>
 
         <div class="mt-8 flex flex-wrap items-center justify-center gap-4" data-test-id="cta-actions">
           <a href="/technical-details" class="rounded-xl bg-honey-400 px-6 py-3 text-sm font-semibold text-ink transition hover:bg-honey-300" data-test-id="cta-connect">
             Connect Your APIs
           </a>
-          <a href="/technical-details#how-it-works" class="rounded-xl border border-neutral-600 px-6 py-3 text-sm font-semibold text-neutral-300 transition hover:border-neutral-400 hover:text-white" data-test-id="cta-learn">
+          <a href="/technical-details#how-it-works" class="learn-shine rounded-xl px-6 py-3 text-sm font-semibold text-neutral-100 transition hover:text-white" data-test-id="cta-learn">
             Learn more
           </a>
         </div>
@@ -268,3 +270,26 @@
     </div>
   </div>
 </section>
+
+<style>
+  .learn-shine {
+    border: 1px solid transparent;
+    background:
+      linear-gradient(145deg, rgba(15, 23, 36, 0.96), rgba(9, 14, 24, 0.96)) padding-box,
+      linear-gradient(130deg, rgba(103, 232, 249, 0.82), rgba(255, 255, 255, 0.5), rgba(252, 211, 77, 0.78)) border-box;
+    box-shadow:
+      inset 0 1px 0 rgba(255, 255, 255, 0.18),
+      0 10px 20px rgba(0, 0, 0, 0.28);
+    transition: background 220ms ease, box-shadow 220ms ease, transform 220ms ease, color 220ms ease;
+  }
+
+  .learn-shine:hover {
+    background:
+      linear-gradient(145deg, rgba(20, 29, 43, 1), rgba(11, 17, 28, 1)) padding-box,
+      linear-gradient(130deg, rgba(125, 245, 255, 0.95), rgba(255, 255, 255, 0.78), rgba(255, 226, 134, 0.95)) border-box;
+    box-shadow:
+      inset 0 1px 0 rgba(255, 255, 255, 0.28),
+      0 12px 24px rgba(0, 0, 0, 0.34);
+    transform: translateY(-1px);
+  }
+</style>

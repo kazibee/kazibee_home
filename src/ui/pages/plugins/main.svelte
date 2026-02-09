@@ -1,3 +1,8 @@
+<script lang="ts">
+  import TerminalFrame from '../../component/terminal_frame.svelte';
+  import TerminalLine from '../../component/terminal_line.svelte';
+</script>
+
 <section>
   <div class="mx-auto max-w-5xl px-5 py-16 sm:px-8 sm:py-20">
     <!-- Header -->
@@ -215,23 +220,40 @@
       <!-- Plugin Commands -->
       <div class="border-t border-neutral-100 pt-8" data-test-id="plugin-command-usage">
         <h3 class="text-lg font-bold text-ink mb-4">Running plugin commands</h3>
-        <p class="text-ink-muted mb-4">
+        <p class="text-ink-muted mb-5">
           Each named export in <code class="font-mono text-xs bg-neutral-100 px-1.5 py-0.5 rounded">command.ts</code> becomes a CLI command. Example:
           <code class="font-mono text-xs bg-neutral-100 px-1.5 py-0.5 rounded">export async function login()</code> maps to
           <code class="font-mono text-xs bg-neutral-100 px-1.5 py-0.5 rounded">kazibee &lt;plugin-name&gt; login</code>.
         </p>
 
-        <div class="rounded-lg border border-neutral-800 bg-neutral-900 p-3 font-mono text-xs mb-4">
-          <p><span class="text-cyan-400">kazibee</span> <span class="text-amber-300">&lt;plugin-name&gt;</span> <span class="text-green-400">&lt;command&gt;</span></p>
-        </div>
-
-        <p class="text-sm font-bold text-ink mb-2">Examples from official plugins:</p>
-        <div class="rounded-lg border border-neutral-800 bg-neutral-900 p-3 font-mono text-xs">
-          <p><span class="text-cyan-400">kazibee</span> <span class="text-amber-300">gmail</span> <span class="text-green-400">login</span></p>
-          <p><span class="text-cyan-400">kazibee</span> <span class="text-amber-300">google-drive</span> <span class="text-green-400">login</span></p>
-          <p><span class="text-cyan-400">kazibee</span> <span class="text-amber-300">google-sheets</span> <span class="text-green-400">login</span></p>
-          <p><span class="text-cyan-400">kazibee</span> <span class="text-amber-300">google-docs</span> <span class="text-green-400">login</span></p>
-        </div>
+        <TerminalFrame
+          borderClass="border-neutral-700"
+          panelBgClass="bg-[#0f1724]"
+          shadowClass="shadow-[0_16px_36px_rgba(0,0,0,0.24)]"
+          headerBorderClass="border-neutral-700/80"
+          headerBgClass="bg-[#182235]"
+          bodyClass="bg-[linear-gradient(to_bottom,rgba(255,255,255,0.05),transparent_70%)] px-4 py-4"
+          codeClass="block text-left font-mono text-sm leading-7 space-y-1.5"
+        >
+          <TerminalLine>
+            <span class="text-white">kazibee</span> <span class="text-white">&lt;plugin-name&gt;</span> <span class="text-white">&lt;command&gt;</span>
+          </TerminalLine>
+          <TerminalLine showPrompt={false} class="pt-1 text-neutral-100">
+            # examples from official plugins
+          </TerminalLine>
+          <TerminalLine>
+            <span class="text-white">kazibee</span> <span class="text-white">gmail</span> <span class="text-white">login</span>
+          </TerminalLine>
+          <TerminalLine>
+            <span class="text-white">kazibee</span> <span class="text-white">google-drive</span> <span class="text-white">login</span>
+          </TerminalLine>
+          <TerminalLine>
+            <span class="text-white">kazibee</span> <span class="text-white">google-sheets</span> <span class="text-white">login</span>
+          </TerminalLine>
+          <TerminalLine>
+            <span class="text-white">kazibee</span> <span class="text-white">google-docs</span> <span class="text-white">login</span>
+          </TerminalLine>
+        </TerminalFrame>
 
       </div>
 

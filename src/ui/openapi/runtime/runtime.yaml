@@ -1,0 +1,8 @@
+paths:
+  /runtime:
+    get:
+      summary: Runtime
+      description: How the Kazibee runtime executes packages safely
+      x-view: pages/runtime/main.svelte
+      x-layout:
+        - layout/public_layout.svelte

@@ -1,0 +1,62 @@
+module:
+  relay:
+    basePath: '/v1'
+    paths:
+      '/sessions':
+        post:
+          x-controller: relay.controller
+          x-action: createSession
+          summary: 'Create a new session for a device'
+          responses:
+            '201':
+              description: 'Session created with bootstrap data'
+              content:
+                application/json:
+                  schema:
+                    type: object
+                    properties:
+                      sessionId:
+                        type: string
+                      userId:
+                        type: string
+                      deviceId:
+                        type: string
+                      streamToken:
+                        type: string
+                      sessionFenceMessageId:
+                        type: integer
+                      startAfterMessageId:
+                        type: integer
+                      heartbeatIntervalMs:
+                        type: integer
+                      retryMinMs:
+                        type: integer
+                      retryMaxMs:
+                        type: integer
+      '/messages':
+        post:
+          x-controller: relay.controller
+          x-action: sendMessage
+          summary: 'Send a message through the relay'
+          responses:
+            '201':
+              description: 'Message accepted and persisted'
+              content:
+                application/json:
+                  schema:
+                    type: object
+                    properties:
+                      accepted:
+                        type: boolean
+                      messageId:
+                        type: integer
+                      createdAt:
+                        type: string
+      '/events':
+        get:
+          x-controller: relay.controller
+          x-action: streamEvents
+          summary: 'SSE event stream for a session'
+          responses:
+            '200':
+              description: 'SSE event stream'

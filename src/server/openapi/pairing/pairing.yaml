@@ -1,0 +1,84 @@
+module:
+  pairing:
+    basePath: '/v1/pair'
+    paths:
+      '/register':
+        post:
+          x-controller: pairing.controller
+          x-action: createPairing
+          summary: 'Register a new device and get a pairing code'
+          responses:
+            '201':
+              description: 'Device registered with pairing code'
+              content:
+                application/json:
+                  schema:
+                    type: object
+                    properties:
+                      userId:
+                        type: string
+                      deviceId:
+                        type: string
+                      authToken:
+                        type: string
+                      pairingCode:
+                        type: string
+                      expiresAt:
+                        type: string
+      '/claim':
+        post:
+          x-controller: pairing.controller
+          x-action: claimPairing
+          summary: 'Claim a pairing code from mobile'
+          responses:
+            '200':
+              description: 'Pairing claimed, mobile device created'
+              content:
+                application/json:
+                  schema:
+                    type: object
+                    properties:
+                      userId:
+                        type: string
+                      deviceId:
+                        type: string
+                      authToken:
+                        type: string
+                      desktopDeviceId:
+                        type: string
+                      desktopDeviceName:
+                        type: string
+                        nullable: true
+  devices:
+    basePath: '/v1'
+    paths:
+      '/devices':
+        get:
+          x-controller: pairing.controller
+          x-action: listDevices
+          summary: 'List all devices for authenticated user'
+          responses:
+            '200':
+              description: 'Device list'
+              content:
+                application/json:
+                  schema:
+                    type: object
+                    properties:
+                      devices:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            deviceId:
+                              type: string
+                            deviceName:
+                              type: string
+                              nullable: true
+                            deviceType:
+                              type: string
+                            lastSeenAt:
+                              type: string
+                              nullable: true
+                            isCurrentDevice:
+                              type: boolean

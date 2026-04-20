@@ -1,0 +1,93 @@
+{
+  "lastStartTime": "2026-02-10T01:43:02.767Z",
+  "backendCrashRestarts": 0,
+  "frontendCrashRestarts": 0,
+  "backendPortRetries": 0,
+  "frontendPortRetries": 0,
+  "lastWatchedFiles": [],
+  "processHistory": [
+    {
+      "timestamp": "2026-02-10T01:43:02.868Z",
+      "service": "backend",
+      "event": "spawned",
+      "details": {
+        "pid": 43453,
+        "port": 3002,
+        "restart": 1
+      }
+    },
+    {
+      "timestamp": "2026-02-10T01:43:02.869Z",
+      "service": "frontend",
+      "event": "spawned",
+      "details": {
+        "pid": 43454,
+        "port": 3001,
+        "restart": 1
+      }
+    },
+    {
+      "timestamp": "2026-02-10T02:41:28.536Z",
+      "service": "frontend",
+      "event": "exited",
+      "details": {
+        "code": 143,
+        "signal": null,
+        "spawnDuration": 3505667,
+        "runDuration": 3503573
+      }
+    },
+    {
+      "timestamp": "2026-02-10T02:41:28.641Z",
+      "service": "frontend",
+      "event": "spawned",
+      "details": {
+        "pid": 92737,
+        "port": 3001,
+        "restart": 2
+      }
+    },
+    {
+      "timestamp": "2026-02-10T02:41:28.790Z",
+      "service": "frontend",
+      "event": "spawned",
+      "details": {
+        "pid": 92739,
+        "port": 3001,
+        "restart": 3
+      }
+    },
+    {
+      "timestamp": "2026-02-10T02:41:34.159Z",
+      "service": "frontend",
+      "event": "exited",
+      "details": {
+        "code": 1,
+        "signal": null,
+        "spawnDuration": 5369,
+        "runDuration": 3067
+      }
+    },
+    {
+      "timestamp": "2026-02-10T02:41:34.261Z",
+      "service": "frontend",
+      "event": "spawned",
+      "details": {
+        "pid": 95510,
+        "port": 3001,
+        "restart": 4
+      }
+    },
+    {
+      "timestamp": "2026-02-10T02:41:38.992Z",
+      "service": "frontend",
+      "event": "exited",
+      "details": {
+        "code": 1,
+        "signal": null,
+        "spawnDuration": 4731,
+        "runDuration": 0
+      }
+    }
+  ]
+}

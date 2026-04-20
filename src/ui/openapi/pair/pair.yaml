@@ -1,0 +1,9 @@
+paths:
+  /pair:
+    get:
+      summary: Device Pairing Page
+      description: Pair a mobile device with the desktop application
+      x-view: pages/pair/main.svelte
+      x-controller: controllers/pair.svelte.ts
+      x-layout:
+        - layout/public_layout.svelte

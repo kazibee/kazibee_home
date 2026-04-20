@@ -16,6 +16,7 @@
   },
   "dependencies": {
     "@noego/app": "^0.0.26",
+    "@noego/beacon": "file:../../noego/beacon",
     "@noego/forge": "^0.1.23",
     "@noego/ioc": "^0.0.11",
     "@noego/logger": "^0.0.2",

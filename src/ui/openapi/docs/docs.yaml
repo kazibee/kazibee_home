@@ -1,0 +1,80 @@
+openapi: '3.0.3'
+info:
+  title: Docs
+  version: '1.0.0'
+
+modules:
+  - basePath: /docs
+    paths:
+      /:
+        get:
+          summary: Documentation Overview
+          x-view: pages/docs/overview.svelte
+          x-layout:
+            - layout/docs_layout.svelte
+      /quick-start:
+        get:
+          summary: Quick Start
+          x-view: pages/docs/quick-start.svelte
+          x-layout:
+            - layout/docs_layout.svelte
+      /plugin-structure:
+        get:
+          summary: Plugin Structure
+          x-view: pages/docs/plugin-structure.svelte
+          x-layout:
+            - layout/docs_layout.svelte
+      /package-config:
+        get:
+          summary: Package Configuration
+          x-view: pages/docs/package-config.svelte
+          x-layout:
+            - layout/docs_layout.svelte
+      /entry-point:
+        get:
+          summary: Main Entry Point
+          x-view: pages/docs/entry-point.svelte
+          x-layout:
+            - layout/docs_layout.svelte
+      /cli-commands:
+        get:
+          summary: CLI Commands
+          x-view: pages/docs/cli-commands.svelte
+          x-layout:
+            - layout/docs_layout.svelte
+      /authentication:
+        get:
+          summary: Authentication
+          x-view: pages/docs/authentication.svelte
+          x-layout:
+            - layout/docs_layout.svelte
+      /permissions:
+        get:
+          summary: Environment Permissions
+          x-view: pages/docs/permissions.svelte
+          x-layout:
+            - layout/docs_layout.svelte
+      /llm-instructions:
+        get:
+          summary: LLM Instructions
+          x-view: pages/docs/llm-instructions.svelte
+          x-layout:
+            - layout/docs_layout.svelte
+      /dev-workflow:
+        get:
+          summary: Development Workflow
+          x-view: pages/docs/dev-workflow.svelte
+          x-layout:
+            - layout/docs_layout.svelte
+      /publishing:
+        get:
+          summary: Publishing
+          x-view: pages/docs/publishing.svelte
+          x-layout:
+            - layout/docs_layout.svelte
+      /cli-reference:
+        get:
+          summary: CLI Reference
+          x-view: pages/docs/cli-reference.svelte
+          x-layout:
+            - layout/docs_layout.svelte

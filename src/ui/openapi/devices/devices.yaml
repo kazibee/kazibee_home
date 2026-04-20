@@ -1,0 +1,9 @@
+paths:
+  /devices:
+    get:
+      summary: Devices Page
+      description: View and manage paired devices
+      x-view: pages/devices/main.svelte
+      x-controller: controllers/devices.svelte.ts
+      x-layout:
+        - layout/public_layout.svelte

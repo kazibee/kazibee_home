@@ -41,5 +41,5 @@ assets:
 
 dev:
   watch: true
-  splitServe: true
+  splitServe: false
   port: 3000

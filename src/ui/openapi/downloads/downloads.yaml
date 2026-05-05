@@ -1,0 +1,17 @@
+paths:
+  /downloads/cli:
+    get:
+      summary: CLI Downloads
+      description: Download Kazibee CLI binaries
+      x-view: pages/downloads/cli.svelte
+      x-controller: controllers/downloads.svelte.ts
+      x-layout:
+        - layout/public_layout.svelte
+  /downloads/cli/:version:
+    get:
+      summary: CLI Version Downloads
+      description: Download a specific Kazibee CLI version
+      x-view: pages/downloads/cli.svelte
+      x-controller: controllers/downloads.svelte.ts
+      x-layout:
+        - layout/public_layout.svelte

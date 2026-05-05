@@ -1,0 +1,53 @@
+interface DownloadItem {
+  name: string;
+  href: string;
+  size: number;
+  lastModified: string | null;
+}
+
+interface VersionDownloads {
+  version: string;
+  downloads: DownloadItem[];
+}
+
+interface RequestDataLike {
+  params?: {
+    version?: string;
+  };
+  url: string;
+}
+
+interface DownloadsResponse {
+  versions?: VersionDownloads[];
+}
+
+export default async function load(req: RequestDataLike) {
+  const selectedVersion = req.params?.version ?? "latest";
+
+  try {
+    const origin = req.url.startsWith("http") ? new URL(req.url).origin : "http://localhost:3000";
+    const response = await fetch(`${origin}/downloads/binary`, {
+      headers: { Accept: "application/json" },
+    });
+
+    if (!response.ok) {
+      return {
+        versions: [],
+        error: "Downloads are not available right now.",
+      };
+    }
+
+    const body = await response.json() as DownloadsResponse;
+    return {
+      versions: body.versions ?? [],
+      selectedVersion,
+      error: null,
+    };
+  } catch {
+    return {
+      versions: [],
+      selectedVersion,
+      error: "Downloads are not available right now.",
+    };
+  }
+}

@@ -25,7 +25,9 @@ Photorealistic bee walking on complete sunflower with transparent background.
 **Style:** Studio product photography, complete flower visible
 
 ### Logo
-- `kazibee-logo.png` (155KB) - Main logo
+- `kazibee-logo.png` (475KB, 1254px) - Main transparent logo
+- `bee_logo.png` (773KB, 1254px) - Original logo source
+- `bee_logo_transparent.png` (475KB, 1254px) - Transparent logo source
 
 ## Archive
 Original/source images stored in `./archive/` for reference.

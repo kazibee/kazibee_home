@@ -20,6 +20,7 @@
         <a href="/" class="text-sm text-ink-muted transition hover:text-ink" data-test-id="nav-home">Home</a>
         <a href="/plugins" class="text-sm text-ink-muted transition hover:text-ink" data-test-id="nav-plugins">Plugins</a>
         <a href="/technical-details" class="text-sm text-ink-muted transition hover:text-ink" data-test-id="nav-technical">How it works</a>
+        <a href="/downloads/cli" class="text-sm text-ink-muted transition hover:text-ink" data-test-id="nav-downloads">Downloads</a>
         <a
           href="https://github.com"
           class="inline-flex items-center gap-2 rounded-lg bg-ink px-4 py-2 text-sm font-medium text-white transition hover:bg-ink-light"
@@ -36,6 +37,9 @@
         </a>
         <a href="/technical-details" class="rounded-lg bg-ink px-2.5 py-1.5 text-xs font-medium text-white" data-test-id="nav-mobile-technical">
           Details
+        </a>
+        <a href="/downloads/cli" class="rounded-lg border border-neutral-200 bg-white px-2.5 py-1.5 text-xs font-medium text-ink" data-test-id="nav-mobile-downloads">
+          Downloads
         </a>
       </div>
     </div>

@@ -1,6 +1,8 @@
-import type { RequestData } from '@noego/forge/server';
+interface RequestDataLike {
+  url: string;
+}
 
-export default async function load(req: RequestData) {
+export default async function load(req: RequestDataLike) {
   try {
     const res = await fetch(`${req.url.startsWith('http') ? new URL(req.url).origin : 'http://localhost:3000'}/api/devices`, {
       headers: { Accept: 'application/json' },

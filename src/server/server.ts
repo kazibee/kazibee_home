@@ -28,8 +28,10 @@ export default async function boot(app: express.Express, config: any) {
 
   // Build asset mappings from config.root
   const imagesPath = path.join(config.root, 'src/ui/resources/images');
+  const cssPath = path.join(config.root, 'src/ui/resources/css');
   const assetMappings = assets({
     '/images': [imagesPath],
+    '/css': [cssPath],
   });
 
   // Boot backend - framework automatically handles IoC container integration

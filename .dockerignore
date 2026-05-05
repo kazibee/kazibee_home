@@ -1,0 +1,12 @@
+.git
+.github
+.env
+.env.*
+node_modules
+dist
+database
+trace
+server.log
+*.log
+tmp
+test-screenshots

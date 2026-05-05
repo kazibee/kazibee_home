@@ -25,14 +25,18 @@ export async function isDevice(
     }
 
     const container = getContainer();
-    const deviceRepo = container.instance(DeviceRepo);
+    const deviceRepo = await container.instance(DeviceRepo);
     const device = await deviceRepo.findByDeviceId({ device_id: deviceId });
 
     if (!device) {
       return res.status(401).json({ error: true, message: "Unknown device" });
     }
 
-    const valid = await bcrypt.compare(deviceSecret, device.device_secret);
+    if (!device.auth_token_hash) {
+      return res.status(401).json({ error: true, message: "Device credentials unavailable" });
+    }
+
+    const valid = await bcrypt.compare(deviceSecret, device.auth_token_hash);
     if (!valid) {
       return res.status(401).json({ error: true, message: "Invalid device credentials" });
     }
@@ -64,7 +68,7 @@ export async function isMobile(
 
     const token = header.slice(7).trim();
     const container = getContainer();
-    const sessionRepo = container.instance(MobileSessionRepo);
+    const sessionRepo = await container.instance(MobileSessionRepo);
     const session = await sessionRepo.findByToken({ session_token: token });
 
     if (!session) {

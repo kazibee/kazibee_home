@@ -3,3 +3,4 @@ stitch:
   - openapi/status/**/*.yaml
   - openapi/pairing/**/*.yaml
   - openapi/relay/**/*.yaml
+  - openapi/downloads/**/*.yaml

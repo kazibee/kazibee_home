@@ -54,4 +54,5 @@ key/
 .vscode/
 
 # Misc
+.noego/
 todo.md

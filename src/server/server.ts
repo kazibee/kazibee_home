@@ -1,17 +1,12 @@
 import path from 'path';
-import os from 'os';
 import express from 'express';
 import { assets } from '@noego/dinner/assets';
 import { boot as bootBackend } from '@noego/app/client';
-import { Beacon } from '@noego/beacon';
-import { LoadAs } from '@noego/ioc';
-import { getContainer } from '@noego/app';
 import { configureLogging } from '../index';
 import { getLogger } from '@noego/logger';
 const baseLogger = getLogger('kazibee');
 import { initDatabase } from "./repo/boot";
 import cookiePaser from '../middleware/auth/cookie';
-import { BEACON } from './beacon_instance';
 
 // Export constants (for backward compatibility)
 const SERVER_ROOT = path.resolve(process.cwd(), 'server');
@@ -29,17 +24,10 @@ export default async function boot(app: express.Express, config: any) {
   app.use(express.json({ limit: '50mb' }));
   app.use(cookiePaser);
 
-  // Boot beacon relay server
   const isTest = process.env.NODE_ENV === 'test' || !!process.env.VITEST;
-  const beaconDataDir = isTest
-    ? path.join(os.tmpdir(), `kazibee-beacon-${Date.now()}`)
-    : path.resolve(process.cwd(), process.env.BEACON_DATA_DIR || 'database/beacon');
-  const beacon = Beacon.create({ dataDir: beaconDataDir });
-  getContainer().registerFunction(BEACON, () => beacon, { loadAs: LoadAs.Singleton });
-  baseLogger.info('Beacon relay initialized', { dataDir: beaconDataDir });
 
   // Build asset mappings from config.root
-  const imagesPath = path.join(config.root, 'ui/resources/images');
+  const imagesPath = path.join(config.root, 'src/ui/resources/images');
   const assetMappings = assets({
     '/images': [imagesPath],
   });
@@ -52,8 +40,6 @@ export default async function boot(app: express.Express, config: any) {
     baseLogger.info(`Received ${signal}, starting graceful shutdown...`);
 
     try {
-      await beacon.close();
-
       if (server?.close) {
         await new Promise<void>((resolve, reject) => {
           const timeout = setTimeout(() => {

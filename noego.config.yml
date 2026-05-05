@@ -25,6 +25,7 @@ client:
   main: src/ui/frontend.ts
   shell: src/ui/index.html
   openapi: src/ui/stitch.yaml
+  resourcesDir: src/ui/resources
   componentDir: src/ui
   watch:
     - src/ui/**/*.ts
@@ -36,10 +37,11 @@ client:
     - src/middleware/**
 
 assets:
+  - src/ui/resources/images/**
   - src/ui/resources/**
   - migrations/**/*.sql
 
 dev:
   watch: true
-  splitServe: false
+  splitServe: true
   port: 3000

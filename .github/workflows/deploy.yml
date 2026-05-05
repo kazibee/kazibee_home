@@ -1,0 +1,84 @@
+name: Deploy
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+
+env:
+  IMAGE_NAME: kazibee-site
+  CONTAINER_NAME: kazibee-site
+  HOST_PORT: "4000"
+  CONTAINER_PORT: "4000"
+  AWS_REGION: ca-central-1
+  KAZIBEE_DOWNLOAD_BUCKET: kazibee
+  KAZIBEE_CLI_PREFIX: cli/
+  KAZIBEE_DOWNLOAD_EXPIRES_SECONDS: "600"
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout website
+        uses: actions/checkout@v4
+
+      - name: Build image
+        run: |
+          docker build \
+            -t "$IMAGE_NAME:${GITHUB_SHA}" \
+            .
+
+      - name: Save image
+        run: docker save "$IMAGE_NAME:${GITHUB_SHA}" | gzip > "${IMAGE_NAME}-${GITHUB_SHA}.tar.gz"
+
+      - name: Configure SSH
+        run: |
+          mkdir -p ~/.ssh
+          install -m 600 /dev/null ~/.ssh/deploy_key
+          printf '%s\n' "${{ secrets.SERVER_SSH_KEY }}" > ~/.ssh/deploy_key
+          ssh-keyscan -H "${{ secrets.SERVER_IP }}" >> ~/.ssh/known_hosts
+
+      - name: Copy image to server
+        run: |
+          scp -i ~/.ssh/deploy_key \
+            "${IMAGE_NAME}-${GITHUB_SHA}.tar.gz" \
+            "${{ secrets.SERVER_USER }}@${{ secrets.SERVER_IP }}:/tmp/${IMAGE_NAME}-${GITHUB_SHA}.tar.gz"
+
+      - name: Load and restart container
+        run: |
+          ssh -i ~/.ssh/deploy_key "${{ secrets.SERVER_USER }}@${{ secrets.SERVER_IP }}" \
+            IMAGE_NAME="${IMAGE_NAME}" \
+            IMAGE_TAG="${GITHUB_SHA}" \
+            CONTAINER_NAME="${CONTAINER_NAME}" \
+            HOST_PORT="${HOST_PORT}" \
+            CONTAINER_PORT="${CONTAINER_PORT}" \
+            AWS_REGION="${AWS_REGION}" \
+            AWS_ACCESS_KEY_ID="${{ secrets.AWS_ACCESS_KEY_ID }}" \
+            AWS_SECRET_ACCESS_KEY="${{ secrets.AWS_SECRET_ACCESS_KEY }}" \
+            KAZIBEE_DOWNLOAD_BUCKET="${KAZIBEE_DOWNLOAD_BUCKET}" \
+            KAZIBEE_CLI_PREFIX="${KAZIBEE_CLI_PREFIX}" \
+            KAZIBEE_DOWNLOAD_EXPIRES_SECONDS="${KAZIBEE_DOWNLOAD_EXPIRES_SECONDS}" \
+            'bash -s' <<'EOF'
+          set -euo pipefail
+
+          ARCHIVE="/tmp/${IMAGE_NAME}-${IMAGE_TAG}.tar.gz"
+          docker load -i "$ARCHIVE"
+          docker rm -f "$CONTAINER_NAME" 2>/dev/null || true
+          docker run -d \
+            --name "$CONTAINER_NAME" \
+            --restart unless-stopped \
+            -p "${HOST_PORT}:${CONTAINER_PORT}" \
+            -e NODE_ENV=production \
+            -e PORT="$CONTAINER_PORT" \
+            -e AWS_REGION="$AWS_REGION" \
+            -e AWS_ACCESS_KEY_ID="$AWS_ACCESS_KEY_ID" \
+            -e AWS_SECRET_ACCESS_KEY="$AWS_SECRET_ACCESS_KEY" \
+            -e KAZIBEE_DOWNLOAD_BUCKET="$KAZIBEE_DOWNLOAD_BUCKET" \
+            -e KAZIBEE_CLI_PREFIX="$KAZIBEE_CLI_PREFIX" \
+            -e KAZIBEE_DOWNLOAD_EXPIRES_SECONDS="$KAZIBEE_DOWNLOAD_EXPIRES_SECONDS" \
+            "${IMAGE_NAME}:${IMAGE_TAG}"
+
+          rm -f "$ARCHIVE"
+          EOF

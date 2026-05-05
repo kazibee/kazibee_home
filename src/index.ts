@@ -2,7 +2,6 @@ import dotenv from "dotenv";
 dotenv.config({ override: true });
 
 import express from "express";
-import container from "./server/container";
 import { configureLogging as configLogger } from '@noego/logger';
 
 // Configure logging asynchronously (called during server boot)

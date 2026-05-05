@@ -1,0 +1,61 @@
+module:
+  downloads:
+    basePath: '/downloads'
+    paths:
+      '/binary':
+        get:
+          x-controller: download.controller
+          x-action: listCliVersions
+          summary: 'List available Kazibee CLI versions'
+          responses:
+            '200':
+              description: 'CLI versions available for download'
+              content:
+                application/json:
+                  schema:
+                    type: object
+                    properties:
+                      versions:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            version:
+                              type: string
+                            downloads:
+                              type: array
+                              items:
+                                type: object
+                                properties:
+                                  name:
+                                    type: string
+                                  href:
+                                    type: string
+                                  size:
+                                    type: number
+                                  lastModified:
+                                    type: string
+                                    nullable: true
+      '/binary/:version/:item':
+        get:
+          x-controller: download.controller
+          x-action: downloadCliItem
+          summary: 'Redirect to a temporary Kazibee CLI download URL'
+          parameters:
+            - name: version
+              in: path
+              required: true
+              schema:
+                type: string
+            - name: item
+              in: path
+              required: true
+              schema:
+                type: string
+          responses:
+            '302':
+              description: 'Redirect to temporary S3 download URL'
+            '400':
+              description: 'Invalid version or item'
+            '404':
+              description: 'Download item not found'

@@ -32,6 +32,9 @@ Thumbs.db
 # Generated API artifacts
 server/openapi.yaml
 
+# Generated CSS artifacts
+src/ui/resources/css/app.css
+
 # Test output
 test/output/
 !test/output/.gitkeep

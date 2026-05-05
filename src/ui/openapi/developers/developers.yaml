@@ -1,0 +1,8 @@
+paths:
+  /developers:
+    get:
+      summary: For Developers
+      description: Developer-focused features - worktrees, workspaces, keyboard-first workflow
+      x-view: pages/developers/main.svelte
+      x-layout:
+        - layout/public_layout.svelte

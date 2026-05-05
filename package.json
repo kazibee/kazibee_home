@@ -6,6 +6,7 @@
   "main": "index.js",
   "scripts": {
     "build:css": "tailwindcss -i ./src/ui/styles/tailwind.css -o ./src/ui/resources/css/app.css --minify",
+    "postinstall": "npm run build:css",
     "prebuild": "npm run build:css",
     "predev": "npm run build:css",
     "dev": "PORT=${PORT:-3000};lsof -ti :$PORT,$((PORT+1)),$((PORT+2))|xargs kill 2>/dev/null;noego dev --experimental 2>&1 | tee server.log",

@@ -6,6 +6,8 @@
   }: {
     children: Snippet;
   } = $props();
+
+  let mobileMenuOpen = $state(false);
 </script>
 
 <div class="flex min-h-screen flex-col bg-[#fcfcfc]">
@@ -18,23 +20,47 @@
 
       <div class="hidden items-center gap-6 sm:flex">
         <a href="/" class="text-sm text-ink-muted transition hover:text-ink" data-test-id="nav-home">Home</a>
-        <a href="/plugins" class="text-sm text-ink-muted transition hover:text-ink" data-test-id="nav-plugins">Plugins</a>
-        <a href="/technical-details" class="text-sm text-ink-muted transition hover:text-ink" data-test-id="nav-technical">How it works</a>
+        <a href="/developers" class="text-sm text-ink-muted transition hover:text-ink" data-test-id="nav-developers">For Developers</a>
         <a href="/downloads" class="text-sm text-ink-muted transition hover:text-ink" data-test-id="nav-downloads">Downloads</a>
+        <a href="/downloads" class="rounded-lg bg-blue-600 px-3.5 py-1.5 text-sm font-medium text-white transition hover:bg-blue-500" data-test-id="nav-download-cta">
+          Download
+        </a>
       </div>
 
-      <div class="flex items-center gap-2 sm:hidden" data-test-id="nav-mobile-links">
-        <a href="/plugins" class="rounded-lg border border-neutral-200 bg-white px-2.5 py-1.5 text-xs font-medium text-ink" data-test-id="nav-mobile-plugins">
-          Plugins
-        </a>
-        <a href="/technical-details" class="rounded-lg bg-ink px-2.5 py-1.5 text-xs font-medium text-white" data-test-id="nav-mobile-technical">
-          Details
-        </a>
-        <a href="/downloads" class="rounded-lg border border-neutral-200 bg-white px-2.5 py-1.5 text-xs font-medium text-ink" data-test-id="nav-mobile-downloads">
-          Downloads
-        </a>
-      </div>
+      <button
+        type="button"
+        class="flex h-10 w-10 items-center justify-center rounded-lg border border-neutral-200 bg-white text-ink transition hover:border-neutral-300 hover:bg-neutral-50 sm:hidden"
+        aria-label={mobileMenuOpen ? 'Close navigation menu' : 'Open navigation menu'}
+        aria-expanded={mobileMenuOpen}
+        aria-controls="mobile-navigation"
+        data-test-id="nav-mobile-menu-toggle"
+        onclick={() => mobileMenuOpen = !mobileMenuOpen}
+      >
+        {#if mobileMenuOpen}
+          <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <line x1="18" y1="6" x2="6" y2="18"></line>
+            <line x1="6" y1="6" x2="18" y2="18"></line>
+          </svg>
+        {:else}
+          <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <line x1="3" y1="6" x2="21" y2="6"></line>
+            <line x1="3" y1="12" x2="21" y2="12"></line>
+            <line x1="3" y1="18" x2="21" y2="18"></line>
+          </svg>
+        {/if}
+      </button>
     </div>
+
+    {#if mobileMenuOpen}
+      <div id="mobile-navigation" class="border-t border-neutral-100 bg-white px-5 py-3 sm:hidden" data-test-id="nav-mobile-menu">
+        <div class="mx-auto flex max-w-7xl flex-col gap-1">
+          <a href="/" class="rounded-lg px-3 py-2 text-sm font-medium text-ink-muted transition hover:bg-neutral-50 hover:text-ink" data-test-id="nav-mobile-home" onclick={() => mobileMenuOpen = false}>Home</a>
+          <a href="/developers" class="rounded-lg px-3 py-2 text-sm font-medium text-ink-muted transition hover:bg-neutral-50 hover:text-ink" data-test-id="nav-mobile-developers" onclick={() => mobileMenuOpen = false}>For Developers</a>
+          <a href="/downloads" class="rounded-lg px-3 py-2 text-sm font-medium text-ink-muted transition hover:bg-neutral-50 hover:text-ink" data-test-id="nav-mobile-downloads" onclick={() => mobileMenuOpen = false}>Downloads</a>
+          <a href="/downloads" class="mt-1 rounded-lg bg-blue-600 px-3 py-2 text-center text-sm font-medium text-white transition hover:bg-blue-500" data-test-id="nav-mobile-download-cta" onclick={() => mobileMenuOpen = false}>Download</a>
+        </div>
+      </div>
+    {/if}
   </nav>
 
   <main class="flex-1">

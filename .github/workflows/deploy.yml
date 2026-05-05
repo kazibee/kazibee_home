@@ -44,7 +44,7 @@ jobs:
         run: |
           scp -i ~/.ssh/deploy_key \
             "${IMAGE_NAME}-${GITHUB_SHA}.tar.gz" \
-            "${{ secrets.SERVER_USER }}@${{ secrets.SERVER_IP }}:/tmp/${IMAGE_NAME}-${GITHUB_SHA}.tar.gz"
+            "${{ secrets.SERVER_USER }}@${{ secrets.SERVER_IP }}:~/${IMAGE_NAME}-${GITHUB_SHA}.tar.gz"
 
       - name: Load and restart container
         run: |
@@ -63,7 +63,8 @@ jobs:
             'bash -s' <<'EOF'
           set -euo pipefail
 
-          ARCHIVE="/tmp/${IMAGE_NAME}-${IMAGE_TAG}.tar.gz"
+          ARCHIVE="${HOME}/${IMAGE_NAME}-${IMAGE_TAG}.tar.gz"
+          ls -lh "$ARCHIVE"
           docker load -i "$ARCHIVE"
           docker rm -f "$CONTAINER_NAME" 2>/dev/null || true
           docker run -d \

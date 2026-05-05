@@ -1,5 +1,5 @@
 import { createImageRenderer } from '@noego/forge/test';
-import { TAILWIND_TEMPLATE } from '../helpers/templates';
+import { buildTailwindTemplate } from '../helpers/templates';
 import { LAYOUT_PROPS } from '../helpers/mock-data';
 
 async function main() {
@@ -7,7 +7,7 @@ async function main() {
     outputDir: './test/output/screenshots/product-site',
     stitchConfig: './src/ui/stitch.yaml',
     componentDir: './src/ui',
-    template: TAILWIND_TEMPLATE,
+    template: await buildTailwindTemplate(),
   });
 
   const resolutions = [

@@ -1,3 +1,6 @@
+import { getContainer } from "@noego/app";
+import DownloadLogic from "../../../server/logic/download.logic";
+
 interface DownloadItem {
   name: string;
   href: string;
@@ -40,21 +43,8 @@ export default async function load(req: RequestDataLike) {
   const selectedVersion = req.params?.version ?? "latest";
 
   try {
-    const origin = req.url.startsWith("http") ? new URL(req.url).origin : "http://localhost:3000";
-    const response = await fetch(`${origin}/downloads/binary/${kind}`, {
-      headers: { Accept: "application/json" },
-    });
-
-    if (!response.ok) {
-      return {
-        kind,
-        versions: [],
-        selectedVersion,
-        error: "Downloads are not available right now.",
-      };
-    }
-
-    const body = await response.json() as DownloadsResponse;
+    const downloadLogic = await getContainer().instance(DownloadLogic);
+    const body = await downloadLogic.listVersions(kind) as DownloadsResponse;
     return {
       kind,
       versions: body.versions ?? [],

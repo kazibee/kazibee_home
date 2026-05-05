@@ -1,3 +1,5 @@
+type DownloadKind = "cli" | "app";
+
 interface DownloadItem {
   name: string;
   href: string;
@@ -11,6 +13,7 @@ interface VersionDownloads {
 }
 
 interface DownloadsData {
+  kind: DownloadKind;
   versions: VersionDownloads[];
   selectedVersion: string;
   isLoading: boolean;
@@ -28,6 +31,7 @@ interface DownloadsResponse {
 
 export default class DownloadsController {
   data: DownloadsData = $state({
+    kind: "cli",
     versions: [],
     selectedVersion: "latest",
     isLoading: false,
@@ -40,7 +44,7 @@ export default class DownloadsController {
       this.data.error = null;
 
       try {
-        const response = await fetch("/downloads/binary", {
+        const response = await fetch(`/downloads/binary/${this.data.kind}`, {
           headers: { Accept: "application/json" },
         });
         const body = await response.json() as DownloadsResponse;
@@ -58,7 +62,8 @@ export default class DownloadsController {
     },
   };
 
-  initialize(loadData: { versions?: VersionDownloads[]; selectedVersion?: string; error?: string | null }) {
+  initialize(loadData: { kind?: DownloadKind; versions?: VersionDownloads[]; selectedVersion?: string; error?: string | null }) {
+    this.data.kind = loadData.kind ?? "cli";
     this.data.versions = loadData.versions ?? [];
     this.data.selectedVersion = loadData.selectedVersion ?? "latest";
     this.data.error = loadData.error ?? null;

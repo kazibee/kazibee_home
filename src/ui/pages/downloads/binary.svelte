@@ -1,4 +1,6 @@
 <script lang="ts">
+  type DownloadKind = "cli" | "app";
+
   interface DownloadItem {
     name: string;
     href: string;
@@ -12,6 +14,7 @@
   }
 
   interface DownloadsData {
+    kind: DownloadKind;
     versions: VersionDownloads[];
     selectedVersion: string;
     isLoading: boolean;
@@ -29,25 +32,36 @@
   let {
     data,
     input = fallbackInput,
+    kind = "cli" as DownloadKind,
     versions = [],
     selectedVersion = "latest",
     error = null,
   }: {
     data?: DownloadsData;
     input?: DownloadsInput;
+    kind?: DownloadKind;
     versions?: VersionDownloads[];
     selectedVersion?: string;
     error?: string | null;
   } = $props();
 
   let pageData = $derived(data ?? {
+    kind,
     versions,
     selectedVersion,
     isLoading: false,
     error,
   });
-  let selectedGroup = $derived(pageData.versions.find((versionGroup) => versionGroup.version === pageData.selectedVersion) ?? null);
-  let otherVersions = $derived(pageData.versions.filter((versionGroup) => versionGroup.version !== pageData.selectedVersion));
+  let selectedGroup = $derived(pageData.versions.find((v) => v.version === pageData.selectedVersion) ?? null);
+  let otherVersions = $derived(pageData.versions.filter((v) => v.version !== pageData.selectedVersion));
+
+  let basePath = $derived(`/downloads/${pageData.kind}`);
+  let kindLabel = $derived(pageData.kind === "app" ? "Kazibee App" : "Kazibee CLI");
+  let kindSubtitle = $derived(
+    pageData.kind === "app"
+      ? "Download the Kazibee desktop app for your operating system. Each link is generated on demand and expires shortly after it is opened."
+      : "Download the latest Kazibee command line binary for your operating system. Each link is generated on demand and expires shortly after it is opened.",
+  );
 
   function formatBytes(size: number): string {
     if (!Number.isFinite(size) || size <= 0) {
@@ -78,25 +92,22 @@
     if (name === "SHA256SUMS") {
       return "SHA256 checksums";
     }
-    const match = /^kazibee-([a-z]+)-([a-z0-9]+)(?:-v\d+\.\d+\.\d+)?\.(tar\.gz|zip)$/.exec(name);
+    const match = /^kazibee-([a-z]+)-([a-z0-9]+)(?:-v\d+\.\d+\.\d+)?\.(tar\.gz|zip|dmg|exe|AppImage)$/i.exec(name);
     if (!match) {
       return name;
     }
-    const os = match[1] === "macos" ? "macOS" : match[1][0].toUpperCase() + match[1].slice(1);
-    const arch = match[2] === "x64" ? "x64" : "arm64";
+    const os = match[1].toLowerCase() === "macos" ? "macOS" : match[1][0].toUpperCase() + match[1].slice(1);
+    const arch = match[2] === "x64" ? "x64" : match[2];
     return `${os} ${arch}`;
   }
 
   function itemKind(name: string): string {
-    if (name === "SHA256SUMS") {
-      return "Checksum file";
-    }
-    if (name.endsWith(".zip")) {
-      return "ZIP archive";
-    }
-    if (name.endsWith(".tar.gz")) {
-      return "Tarball";
-    }
+    if (name === "SHA256SUMS") return "Checksum file";
+    if (name.endsWith(".zip")) return "ZIP archive";
+    if (name.endsWith(".tar.gz")) return "Tarball";
+    if (name.endsWith(".dmg")) return "macOS disk image";
+    if (name.endsWith(".exe")) return "Windows installer";
+    if (name.endsWith(".AppImage")) return "Linux AppImage";
     return "Download";
   }
 </script>
@@ -104,14 +115,15 @@
 <section class="mx-auto max-w-5xl px-5 py-16 sm:px-8 sm:py-20">
   <header class="mb-10 flex flex-col gap-6 border-b border-neutral-100 pb-10 sm:flex-row sm:items-end sm:justify-between" data-test-id="downloads-header">
     <div>
-      <p class="mb-3 text-xs font-bold uppercase tracking-[0.2em] text-honey-600">Kazibee CLI</p>
+      <p class="mb-3 text-xs font-bold uppercase tracking-[0.2em] text-honey-600">{kindLabel}</p>
       <h1 class="text-4xl font-black tracking-tight text-ink sm:text-5xl lg:text-6xl" data-test-id="downloads-title">
         {pageData.selectedVersion === 'latest' ? 'Downloads' : pageData.selectedVersion}
       </h1>
       <p class="mt-5 max-w-2xl text-lg leading-relaxed text-ink-muted" data-test-id="downloads-subtitle">
-        {pageData.selectedVersion === 'latest'
-          ? 'Download the latest Kazibee command line binary for your operating system. Each link is generated on demand and expires shortly after it is opened.'
-          : 'Download this Kazibee command line release for your operating system. Each link is generated on demand and expires shortly after it is opened.'}
+        {kindSubtitle}
+      </p>
+      <p class="mt-3 text-sm text-ink-faint">
+        <a href="/downloads" class="font-semibold text-ink-muted underline-offset-2 hover:text-ink hover:underline">← All downloads</a>
       </p>
     </div>
 
@@ -135,7 +147,7 @@
   {#if pageData.versions.length === 0 && !pageData.error}
     <div class="rounded-2xl border border-neutral-200 bg-white p-8 text-center" data-test-id="downloads-empty">
       <p class="text-lg font-semibold text-ink">No downloads are available yet.</p>
-      <p class="mt-2 text-sm text-ink-muted">Published CLI builds will appear here after they are uploaded.</p>
+      <p class="mt-2 text-sm text-ink-muted">Published builds will appear here after they are uploaded.</p>
     </div>
   {:else if !selectedGroup && !pageData.error}
     <div class="rounded-2xl border border-neutral-200 bg-white p-8 text-center" data-test-id="downloads-version-missing">
@@ -195,7 +207,7 @@
             <div class="mt-5 grid gap-3 sm:grid-cols-2">
               {#each otherVersions as versionGroup (versionGroup.version)}
                 <a
-                  href={versionGroup.version === 'latest' ? '/downloads/cli' : `/downloads/cli/${encodeURIComponent(versionGroup.version)}`}
+                  href={versionGroup.version === 'latest' ? basePath : `${basePath}/${encodeURIComponent(versionGroup.version)}`}
                   class="flex items-center justify-between rounded-2xl border border-neutral-200 bg-white px-5 py-4 text-sm font-semibold text-ink transition hover:border-honey-300 hover:bg-honey-50"
                   data-test-id="downloads-other-version-link"
                 >

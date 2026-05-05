@@ -2,14 +2,21 @@ module:
   downloads:
     basePath: '/downloads'
     paths:
-      '/binary':
+      '/binary/:kind':
         get:
           x-controller: download.controller
-          x-action: listCliVersions
-          summary: 'List available Kazibee CLI versions'
+          x-action: listVersions
+          summary: 'List available Kazibee versions for a download kind (cli|app)'
+          parameters:
+            - name: kind
+              in: path
+              required: true
+              schema:
+                type: string
+                enum: [cli, app]
           responses:
             '200':
-              description: 'CLI versions available for download'
+              description: 'Versions available for download'
               content:
                 application/json:
                   schema:
@@ -36,12 +43,20 @@ module:
                                   lastModified:
                                     type: string
                                     nullable: true
-      '/binary/:version/:item':
+            '400':
+              description: 'Invalid download kind'
+      '/binary/:kind/:version/:item':
         get:
           x-controller: download.controller
-          x-action: downloadCliItem
-          summary: 'Redirect to a temporary Kazibee CLI download URL'
+          x-action: downloadItem
+          summary: 'Redirect to a temporary Kazibee download URL'
           parameters:
+            - name: kind
+              in: path
+              required: true
+              schema:
+                type: string
+                enum: [cli, app]
             - name: version
               in: path
               required: true
@@ -56,6 +71,6 @@ module:
             '302':
               description: 'Redirect to temporary S3 download URL'
             '400':
-              description: 'Invalid version or item'
+              description: 'Invalid kind, version, or item'
             '404':
               description: 'Download item not found'

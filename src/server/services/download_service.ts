@@ -6,23 +6,27 @@ import { NotFoundError, ValidationError } from "../errors/domain_errors";
 
 const logger = getLogger("kazibee:download-service");
 
-export interface CliVersionsResult {
-  versions: CliVersionDownloads[];
+export type DownloadKind = "cli" | "app";
+
+export const DOWNLOAD_KINDS: readonly DownloadKind[] = ["cli", "app"];
+
+export interface VersionsResult {
+  versions: VersionDownloads[];
 }
 
-export interface CliVersionDownloads {
+export interface VersionDownloads {
   version: string;
-  downloads: CliDownloadItem[];
+  downloads: DownloadItem[];
 }
 
-export interface CliDownloadItem {
+export interface DownloadItem {
   name: string;
   href: string;
   size: number;
   lastModified: string | null;
 }
 
-export interface CliDownloadResult {
+export interface DownloadResult {
   key: string;
   url: string;
 }
@@ -31,36 +35,41 @@ export interface CliDownloadResult {
 export default class DownloadService {
   private readonly bucket = process.env.KAZIBEE_DOWNLOAD_BUCKET ?? "kazibee";
   private readonly expiresIn = this.readExpiresIn();
-  private readonly prefix = this.normalizePrefix(process.env.KAZIBEE_CLI_PREFIX ?? "cli/");
   private readonly region = process.env.AWS_REGION ?? "ca-central-1";
   private readonly client = new S3Client({ region: this.region });
+  private readonly prefixes: Record<DownloadKind, string> = {
+    cli: this.normalizePrefix(process.env.KAZIBEE_CLI_PREFIX ?? "cli/"),
+    app: this.normalizePrefix(process.env.KAZIBEE_APP_PREFIX ?? "app/"),
+  };
 
-  async listCliVersions(): Promise<CliVersionsResult> {
+  async listVersions(kind: DownloadKind): Promise<VersionsResult> {
     this.assertConfigured();
+    const prefix = this.prefixes[kind];
 
-    logger.info("Listing CLI versions from S3", {
+    logger.info("Listing download versions from S3", {
       bucket: this.bucket,
-      prefix: this.prefix,
+      kind,
+      prefix,
       region: this.region,
     });
 
-    const downloadsByVersion = new Map<string, CliDownloadItem[]>();
+    const downloadsByVersion = new Map<string, DownloadItem[]>();
     let continuationToken: string | undefined;
 
     do {
       const result = await this.client.send(new ListObjectsV2Command({
         Bucket: this.bucket,
         ContinuationToken: continuationToken,
-        Prefix: this.prefix,
+        Prefix: prefix,
       }));
 
       for (const object of result.Contents ?? []) {
-        const parsed = this.downloadFromKey(object.Key);
+        const parsed = this.downloadFromKey(prefix, object.Key);
         if (parsed) {
           const downloads = downloadsByVersion.get(parsed.version) ?? [];
           downloads.push({
             name: parsed.item,
-            href: `/downloads/binary/${encodeURIComponent(parsed.version)}/${encodeURIComponent(parsed.item)}`,
+            href: `/downloads/binary/${kind}/${encodeURIComponent(parsed.version)}/${encodeURIComponent(parsed.item)}`,
             size: object.Size ?? 0,
             lastModified: object.LastModified?.toISOString() ?? null,
           });
@@ -80,9 +89,10 @@ export default class DownloadService {
         })),
     };
 
-    logger.info("Listed CLI versions from S3", {
+    logger.info("Listed download versions from S3", {
       bucket: this.bucket,
-      prefix: this.prefix,
+      kind,
+      prefix,
       count: response.versions.length,
       versions: response.versions.map(({ version, downloads }) => ({
         version,
@@ -93,18 +103,19 @@ export default class DownloadService {
     return response;
   }
 
-  async createCliDownload(version: string, item: string): Promise<CliDownloadResult> {
+  async createDownload(kind: DownloadKind, version: string, item: string): Promise<DownloadResult> {
     this.assertConfigured();
     this.validateVersion(version);
     this.validateItem(item);
 
-    const key = `${this.prefix}${version}/${item}`;
+    const key = `${this.prefixes[kind]}${version}/${item}`;
 
-    logger.info("Creating CLI download URL", {
+    logger.info("Creating download URL", {
       bucket: this.bucket,
       expiresIn: this.expiresIn,
       item,
       key,
+      kind,
       version,
     });
 
@@ -117,11 +128,12 @@ export default class DownloadService {
     });
     const url = await getSignedUrl(this.client, command, { expiresIn: this.expiresIn });
 
-    logger.info("Created CLI download URL", {
+    logger.info("Created download URL", {
       bucket: this.bucket,
       expiresIn: this.expiresIn,
       item,
       key,
+      kind,
       version,
     });
 
@@ -130,12 +142,11 @@ export default class DownloadService {
 
   private assertConfigured(): void {
     if (!this.bucket) {
-      logger.error("CLI download bucket is not configured", {
+      logger.error("Download bucket is not configured", {
         env: "KAZIBEE_DOWNLOAD_BUCKET",
-        prefix: this.prefix,
         region: this.region,
       });
-      throw new Error("CLI download bucket is not configured");
+      throw new Error("Download bucket is not configured");
     }
   }
 
@@ -147,13 +158,13 @@ export default class DownloadService {
       }));
     } catch (error) {
       if (this.isMissingObjectError(error)) {
-        logger.info("CLI download object not found", {
+        logger.info("Download object not found", {
           bucket: this.bucket,
           key,
         });
         throw new NotFoundError("Download item not found");
       }
-      logger.error("Failed to check CLI download object", {
+      logger.error("Failed to check download object", {
         bucket: this.bucket,
         error,
         key,
@@ -182,12 +193,12 @@ export default class DownloadService {
     return a.localeCompare(b);
   }
 
-  private downloadFromKey(key?: string): { version: string; item: string } | null {
-    if (!key?.startsWith(this.prefix) || key.endsWith("/")) {
+  private downloadFromKey(prefix: string, key?: string): { version: string; item: string } | null {
+    if (!key?.startsWith(prefix) || key.endsWith("/")) {
       return null;
     }
 
-    const path = key.slice(this.prefix.length);
+    const path = key.slice(prefix.length);
     const [version, item, ...extra] = path.split("/");
     if (!version || !item || extra.length > 0) {
       return null;
@@ -212,7 +223,7 @@ export default class DownloadService {
   private normalizePrefix(prefix: string): string {
     const trimmed = prefix.trim().replace(/^\/+/, "");
     if (!trimmed) {
-      return "cli/";
+      return "";
     }
     return trimmed.endsWith("/") ? trimmed : `${trimmed}/`;
   }
@@ -240,8 +251,11 @@ export default class DownloadService {
       return;
     }
     if (!/^v\d+\.\d+\.\d+(?:[-+][A-Za-z0-9.-]+)?$/.test(version)) {
-      throw new ValidationError("Invalid CLI version");
+      throw new ValidationError("Invalid version");
     }
   }
+}
 
+export function isDownloadKind(value: string | undefined): value is DownloadKind {
+  return value === "cli" || value === "app";
 }

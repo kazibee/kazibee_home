@@ -3,6 +3,7 @@ import { getLogger } from "@noego/logger";
 import type { Request, Response } from "express";
 import { NotFoundError, ValidationError } from "../errors/domain_errors";
 import DownloadLogic from "../logic/download.logic";
+import { isDownloadKind } from "../services/download_service";
 
 const logger = getLogger("kazibee:download-controller");
 
@@ -10,19 +11,26 @@ const logger = getLogger("kazibee:download-controller");
 export default class DownloadController {
   constructor(@Inject(DownloadLogic) private downloadLogic: DownloadLogic) {}
 
-  async downloadCliItem({ req, res }: { req: Request; res: Response }) {
+  async downloadItem({ req, res }: { req: Request; res: Response }) {
     try {
-      const { version, item } = req.params as { version?: string; item?: string };
-      const result = await this.downloadLogic.createCliDownload(version ?? "", item ?? "");
+      const { kind, version, item } = req.params as { kind?: string; version?: string; item?: string };
+      if (!isDownloadKind(kind)) {
+        throw new ValidationError("Invalid download kind");
+      }
+      const result = await this.downloadLogic.createDownload(kind, version ?? "", item ?? "");
       return res.redirect(302, result.url);
     } catch (error) {
       return this.handleError(error, res);
     }
   }
 
-  async listCliVersions({ res }: { res: Response }) {
+  async listVersions({ req, res }: { req: Request; res: Response }) {
     try {
-      const result = await this.downloadLogic.listCliVersions();
+      const { kind } = req.params as { kind?: string };
+      if (!isDownloadKind(kind)) {
+        throw new ValidationError("Invalid download kind");
+      }
+      const result = await this.downloadLogic.listVersions(kind);
       return res.json(result);
     } catch (error) {
       return this.handleError(error, res);

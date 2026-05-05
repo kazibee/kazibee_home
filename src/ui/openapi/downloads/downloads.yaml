@@ -1,9 +1,16 @@
 paths:
+  /downloads:
+    get:
+      summary: Downloads hub
+      description: Choose between Kazibee CLI and Kazibee App downloads
+      x-view: pages/downloads/index.svelte
+      x-layout:
+        - layout/public_layout.svelte
   /downloads/cli:
     get:
       summary: CLI Downloads
       description: Download Kazibee CLI binaries
-      x-view: pages/downloads/cli.svelte
+      x-view: pages/downloads/binary.svelte
       x-controller: controllers/downloads.svelte.ts
       x-layout:
         - layout/public_layout.svelte
@@ -11,7 +18,23 @@ paths:
     get:
       summary: CLI Version Downloads
       description: Download a specific Kazibee CLI version
-      x-view: pages/downloads/cli.svelte
+      x-view: pages/downloads/binary.svelte
+      x-controller: controllers/downloads.svelte.ts
+      x-layout:
+        - layout/public_layout.svelte
+  /downloads/app:
+    get:
+      summary: App Downloads
+      description: Download Kazibee desktop app builds
+      x-view: pages/downloads/binary.svelte
+      x-controller: controllers/downloads.svelte.ts
+      x-layout:
+        - layout/public_layout.svelte
+  /downloads/app/:version:
+    get:
+      summary: App Version Downloads
+      description: Download a specific Kazibee app version
+      x-view: pages/downloads/binary.svelte
       x-controller: controllers/downloads.svelte.ts
       x-layout:
         - layout/public_layout.svelte

@@ -1,10 +1,9 @@
 name: Deploy
 
 on:
-  workflow_dispatch:
   push:
     branches:
-      - main
+      - release
 
 env:
   IMAGE_NAME: kazibee-site

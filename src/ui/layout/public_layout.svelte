@@ -8,7 +8,7 @@
   } = $props();
 </script>
 
-<div class="min-h-screen bg-[#fcfcfc]">
+<div class="flex min-h-screen flex-col bg-[#fcfcfc]">
   <nav class="sticky top-0 z-50 border-b border-neutral-100 bg-white/90 backdrop-blur-md">
     <div class="mx-auto flex h-16 max-w-7xl items-center justify-between px-5 sm:px-8">
       <a href="/" class="flex items-center gap-2.5" data-test-id="nav-logo">
@@ -37,7 +37,7 @@
     </div>
   </nav>
 
-  <main>
+  <main class="flex-1">
     {@render children()}
   </main>
 

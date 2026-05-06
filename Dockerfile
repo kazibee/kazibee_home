@@ -7,7 +7,8 @@ RUN apt-get update \
   && rm -rf /var/lib/apt/lists/*
 
 COPY package*.json ./
-RUN npm ci --ignore-scripts
+COPY scripts/postinstall.js ./scripts/postinstall.js
+RUN KAZIBEE_SKIP_POSTINSTALL=1 npm ci
 
 COPY . ./
 RUN npm run build

@@ -9,26 +9,26 @@
     <div class="mx-auto max-w-3xl">
       <div class="mb-7 inline-flex items-center gap-2 rounded-full border border-blue-600/30 bg-blue-600/10 px-4 py-1.5">
         <span class="h-1.5 w-1.5 rounded-full bg-blue-400"></span>
-        <span class="text-xs font-semibold tracking-widest text-blue-300 uppercase">Visual AI workspace</span>
+        <span class="text-xs font-semibold tracking-widest text-blue-300 uppercase">Built for speed</span>
       </div>
 
       <h1 class="mt-2 text-5xl font-black leading-[1.1] tracking-tight text-white sm:text-6xl lg:text-7xl">
-        AI that can show,<br>
-        <span class="italic text-blue-400">not just tell.</span>
+        AI is slow.<br>
+        <span class="italic text-blue-400">You don't have to be.</span>
       </h1>
 
       <p class="mx-auto mt-6 max-w-2xl text-lg leading-relaxed text-navy-400 sm:text-xl">
-        Kazibee helps you understand work through the format that fits: diagrams, charts,
-        interface previews, files, and written explanations. Review ideas visually, then act
-        when you're ready.
+        Kazibee removes the waiting around models. Swap models without leaving the thread,
+        dial reasoning to the task, fan out to parallel threads, jump to any chat in a keystroke,
+        and get answers as charts and diagrams — not walls of text.
       </p>
 
       <div class="mt-10 flex flex-wrap items-center justify-center gap-4">
         <a href="/downloads" class="rounded-xl bg-blue-600 px-6 py-3.5 text-sm font-bold text-white transition hover:bg-blue-500">
           Download free →
         </a>
-        <a href="#examples" class="rounded-xl border border-navy-700 bg-navy-800 px-6 py-3.5 text-sm font-semibold text-navy-200 transition hover:border-navy-600">
-          See examples
+        <a href="#one-place" class="rounded-xl border border-navy-700 bg-navy-800 px-6 py-3.5 text-sm font-semibold text-navy-200 transition hover:border-navy-600">
+          See how it's faster
         </a>
       </div>
 
@@ -36,18 +36,253 @@
     </div>
   </div>
 
-  <!-- ─── VISUAL FEEDBACK ─── -->
+  <!-- ─── ONE PLACE ─── -->
+  <div id="one-place" class="bg-white px-5 py-20 sm:px-8">
+    <div class="mx-auto max-w-5xl">
+      <div class="mx-auto mb-12 max-w-3xl text-center">
+        <p class="mb-4 text-xs font-bold uppercase tracking-widest text-blue-600">Lever 1 · No context switching</p>
+        <h2 class="text-4xl font-black tracking-tight text-ink sm:text-5xl">
+          Stay in the thread.<br>
+          <span class="text-blue-600">Swap the model.</span>
+        </h2>
+        <p class="mx-auto mt-4 max-w-2xl text-lg leading-relaxed text-ink-muted">
+          Going from Claude to Codex shouldn't mean a new app, a new window, or pasting your context again.
+          Switch models with a keystroke and keep going in the same conversation.
+        </p>
+      </div>
+
+      <div class="overflow-hidden rounded-2xl border border-neutral-200 bg-neutral-50 p-6 shadow-sm">
+        <div class="mb-4 flex items-center justify-between">
+          <span class="text-xs font-bold uppercase tracking-wide text-ink-muted">Same thread</span>
+          <span class="rounded-md border border-neutral-200 bg-white px-2.5 py-1 font-mono text-[11px] text-ink-muted">⌘ \</span>
+        </div>
+        <div class="space-y-3">
+          <div class="rounded-xl bg-white p-4 ring-1 ring-neutral-200">
+            <div class="mb-1 flex items-center gap-2 text-[11px] font-bold uppercase tracking-wide text-blue-700">
+              <span class="h-2 w-2 rounded-full bg-blue-500"></span> Claude Opus
+            </div>
+            <p class="text-sm text-ink">Walk me through how this controller resolves the route.</p>
+          </div>
+          <div class="rounded-xl bg-white p-4 ring-1 ring-neutral-200">
+            <div class="mb-1 flex items-center gap-2 text-[11px] font-bold uppercase tracking-wide text-emerald-700">
+              <span class="h-2 w-2 rounded-full bg-emerald-500"></span> Codex
+            </div>
+            <p class="text-sm text-ink">Now apply the fix and run the tests.</p>
+          </div>
+          <div class="rounded-xl bg-white p-4 ring-1 ring-neutral-200">
+            <div class="mb-1 flex items-center gap-2 text-[11px] font-bold uppercase tracking-wide text-violet-700">
+              <span class="h-2 w-2 rounded-full bg-violet-500"></span> Gemini Flash
+            </div>
+            <p class="text-sm text-ink">Quick — rephrase the commit message.</p>
+          </div>
+        </div>
+        <p class="mt-4 text-xs text-ink-muted">Each model picks up the same conversation. No re-pasting, no re-explaining.</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- ─── RIGHT-SIZE THE REASONING ─── -->
+  <div class="bg-navy-900 px-5 py-20 sm:px-8">
+    <div class="mx-auto max-w-5xl">
+      <div class="mx-auto mb-12 max-w-3xl text-center">
+        <p class="mb-4 text-xs font-bold uppercase tracking-widest text-blue-300">Lever 2 · Right-size reasoning</p>
+        <h2 class="text-4xl font-black tracking-tight text-white sm:text-5xl">
+          Don't pay for thinking<br>
+          <span class="text-blue-400">you don't need.</span>
+        </h2>
+        <p class="mx-auto mt-4 max-w-2xl text-lg leading-relaxed text-navy-400">
+          High reasoning is slow. Reading code doesn't need it. Designing a fix might.
+          Dial it per turn so latency matches the task.
+        </p>
+      </div>
+
+      <div class="grid gap-4 sm:grid-cols-3">
+        <div class="rounded-2xl border border-navy-700 bg-navy-800 p-6">
+          <div class="mb-3 flex items-center justify-between">
+            <span class="rounded-full bg-emerald-500/10 px-3 py-1 text-xs font-bold text-emerald-400">Low</span>
+            <span class="font-mono text-[11px] text-white">⌥ 1</span>
+          </div>
+          <p class="text-sm font-bold text-white">Just read.</p>
+          <p class="mt-2 text-sm leading-relaxed italic text-white">"What does this file do?" The model doesn't need to think — it needs to look.</p>
+        </div>
+        <div class="rounded-2xl border border-navy-700 bg-navy-800 p-6">
+          <div class="mb-3 flex items-center justify-between">
+            <span class="rounded-full bg-blue-500/10 px-3 py-1 text-xs font-bold text-blue-400">Medium</span>
+            <span class="font-mono text-[11px] text-white">⌥ 2</span>
+          </div>
+          <p class="text-sm font-bold text-white">Plan a change.</p>
+          <p class="mt-2 text-sm leading-relaxed italic text-white">"Where should this live and what breaks?" Some thinking, not a deep dive.</p>
+        </div>
+        <div class="rounded-2xl border border-navy-700 bg-navy-800 p-6">
+          <div class="mb-3 flex items-center justify-between">
+            <span class="rounded-full bg-violet-500/10 px-3 py-1 text-xs font-bold text-violet-400">High</span>
+            <span class="font-mono text-[11px] text-white">⌥ 3</span>
+          </div>
+          <p class="text-sm font-bold text-white">Solve the hard one.</p>
+          <p class="mt-2 text-sm leading-relaxed italic text-white">"Why is this race condition happening?" Worth the latency. Pay it on purpose.</p>
+        </div>
+      </div>
+      <p class="mt-6 text-center text-sm italic text-white">One keystroke between turns. The default isn't always thinking.</p>
+    </div>
+  </div>
+
+  <!-- ─── PARALLEL THREADS ─── -->
+  <div class="bg-white px-5 py-20 sm:px-8">
+    <div class="mx-auto max-w-6xl">
+      <div class="mx-auto mb-12 max-w-3xl text-center">
+        <p class="mb-4 text-xs font-bold uppercase tracking-widest text-blue-600">Lever 3 · Parallelism</p>
+        <h2 class="text-4xl font-black tracking-tight text-ink sm:text-5xl">
+          Fan out instead<br>
+          <span class="text-blue-600">of waiting on one model.</span>
+        </h2>
+        <p class="mx-auto mt-4 max-w-2xl text-lg leading-relaxed text-ink-muted">
+          Models are slow. So run several at once. New threads, forks, and worktrees are a keystroke away —
+          and folders + quick rename keep them organized when you have ten in flight.
+        </p>
+      </div>
+
+      <div class="grid gap-5 lg:grid-cols-[1.1fr_1fr]">
+        <!-- Mock sidebar showing organized threads -->
+        <div class="overflow-hidden rounded-2xl border border-neutral-200 bg-neutral-950 p-4">
+          <div class="mb-3 flex items-center justify-between px-1">
+            <span class="text-xs font-bold text-neutral-200">Threads</span>
+            <span class="font-mono text-[11px] text-neutral-500">⌘ N · new</span>
+          </div>
+          <div class="space-y-3 text-sm">
+            <div>
+              <div class="mb-1 flex items-center gap-2 px-2 text-[11px] font-bold uppercase tracking-wide text-neutral-500">
+                <span>📁</span><span>Auth refactor</span>
+              </div>
+              <div class="space-y-0.5">
+                <div class="flex items-center justify-between rounded-lg bg-neutral-800 px-2.5 py-1.5">
+                  <span class="text-neutral-100">session token migration</span>
+                  <span class="font-mono text-[10px] text-blue-400">worktree</span>
+                </div>
+                <div class="flex items-center justify-between rounded-lg px-2.5 py-1.5 text-neutral-400">
+                  <span>oauth callback bug</span>
+                  <span class="font-mono text-[10px] text-neutral-500">⌘ R · rename</span>
+                </div>
+                <div class="flex items-center justify-between rounded-lg px-2.5 py-1.5 text-neutral-400">
+                  <span>oauth callback bug — fork A</span>
+                  <span class="font-mono text-[10px] text-violet-400">fork</span>
+                </div>
+              </div>
+            </div>
+            <div>
+              <div class="mb-1 flex items-center gap-2 px-2 text-[11px] font-bold uppercase tracking-wide text-neutral-500">
+                <span>📁</span><span>Landing redesign</span>
+              </div>
+              <div class="space-y-0.5">
+                <div class="flex items-center justify-between rounded-lg px-2.5 py-1.5 text-neutral-400">
+                  <span>hero copy variants</span>
+                </div>
+                <div class="flex items-center justify-between rounded-lg px-2.5 py-1.5 text-neutral-400">
+                  <span>CTA test</span>
+                </div>
+              </div>
+            </div>
+          </div>
+          <p class="mt-4 px-2 text-[11px] text-neutral-500">CLI tabs break down past 4 windows. Folders + rename scale to 40.</p>
+        </div>
+
+        <!-- Three primitives -->
+        <div class="grid gap-4">
+          <div class="rounded-2xl border border-neutral-200 bg-white p-5">
+            <div class="mb-2 flex items-center justify-between">
+              <span class="text-sm font-bold text-ink">New thread</span>
+              <span class="font-mono text-[11px] text-ink-muted">⌘ N</span>
+            </div>
+            <p class="text-sm leading-relaxed text-ink-muted">Start a fresh task without losing the one you're on.</p>
+          </div>
+          <div class="rounded-2xl border border-neutral-200 bg-white p-5">
+            <div class="mb-2 flex items-center justify-between">
+              <span class="text-sm font-bold text-ink">Fork thread</span>
+              <span class="font-mono text-[11px] text-ink-muted">⌘ ⇧ F</span>
+            </div>
+            <p class="text-sm leading-relaxed text-ink-muted">Branch from any message to try a second direction without rewinding.</p>
+          </div>
+          <div class="rounded-2xl border border-neutral-200 bg-white p-5">
+            <div class="mb-2 flex items-center justify-between">
+              <span class="text-sm font-bold text-ink">Worktree</span>
+              <span class="font-mono text-[11px] text-ink-muted">⌘ ⇧ W</span>
+            </div>
+            <p class="text-sm leading-relaxed text-ink-muted">Isolate work on its own branch and filesystem so two threads don't collide.</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ─── FEEDING CONTEXT ─── -->
+  <div class="bg-navy-900 px-5 py-20 sm:px-8">
+    <div class="mx-auto max-w-5xl">
+      <div class="mx-auto mb-12 max-w-3xl text-center">
+        <p class="mb-4 text-xs font-bold uppercase tracking-widest text-blue-300">Lever 4 · Context</p>
+        <h2 class="text-4xl font-black tracking-tight text-white sm:text-5xl">
+          Hand the model<br>
+          <span class="text-blue-400">exactly what it needs.</span>
+        </h2>
+        <p class="mx-auto mt-4 max-w-2xl text-lg leading-relaxed text-navy-400">
+          Better context = better answers, fewer turns. A fast local index lets you attach the right files
+          to the chat in a keystroke — so the model is grounded in your code instead of guessing.
+        </p>
+      </div>
+
+      <div class="mx-auto max-w-2xl overflow-hidden rounded-2xl border border-navy-700 bg-navy-800 shadow-2xl">
+        <div class="flex items-center justify-between border-b border-navy-700 px-5 py-3">
+          <span class="text-xs font-bold uppercase tracking-wide text-navy-400">Attach files as context</span>
+          <span class="font-mono text-[11px] text-white">⌘ /</span>
+        </div>
+        <div class="px-5 py-4">
+          <div class="flex items-center gap-3 rounded-lg bg-navy-900 px-4 py-3 ring-1 ring-navy-700">
+            <span class="text-navy-400">@</span>
+            <span class="font-mono text-sm text-white">setres<span class="bg-blue-500/30 text-blue-300">|</span></span>
+          </div>
+          <div class="mt-3 space-y-1">
+            <div class="flex items-center justify-between rounded-lg bg-blue-600/10 px-3 py-2 ring-1 ring-blue-500/40">
+              <div class="flex items-center gap-2">
+                <span class="text-blue-400">+</span>
+                <span class="font-mono text-sm text-white">server/services/<span class="font-bold">setres</span>olver/index.ts</span>
+              </div>
+              <span class="font-mono text-[10px] text-navy-300">attach</span>
+            </div>
+            <div class="flex items-center justify-between rounded-lg px-3 py-2 text-white">
+              <span class="font-mono text-sm">server/services/<span class="font-bold text-white">setres</span>olver/cache.ts</span>
+            </div>
+            <div class="flex items-center justify-between rounded-lg px-3 py-2 text-white">
+              <span class="font-mono text-sm">test/<span class="font-bold text-white">setres</span>olver.spec.ts</span>
+            </div>
+            <div class="flex items-center justify-between rounded-lg px-3 py-2 text-white">
+              <span class="font-mono text-sm">ui/lib/<span class="font-bold text-white">set-res</span>ize-handler.ts</span>
+            </div>
+          </div>
+          <div class="mt-4 flex flex-wrap items-center gap-2 border-t border-navy-700 pt-4">
+            <span class="text-[11px] font-bold uppercase tracking-wide text-white">Now in context:</span>
+            <span class="rounded-md bg-blue-600/15 px-2 py-1 font-mono text-[11px] text-blue-200 ring-1 ring-blue-500/30">resolver/index.ts</span>
+            <span class="rounded-md bg-blue-600/15 px-2 py-1 font-mono text-[11px] text-blue-200 ring-1 ring-blue-500/30">resolver/cache.ts</span>
+            <span class="rounded-md bg-blue-600/15 px-2 py-1 font-mono text-[11px] text-blue-200 ring-1 ring-blue-500/30">resolver.spec.ts</span>
+          </div>
+        </div>
+        <div class="border-t border-navy-700 bg-navy-900/50 px-5 py-2.5 text-[11px] text-navy-300">
+          Indexed locally · ranked by recency, proximity, and edit history
+        </div>
+      </div>
+      <p class="mt-6 text-center text-sm italic text-white">Less guessing means fewer turns. Fewer turns means done sooner.</p>
+    </div>
+  </div>
+
+  <!-- ─── VISUAL ANSWERS ─── -->
   <div id="examples" class="bg-white px-5 py-20 sm:px-8">
     <div class="mx-auto max-w-6xl">
       <div class="mx-auto mb-12 max-w-3xl text-center">
-        <p class="mb-4 text-xs font-bold uppercase tracking-widest text-blue-600">Before AI edits</p>
+        <p class="mb-4 text-xs font-bold uppercase tracking-widest text-blue-600">Lever 5 · See instead of read</p>
         <h2 class="text-4xl font-black tracking-tight text-ink sm:text-5xl">
-          Get visual feedback<br>
-          <span class="text-blue-600">without touching your workspace.</span>
+          Some answers are faster<br>
+          <span class="text-blue-600">as a picture.</span>
         </h2>
         <p class="mx-auto mt-4 max-w-2xl text-lg leading-relaxed text-ink-muted">
-          Type what you want to explore, review the idea visually, then ask Kazibee to
-          implement it when you're ready.
+          A diagram, chart, mock, or table can land in a glance — where a paragraph takes a minute.
+          Kazibee renders them inline, on the fly, in the same conversation.
         </p>
       </div>
 
@@ -116,9 +351,9 @@
           </button>
 
           <div class="mt-auto rounded-xl border border-neutral-200 bg-neutral-50 p-5">
-            <p class="text-sm font-bold text-ink">The point is review.</p>
+            <p class="text-sm font-bold text-ink">Faster to grok.</p>
             <p class="mt-2 text-sm leading-relaxed text-ink-muted">
-              The artifact gives you something concrete to critique before AI touches real files.
+              Glance, decide, move on — instead of parsing prose.
             </p>
           </div>
         </div>
@@ -284,253 +519,16 @@
     </div>
   </div>
 
-  <!-- ─── PLAN · PREVIEW · COMMIT ─── -->
-  <div class="bg-navy-900 px-5 py-20 sm:px-8">
-    <div class="mx-auto max-w-5xl">
-      <div class="mb-14 text-center">
-        <div class="mb-5 inline-flex items-center gap-2 rounded-full border border-blue-600/30 bg-blue-600/10 px-4 py-1.5">
-          <span class="text-xs font-semibold tracking-widest text-blue-300 uppercase">How Kazibee works</span>
-        </div>
-        <h2 class="text-4xl font-black tracking-tight text-white sm:text-5xl">
-          Plan. Preview. <span class="text-blue-400">Then commit.</span>
-        </h2>
-        <p class="mx-auto mt-4 max-w-xl text-lg text-navy-400">
-          Kazibee keeps your project context persistent and lets AI show you results before it touches anything.
-          Discuss first, change only when you're ready.
-        </p>
-      </div>
-
-      <div class="mb-6 grid gap-5 sm:grid-cols-2">
-        <!-- Feature: persistent context -->
-        <div class="rounded-2xl border border-navy-700 bg-navy-800 p-7 transition hover:border-blue-600/50 hover:blue-glow">
-          <div class="mb-4 flex items-center gap-3">
-            <div class="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-blue-600/30 bg-navy-900 text-xl">🗂️</div>
-            <div>
-              <h3 class="text-base font-bold text-white">Persistent project context</h3>
-              <span class="text-xs font-bold uppercase tracking-wide text-blue-400">No more copy-pasting</span>
-            </div>
-          </div>
-          <p class="text-sm leading-relaxed text-navy-400">
-            Your project files, threads, and history live in Kazibee. Every model you use already knows
-            your codebase. Start any conversation in context — no setup, no pasting, no re-explaining from scratch.
-          </p>
-        </div>
-
-        <!-- Feature: preview without touching code -->
-        <div class="rounded-2xl border border-navy-700 bg-navy-800 p-7 transition hover:border-blue-600/50 hover:blue-glow">
-          <div class="mb-4 flex items-center gap-3">
-            <div class="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-blue-600/30 bg-navy-900 text-xl">👁️</div>
-            <div>
-              <h3 class="text-base font-bold text-white">Preview without touching code</h3>
-              <span class="text-xs font-bold uppercase tracking-wide text-blue-400">Your codebase stays clean</span>
-            </div>
-          </div>
-          <p class="text-sm leading-relaxed text-navy-400">
-            Ask AI to show you a new design, layout, or feature. Kazibee renders a live preview in the chat —
-            you see exactly what it would look like. Discuss and refine before a single line of code changes.
-          </p>
-        </div>
-      </div>
-
-      <!-- Preview demo mockup — styled like the real Kazibee app -->
-      <div class="overflow-hidden rounded-2xl border border-[#1c2434]" style="background: #0d1117;">
-        <!-- macOS title bar -->
-        <div class="flex items-center border-b border-[#1c2434] px-4 py-2.5" style="background: #0b0f19;">
-          <div class="flex items-center gap-1.5">
-            <span class="h-3 w-3 rounded-full bg-[#ff5f57]"></span>
-            <span class="h-3 w-3 rounded-full bg-[#febc2e]"></span>
-            <span class="h-3 w-3 rounded-full bg-[#28c840]"></span>
-          </div>
-          <span class="mx-auto text-xs text-[#4b5563]">landing page redesign</span>
-          <span class="rounded bg-[#1c2434] px-2 py-0.5 text-[10px] font-bold text-blue-400">0 files changed</span>
-        </div>
-        <div class="flex" style="min-height: 280px;">
-          <!-- Sidebar -->
-          <div class="hidden w-56 shrink-0 border-r border-[#1c2434] p-3 sm:block" style="background: #0b0f19;">
-            <div class="rounded-xl p-2.5" style="background: #131a2c; border: 1px solid #1c2434;">
-              <div class="mb-2 flex items-center justify-between px-1.5">
-                <div class="flex items-center gap-1.5">
-                  <span class="text-[#9ca3af]">📁</span>
-                  <span class="text-xs font-bold text-[#e5e7eb]">websites/kazibee</span>
-                </div>
-                <span class="text-[#6b7280]">+</span>
-              </div>
-              <div class="space-y-0.5">
-                <div class="flex items-center justify-between rounded-lg px-2 py-1.5" style="background: #1a2338;">
-                  <span class="text-xs font-medium text-[#e5e7eb]">landing redesign</span>
-                  <span class="text-[10px] text-[#6b7280]">3m</span>
-                </div>
-                <div class="flex items-center justify-between px-2 py-1.5">
-                  <span class="text-xs text-[#9ca3af]">hero copy</span>
-                  <span class="text-[10px] text-[#4b5563]">1h</span>
-                </div>
-                <div class="flex items-center justify-between px-2 py-1.5">
-                  <span class="text-xs text-[#9ca3af]">CTA test</span>
-                  <span class="text-[10px] text-[#4b5563]">2h</span>
-                </div>
-              </div>
-            </div>
-          </div>
-          <!-- Chat -->
-          <div class="flex flex-1 flex-col gap-4 p-5">
-            <div class="flex justify-end">
-              <div class="max-w-sm rounded-2xl rounded-tr-sm px-4 py-3 text-sm text-[#e5e7eb]" style="background: #1c2434;">
-                Show me what the hero looks like with a blue gradient — don't change anything yet
-              </div>
-            </div>
-            <div class="space-y-3">
-              <p class="max-w-lg text-sm leading-relaxed text-[#9ca3af]">
-                Here's the gradient hero — layout identical, just swapped the background.
-                Let me know if you want to push it further before I touch any files.
-              </p>
-              <div class="max-w-xs overflow-hidden rounded-xl border border-blue-600/30 bg-gradient-to-br from-[#1e3a5f] to-blue-600 p-5">
-                <p class="text-lg font-black leading-tight text-white">Every model. <span class="italic text-blue-200">One workspace.</span></p>
-                <p class="mt-2 text-xs leading-relaxed text-blue-200">Claude, Codex, Gemini and every model you use — in one place.</p>
-                <div class="mt-3">
-                  <span class="rounded-lg bg-white px-3 py-1.5 text-xs font-bold text-blue-600">Download free →</span>
-                </div>
-              </div>
-              <p class="text-[10px] font-bold uppercase tracking-wide text-[#4b5563]">Preview only · 0 files changed</p>
-            </div>
-            <div class="mt-auto flex justify-end">
-              <div class="rounded-2xl rounded-tr-sm px-4 py-2.5 text-sm font-semibold text-[#e5e7eb]" style="background: #1c2434;">
-                Love it. Now apply it.
-              </div>
-            </div>
-          </div>
-        </div>
-        <!-- Composer input -->
-        <div class="border-t border-[#1c2434] p-3" style="background: #0b0f19;">
-          <div class="rounded-2xl p-3" style="background: #0f1626; border: 1px solid #1c2434;">
-            <div class="flex items-start justify-between">
-              <div>
-                <p class="text-sm text-[#6b7280]">Send a message to start the conversation</p>
-                <p class="mt-1 text-[10px] text-[#4b5563]">Shift + Enter for newline</p>
-              </div>
-              <button class="rounded-lg px-4 py-1.5 text-xs font-semibold text-[#9ca3af]" style="background: #1c2434;">Send</button>
-            </div>
-            <div class="mt-3 flex items-center gap-3 border-t border-[#1c2434] pt-3">
-              <span class="text-xs font-bold text-[#60a5fa]">✦ Claude Opus 4.7 ⌄</span>
-              <span class="text-[#1c2434]">|</span>
-              <span class="text-xs text-[#9ca3af]">≋ Low ⌄</span>
-              <span class="text-[#1c2434]">|</span>
-              <span class="flex items-center gap-1.5 text-xs text-[#9ca3af]">🛡 Supervisor <span class="inline-block h-3 w-6 rounded-full" style="background:#1c2434;"></span></span>
-              <span class="ml-auto flex items-center gap-2">
-                <span class="flex h-5 w-5 items-center justify-center rounded-full text-[8px] font-bold text-white" style="background: linear-gradient(135deg,#f59e0b,#ea580c);">94<span class="text-[6px]">%</span></span>
-                <span class="text-[#1c2434]">|</span>
-                <span class="text-xs text-[#9ca3af]">🔒 Standard</span>
-                <span class="text-[#3b82f6]">✓</span>
-              </span>
-            </div>
-            <div class="mt-2 flex items-center justify-between border-t border-[#1c2434] pt-2">
-              <span class="font-mono text-[10px] text-[#6b7280]">📁 ~/dev/noego_manager/websites/kazibee</span>
-              <span class="flex items-center gap-2 text-[10px] text-[#6b7280]"><span>🌐</span><span>↳ main ⌄</span></span>
-            </div>
-          </div>
-        </div>
-      </div>
-      <p class="mt-4 text-center text-sm text-navy-600">Discuss the idea. See the result. Apply only when you're sure.</p>
-    </div>
-  </div>
-
-  <!-- ─── RIGHT MODEL · RIGHT JOB ─── -->
-  <div class="bg-white px-5 py-20 sm:px-8">
-    <div class="mx-auto max-w-5xl">
-      <div class="mb-12 text-center">
-        <p class="mb-4 text-xs font-bold uppercase tracking-widest text-blue-600">Multi-model</p>
-        <h2 class="text-4xl font-black tracking-tight text-ink sm:text-5xl">
-          No single model<br>
-          <span class="text-blue-600">is best at everything.</span>
-        </h2>
-        <p class="mx-auto mt-4 max-w-lg text-lg text-ink-muted">
-          The best model for a long brainstorm is not the best model for debugging.
-          Switch to the right one without losing your place — your context comes with you.
-        </p>
-      </div>
-
-      <div class="overflow-hidden rounded-2xl border border-navy-200">
-        <div class="grid grid-cols-[1.6fr_1fr_1.8fr] border-b border-navy-100 bg-navy-50 px-5 py-3">
-          <span class="text-xs font-bold uppercase tracking-wider text-ink-muted">You're doing</span>
-          <span class="text-xs font-bold uppercase tracking-wider text-ink-muted">Reach for</span>
-          <span class="text-xs font-bold uppercase tracking-wider text-ink-muted">Why</span>
-        </div>
-        {#each [
-          { task: 'Debugging a hard bug', sub: 'Something just isn\'t working', model: 'Claude Opus', color: 'bg-blue-50 text-blue-600', why: 'Thinks step by step. Holds the full context of the problem.' },
-          { task: 'Implementing a feature', sub: 'Write, run, and ship the code', model: 'Codex', color: 'bg-green-50 text-green-700', why: 'Agentic. Executes, iterates, and fixes without hand-holding.' },
-          { task: 'Long brainstorm or planning', sub: 'Thinking through a big decision', model: 'Gemini 2.5 Pro', color: 'bg-purple-50 text-purple-700', why: 'Massive context window. Stays coherent across very long threads.' },
-          { task: 'Quick back-and-forth', sub: 'Drafts, ideas, thinking out loud', model: 'Gemini Flash', color: 'bg-amber-50 text-amber-700', why: 'Sub-second responses. Feels like a conversation, not a query.' },
-          { task: 'Sensitive or private work', sub: 'Nothing leaves your machine', model: 'Qwen · Llama', color: 'bg-navy-50 text-ink-muted border border-navy-200', why: 'Local inference. Air-gapped. Free to run.' },
-        ] as row, i (row.task)}
-          <div class="grid grid-cols-[1.6fr_1fr_1.8fr] items-center px-5 py-4 {i < 4 ? 'border-b border-navy-100' : ''}">
-            <div>
-              <p class="text-sm font-semibold text-ink">{row.task}</p>
-              <p class="text-xs text-ink-muted">{row.sub}</p>
-            </div>
-            <span class="inline-block w-fit rounded-full px-3 py-1 text-xs font-bold {row.color}">{row.model}</span>
-            <p class="text-sm text-ink-muted">{row.why}</p>
-          </div>
-        {/each}
-      </div>
-      <p class="mt-4 text-center text-sm text-ink-muted">Switch in the same thread. Your context comes with you.</p>
-    </div>
-  </div>
-
-  <!-- ─── COMPARISON ─── -->
-  <div class="bg-navy-50 px-5 py-20 sm:px-8">
-    <div class="mx-auto max-w-3xl">
-      <div class="mb-10 text-center">
-        <h2 class="text-4xl font-black tracking-tight text-ink">The old way vs Kazibee.</h2>
-        <p class="mt-3 text-lg text-ink-muted">Stop managing AI. Start working with it.</p>
-      </div>
-      <div class="grid gap-5 sm:grid-cols-2">
-        <div class="rounded-2xl border border-red-200 bg-white p-7">
-          <h3 class="mb-5 text-sm font-bold text-red-700">The fragmented AI workflow</h3>
-          <ul class="space-y-3">
-            {#each [
-              'Paste files into every new chat',
-              'Re-explain your project each session',
-              'AI edits code before you approve it',
-              '8 tabs, 8 logins, context lost on every switch',
-              'Stay with the wrong model because switching hurts',
-            ] as item (item)}
-              <li class="flex items-start gap-2.5 text-sm text-ink-muted">
-                <span class="mt-0.5 shrink-0 font-bold text-red-400">✗</span>
-                {item}
-              </li>
-            {/each}
-          </ul>
-        </div>
-        <div class="rounded-2xl border border-blue-200 bg-blue-50 p-7">
-          <h3 class="mb-5 text-sm font-bold text-blue-700">Kazibee</h3>
-          <ul class="space-y-3">
-            {#each [
-              'Project context is always there',
-              'Pick up any thread where you left off',
-              'Preview ideas before touching your codebase',
-              'Every model in one window, context carries over',
-              'Use the right model for the moment, frictionlessly',
-            ] as item (item)}
-              <li class="flex items-start gap-2.5 text-sm text-ink-muted">
-                <span class="mt-0.5 shrink-0 font-bold text-blue-500">✓</span>
-                {item}
-              </li>
-            {/each}
-          </ul>
-        </div>
-      </div>
-    </div>
-  </div>
-
   <!-- ─── FINAL CTA ─── -->
   <div class="bg-navy-900 px-5 py-24 text-center sm:px-8">
     <div class="mx-auto max-w-2xl">
       <h2 class="text-5xl font-black tracking-tight text-white sm:text-6xl">
-        Every model.<br>
-        <span class="italic text-blue-400">One workspace.</span>
+        Stop waiting<br>
+        <span class="italic text-blue-400">on the model.</span>
       </h2>
       <p class="mx-auto mt-6 max-w-lg text-lg leading-relaxed text-navy-400">
-        Persistent context. Live previews. Every model you use — all in one place,
-        with your own keys, for free.
+        Keyboard-driven. Right-sized reasoning. Parallel threads. Instant thread jumps. Visual answers.
+        Free desktop app, your own keys.
       </p>
       <div class="mt-10 flex flex-wrap items-center justify-center gap-4">
         <a href="/downloads" class="rounded-xl bg-blue-600 px-8 py-4 text-sm font-bold text-white transition hover:bg-blue-500">

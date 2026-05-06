@@ -98,31 +98,28 @@
 
       <div class="grid gap-4 sm:grid-cols-3">
         <div class="rounded-2xl border border-navy-700 bg-navy-800 p-6">
-          <div class="mb-3 flex items-center justify-between">
+          <div class="mb-3 flex items-center">
             <span class="rounded-full bg-emerald-500/10 px-3 py-1 text-xs font-bold text-emerald-400">Low</span>
-            <span class="font-mono text-[11px] text-white">⌥ 1</span>
           </div>
           <p class="text-sm font-bold text-white">Just read.</p>
           <p class="mt-2 text-sm leading-relaxed italic text-white">"What does this file do?" The model doesn't need to think — it needs to look.</p>
         </div>
         <div class="rounded-2xl border border-navy-700 bg-navy-800 p-6">
-          <div class="mb-3 flex items-center justify-between">
+          <div class="mb-3 flex items-center">
             <span class="rounded-full bg-blue-500/10 px-3 py-1 text-xs font-bold text-blue-400">Medium</span>
-            <span class="font-mono text-[11px] text-white">⌥ 2</span>
           </div>
           <p class="text-sm font-bold text-white">Plan a change.</p>
           <p class="mt-2 text-sm leading-relaxed italic text-white">"Where should this live and what breaks?" Some thinking, not a deep dive.</p>
         </div>
         <div class="rounded-2xl border border-navy-700 bg-navy-800 p-6">
-          <div class="mb-3 flex items-center justify-between">
+          <div class="mb-3 flex items-center">
             <span class="rounded-full bg-violet-500/10 px-3 py-1 text-xs font-bold text-violet-400">High</span>
-            <span class="font-mono text-[11px] text-white">⌥ 3</span>
           </div>
           <p class="text-sm font-bold text-white">Solve the hard one.</p>
           <p class="mt-2 text-sm leading-relaxed italic text-white">"Why is this race condition happening?" Worth the latency. Pay it on purpose.</p>
         </div>
       </div>
-      <p class="mt-6 text-center text-sm italic text-white">One keystroke between turns. The default isn't always thinking.</p>
+      <p class="mt-6 text-center text-sm italic text-white">The default isn't always thinking.</p>
     </div>
   </div>
 

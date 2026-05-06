@@ -1,390 +1,414 @@
 <section>
 
-  <!-- ─── HERO ─── -->
-  <div class="bg-navy-900 px-5 pt-24 pb-20 text-center sm:px-8" data-test-id="dev-hero">
-    <div class="mx-auto max-w-3xl">
-      <div class="mb-7 inline-flex items-center gap-2 rounded-full border border-blue-600/30 bg-blue-600/10 px-4 py-1.5">
-        <span class="h-1.5 w-1.5 rounded-full bg-blue-400"></span>
-        <span class="text-xs font-semibold tracking-widest text-blue-300 uppercase">For Developers</span>
+  <!-- HERO -->
+  <div class="bg-navy-950 px-5 pt-24 pb-20 sm:px-8" data-test-id="dev-hero">
+    <div class="mx-auto grid max-w-6xl gap-12 lg:grid-cols-[1fr_0.9fr] lg:items-center">
+      <div>
+        <div class="mb-7 inline-flex items-center gap-2 rounded-full border border-blue-600/30 bg-blue-600/10 px-4 py-1.5">
+          <span class="h-1.5 w-1.5 rounded-full bg-blue-400"></span>
+          <span class="text-xs font-semibold tracking-widest text-blue-300 uppercase">For Developers</span>
+        </div>
+        <h1 class="text-5xl font-black leading-[1.05] tracking-tight text-white sm:text-6xl lg:text-[4rem]">
+          Trust developers to make AI useful.
+        </h1>
+        <p class="mt-6 max-w-2xl text-lg leading-relaxed text-navy-300 sm:text-xl">
+          Kazibee lets developers add deterministic TypeScript tool calls to the models teams already use. AI adapts to intent, timing, and context. Your code defines exactly what happens.
+        </p>
+        <div class="mt-8 flex flex-wrap gap-3">
+          <a href="/docs/quick-start" class="rounded-xl bg-blue-600 px-6 py-3 text-sm font-bold text-white transition hover:bg-blue-500">
+            Build a plugin
+          </a>
+          <a href="/technical-details" class="rounded-xl border border-navy-700 px-6 py-3 text-sm font-semibold text-navy-300 transition hover:border-navy-600 hover:text-white">
+            See the boundary
+          </a>
+        </div>
       </div>
-      <h1 class="mt-2 text-5xl font-black leading-[1.1] tracking-tight text-white sm:text-6xl lg:text-[3.75rem]">
-        You had 16 tabs open.<br>
-        <span class="italic text-blue-400">You had no idea what was in any of them.</span>
-      </h1>
-      <p class="mx-auto mt-6 max-w-2xl text-lg leading-relaxed text-navy-400 sm:text-xl">
-        Every terminal tab was a separate AI session. Scrolling up to find context.
-        Forgetting which tab had the auth bug and which had the schema work.
-        Copy-pasting the same project setup into every new conversation.
-      </p>
-      <p class="mx-auto mt-4 max-w-2xl text-lg font-semibold leading-relaxed text-navy-200 sm:text-xl">
-        Kazibee is what Vim did for text editing — one fast, keyboard-first workspace that keeps everything in context.
-      </p>
+
+      <div class="overflow-hidden rounded-xl border border-[#1c2434]" style="background: #0d1117;" data-test-id="dev-hero-code">
+        <div class="flex items-center justify-between border-b border-[#1c2434] px-4 py-2.5" style="background: #0b0f19;">
+          <span class="font-mono text-xs text-[#6b7280]">aws-logs/src/index.ts</span>
+          <span class="rounded bg-[#10243d] px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-[#60a5fa]">Typed tool</span>
+        </div>
+        <div class="space-y-1 p-5 font-mono text-xs leading-relaxed">
+          <p><span class="text-purple-400">export default function</span> <span class="text-blue-300">main</span><span class="text-neutral-400">() &#123;</span></p>
+          <p class="pl-4"><span class="text-purple-400">return</span> <span class="text-neutral-400">&#123;</span></p>
+          <p class="pl-8"><span class="text-blue-300">countErrorsByMinute</span><span class="text-neutral-400">(</span><span class="text-blue-300">input</span><span class="text-neutral-400">: &#123;</span></p>
+          <p class="pl-12"><span class="text-blue-300">service</span><span class="text-neutral-400">:</span> <span class="text-green-300">'checkout' | 'billing' | 'api'</span><span class="text-neutral-400">;</span></p>
+          <p class="pl-12"><span class="text-blue-300">windowMinutes</span><span class="text-neutral-400">:</span> <span class="text-green-300">15 | 30 | 60</span><span class="text-neutral-400">;</span></p>
+          <p class="pl-12"><span class="text-blue-300">bucketMinutes</span><span class="text-neutral-400">:</span> <span class="text-green-300">1 | 5</span><span class="text-neutral-400">;</span></p>
+          <p class="pl-8"><span class="text-neutral-400">&#125;) &#123;</span></p>
+          <p class="pl-12"><span class="text-neutral-500">// Fixed log groups, redaction, and time limits.</span></p>
+          <p class="pl-12"><span class="text-purple-400">return</span> <span class="text-blue-300">cloudWatch</span><span class="text-neutral-400">.</span><span class="text-blue-300">countErrors</span><span class="text-neutral-400">(</span><span class="text-blue-300">input</span><span class="text-neutral-400">);</span></p>
+          <p class="pl-8"><span class="text-neutral-400">&#125;</span></p>
+          <p class="pl-4"><span class="text-neutral-400">&#125;;</span></p>
+          <p><span class="text-neutral-400">&#125;</span></p>
+        </div>
+        <div class="border-t border-[#1c2434] p-4" style="background: #0b0f19;">
+          <p class="text-xs font-semibold text-[#e5e7eb]">The model can call <span class="font-mono text-[#60a5fa]">countErrorsByMinute</span>.</p>
+          <p class="mt-1 text-xs leading-relaxed text-[#6b7280]">It gets structured counts for a chart, not open-ended AWS access.</p>
+        </div>
+      </div>
     </div>
   </div>
 
-  <!-- ─── THE CONTRAST: BEFORE / AFTER ─── -->
-  <div class="bg-navy-950 px-5 pb-20 sm:px-8" data-test-id="dev-contrast">
-    <div class="mx-auto max-w-4xl">
-
-      <!-- Terminal chaos -->
-      <div class="mb-5 overflow-hidden rounded-xl border border-navy-800 bg-navy-900" data-test-id="chaos-mockup">
-        <div class="flex items-center gap-1 overflow-hidden border-b border-navy-800 bg-navy-800 px-4 py-2">
-          {#each ['auth bug','schema','api routes','deploy','env fix','migration','tests?','cache','types','docs','refactor','perf','review','???','help','claude'] as tab, i}
-            <span class="shrink-0 max-w-[58px] overflow-hidden text-ellipsis whitespace-nowrap rounded-t px-2 py-1 text-[10px] {i === 2 ? 'bg-navy-900 text-navy-200' : 'bg-navy-700 text-navy-500'}">{tab}</span>
-          {/each}
-        </div>
-        <div class="p-5 font-mono text-xs">
-          <p class="mb-1 text-navy-600"># api routes — context: ???</p>
-          <p class="text-navy-200">$ <span class="text-white">what was I doing here again?</span></p>
-          <p class="mt-3 text-navy-600 italic">↑↑↑ scrolling up to find context... ↑↑↑</p>
-          <p class="mt-1 text-navy-700">... 3 days ago you said: "here's my schema" [paste 200 lines] ...</p>
-          <p class="text-navy-700">... then something about auth middleware ...</p>
-          <p class="mt-3 text-red-400">You: wait was this the auth tab or the api tab</p>
-        </div>
+  <!-- PRINCIPLE -->
+  <div class="bg-white px-5 py-20 sm:px-8" data-test-id="dev-principle">
+    <div class="mx-auto max-w-5xl">
+      <div class="max-w-3xl">
+        <p class="mb-4 text-xs font-bold uppercase tracking-widest text-blue-600">The platform bet</p>
+        <h2 class="text-4xl font-black tracking-tight text-ink sm:text-5xl">
+          Useful platforms are improved by the developers solving real problems.
+        </h2>
+        <p class="mt-5 text-lg leading-relaxed text-ink-muted">
+          A platform cannot predict every workflow, internal API, data source, or edge case. Developers can. Kazibee is extensible because the best AI capabilities will come from people building against their own constraints.
+        </p>
       </div>
 
-      <!-- Divider -->
-      <div class="my-5 flex items-center gap-4">
-        <div class="h-px flex-1 bg-navy-800"></div>
-        <span class="text-xs font-bold tracking-widest text-navy-600 uppercase">Kazibee</span>
-        <div class="h-px flex-1 bg-navy-800"></div>
-      </div>
-
-      <!-- Kazibee clean — real app UI -->
-      <div class="overflow-hidden rounded-xl border border-[#1c2434]" style="background: #0d1117;" data-test-id="kazibee-mockup">
-        <div class="flex items-center border-b border-[#1c2434] px-4 py-2.5" style="background: #0b0f19;">
-          <div class="flex items-center gap-1.5">
-            <span class="h-3 w-3 rounded-full bg-[#ff5f57]"></span>
-            <span class="h-3 w-3 rounded-full bg-[#febc2e]"></span>
-            <span class="h-3 w-3 rounded-full bg-[#28c840]"></span>
-          </div>
-          <span class="mx-auto text-xs text-[#4b5563]">Kazibee</span>
+      <div class="mt-10 grid gap-4 sm:grid-cols-3">
+        <div class="rounded-xl border border-neutral-200 bg-neutral-50 p-6">
+          <p class="text-sm font-black uppercase tracking-wide text-ink">Real systems</p>
+          <p class="mt-3 text-sm leading-relaxed text-ink-muted">Connect models to the APIs, databases, queues, files, and services your work already depends on.</p>
         </div>
-        <div class="flex" style="min-height: 210px;">
-          <div class="hidden w-56 shrink-0 border-r border-[#1c2434] p-3 sm:block" style="background: #0b0f19;">
-            <div class="rounded-xl p-2.5" style="background: #131a2c; border: 1px solid #1c2434;">
-              <div class="mb-2 flex items-center justify-between px-1.5">
-                <div class="flex items-center gap-1.5">
-                  <span class="text-[#9ca3af]">📁</span>
-                  <span class="text-xs font-bold text-[#e5e7eb]">kazibee-app</span>
-                </div>
-                <span class="text-[#6b7280]">+</span>
-              </div>
-              <div class="space-y-0.5">
-                <div class="flex items-center justify-between rounded-lg px-2 py-1.5" style="background: #1a2338;">
-                  <span class="text-xs font-medium text-[#e5e7eb]">api routes</span>
-                  <span class="text-[10px] text-[#6b7280]">now</span>
-                </div>
-                <div class="flex items-center justify-between px-2 py-1.5">
-                  <span class="text-xs text-[#9ca3af]">auth bug</span>
-                  <span class="text-[10px] text-[#4b5563]">1h</span>
-                </div>
-                <div class="flex items-center justify-between px-2 py-1.5">
-                  <span class="text-xs text-[#9ca3af]">schema work</span>
-                  <span class="text-[10px] text-[#4b5563]">3h</span>
-                </div>
-                <div class="flex items-center justify-between px-2 py-1.5">
-                  <span class="text-xs text-[#9ca3af]">deploy setup</span>
-                  <span class="text-[10px] text-[#4b5563]">1d</span>
-                </div>
-              </div>
-            </div>
-          </div>
-          <div class="flex flex-1 flex-col gap-3 p-5">
-            <p class="text-sm leading-relaxed text-[#9ca3af]">
-              Looking at your routes — the issue is middleware ordering.
-              <code class="mx-1 rounded px-1.5 py-0.5 text-xs text-[#f59e0b]" style="background:#1c2434;">authMiddleware</code>
-              needs to run before
-              <code class="mx-1 rounded px-1.5 py-0.5 text-xs text-[#f59e0b]" style="background:#1c2434;">validateSchema</code>.
-              Here's the fix:
-            </p>
-            <div class="mt-auto flex justify-end">
-              <div class="rounded-2xl rounded-tr-sm px-4 py-2.5 text-sm text-[#e5e7eb]" style="background: #1c2434;">
-                apply it
-              </div>
-            </div>
-          </div>
+        <div class="rounded-xl border border-neutral-200 bg-neutral-50 p-6">
+          <p class="text-sm font-black uppercase tracking-wide text-ink">Real constraints</p>
+          <p class="mt-3 text-sm leading-relaxed text-ink-muted">Keep validation, permissions, formatting, and business rules in code you can review and test.</p>
         </div>
-        <div class="border-t border-[#1c2434] p-3" style="background: #0b0f19;">
-          <div class="rounded-2xl p-3" style="background: #0f1626; border: 1px solid #1c2434;">
-            <div class="flex items-start justify-between">
-              <div>
-                <p class="text-sm text-[#6b7280]">Send a message to start the conversation</p>
-                <p class="mt-1 text-[10px] text-[#4b5563]">Shift + Enter for newline</p>
-              </div>
-              <button class="rounded-lg px-4 py-1.5 text-xs font-semibold text-[#9ca3af]" style="background: #1c2434;">Send</button>
-            </div>
-            <div class="mt-3 flex items-center gap-3 border-t border-[#1c2434] pt-3">
-              <span class="text-xs font-bold text-[#60a5fa]">✦ Claude Sonnet 4.6 ⌄</span>
-              <span class="text-[#1c2434]">|</span>
-              <span class="text-xs text-[#9ca3af]">≋ Low ⌄</span>
-              <span class="text-[#1c2434]">|</span>
-              <span class="flex items-center gap-1.5 text-xs text-[#9ca3af]">🛡 Supervisor <span class="inline-block h-3 w-6 rounded-full" style="background:#1c2434;"></span></span>
-              <span class="ml-auto flex items-center gap-2">
-                <span class="text-xs text-[#9ca3af]">🔒 Standard</span>
-                <span class="text-[#3b82f6]">✓</span>
-              </span>
-            </div>
-            <div class="mt-2 flex items-center justify-between border-t border-[#1c2434] pt-2">
-              <span class="font-mono text-[10px] text-[#6b7280]">📁 ~/dev/kazibee-app</span>
-              <span class="flex items-center gap-2 text-[10px] text-[#6b7280]"><span>🌐</span><span>↳ feature/auth-v2 ⌄</span></span>
-            </div>
-          </div>
+        <div class="rounded-xl border border-neutral-200 bg-neutral-50 p-6">
+          <p class="text-sm font-black uppercase tracking-wide text-ink">Real leverage</p>
+          <p class="mt-3 text-sm leading-relaxed text-ink-muted">Add capabilities to the models your team already uses instead of rebuilding the whole AI stack.</p>
         </div>
       </div>
-      <p class="mt-4 text-center text-xs text-navy-600">4 named threads. 2 worktrees. One window. Full context in every session.</p>
     </div>
   </div>
 
-  <!-- ─── KEYBOARD-FIRST ─── -->
-  <div class="bg-white px-5 py-20 sm:px-8" data-test-id="dev-keyboard-first">
-    <div class="mx-auto max-w-4xl text-center">
-      <p class="mb-4 text-xs font-bold uppercase tracking-widest text-blue-600">Keyboard-first workspace</p>
-      <h2 class="text-4xl font-black tracking-tight text-ink sm:text-5xl">
-        The power of Vim.<br>In a graphical interface.
-      </h2>
-      <p class="mx-auto mt-4 max-w-xl text-lg text-ink-muted">
-        Vim users don't open 16 files in separate terminals. They have buffers, splits, and a command palette.
-        Kazibee is that — for AI workspaces.
-      </p>
-    </div>
-  </div>
-
-  <!-- ─── FEATURE: WORKTREES ─── -->
-  <div class="bg-white px-5 pb-20 sm:px-8" data-test-id="dev-worktrees">
-    <div class="mx-auto max-w-4xl">
-      <div class="grid gap-12 sm:grid-cols-2 sm:items-center">
+  <!-- ADAPTIVE + DETERMINISTIC -->
+  <div class="bg-navy-50 px-5 py-20 sm:px-8" data-test-id="dev-adaptive-deterministic">
+    <div class="mx-auto max-w-5xl">
+      <div class="grid gap-8 lg:grid-cols-[0.95fr_1.05fr] lg:items-center">
         <div>
-          <div class="mb-4 inline-flex items-center gap-2 rounded-full border border-green-200 bg-green-50 px-3 py-1">
-            <span class="text-xs font-bold uppercase tracking-wide text-green-700">Worktrees</span>
-          </div>
-          <h3 class="mb-4 text-3xl font-black tracking-tight text-ink leading-tight">
-            One AI thread per branch.<br>No context bleed.
-          </h3>
-          <p class="mb-6 text-base leading-relaxed text-ink-muted">
-            Work on <code class="rounded bg-navy-100 px-1.5 py-0.5 text-xs">feature/auth-v2</code> and
-            <code class="rounded bg-navy-100 px-1.5 py-0.5 text-xs">main</code> simultaneously.
-            Each worktree gets its own AI session with the right codebase context.
-            Switch branches in one keystroke — the AI switches with you.
+          <p class="mb-4 text-xs font-bold uppercase tracking-widest text-blue-600">AI adapts. Code guarantees.</p>
+          <h2 class="text-4xl font-black tracking-tight text-ink sm:text-5xl">
+            Let the model choose the moment. Let TypeScript do the work.
+          </h2>
+          <p class="mt-5 text-lg leading-relaxed text-ink-muted">
+            AI is valuable because it can understand intent, gather the right data, and decide when a tool is useful. Deterministic code is valuable because it runs the same way every time. Kazibee connects those strengths through typed contracts.
           </p>
-          <div class="space-y-3" data-test-id="worktree-shortcuts">
-            {#each [
-              ['⌘K', 'Open the worktree branch picker'],
-            ] as [key, desc]}
-              <div class="flex items-center gap-3">
-                <kbd class="shrink-0 rounded border border-navy-700 bg-navy-900 px-2 py-1 font-mono text-xs font-bold text-navy-200">{key}</kbd>
-                <span class="text-sm text-ink-muted">{desc}</span>
-              </div>
-            {/each}
-          </div>
         </div>
 
-        <!-- Worktree visual — real app style -->
-        <div class="overflow-hidden rounded-xl border border-[#1c2434]" style="background: #0d1117;" data-test-id="worktree-visual">
+        <div class="overflow-hidden rounded-xl border border-[#1c2434]" style="background: #0d1117;" data-test-id="dev-logs-flow">
           <div class="border-b border-[#1c2434] px-4 py-2.5" style="background: #0b0f19;">
-            <span class="font-mono text-xs text-[#6b7280]">$ git worktree list</span>
+            <span class="text-xs font-bold uppercase tracking-wide text-[#60a5fa]">Example flow</span>
           </div>
-          <div class="space-y-2 p-3 font-mono text-xs">
-            {#each [
-              { branch: 'main', model: 'Claude Sonnet · schema thread', msgs: '5 messages · full context', bg: '#161d2b', border: '#1c2434', label: '#9ca3af', status: '#6b7280' },
-              { branch: 'feature/auth-v2', model: 'Claude Sonnet · auth bug thread', msgs: '12 messages · full context ← active', bg: '#0a1628', border: '#1d3a5c', label: '#60a5fa', status: '#3b82f6' },
-              { branch: 'hotfix/deploy-config', model: 'Codex · deploy thread', msgs: '3 messages · paused', bg: '#161d2b', border: '#1c2434', label: '#9ca3af', status: '#4b5563' },
-            ] as wt}
-              <div class="rounded-lg p-3" style="background: {wt.bg}; border: 1px solid {wt.border};">
-                <p class="font-bold" style="color: {wt.label};">{wt.branch}</p>
-                <p class="mt-0.5 text-[11px]" style="color: {wt.status};">{wt.model}</p>
-                <p class="text-[11px]" style="color: {wt.status};">{wt.msgs}</p>
-              </div>
-            {/each}
-          </div>
-        </div>
-      </div>
-    </div>
-  </div>
-
-  <!-- ─── FEATURE: WORKSPACES ─── -->
-  <div class="bg-navy-50 px-5 py-20 sm:px-8" data-test-id="dev-workspaces">
-    <div class="mx-auto max-w-4xl">
-      <div class="grid gap-12 sm:grid-cols-2 sm:items-center">
-
-        <!-- Workspace switcher visual — real app style -->
-        <div class="overflow-hidden rounded-xl border border-[#1c2434] order-last sm:order-first" style="background: #0d1117;" data-test-id="workspace-visual">
-          <div class="border-b border-[#1c2434] px-4 py-2.5 text-xs text-[#60a5fa]" style="background: #0b0f19;">Workspace switcher</div>
-          <div class="space-y-1.5 p-3">
-            {#each [
-              { name: 'kazibee-app', active: true, threads: '4 threads' },
-              { name: 'client-site', active: false, threads: '2 threads' },
-              { name: 'data-pipeline', active: false, threads: '1 thread' },
-              { name: '+ New workspace', active: false, threads: '' },
-            ] as ws}
-              <div class="flex items-center justify-between rounded-lg px-3 py-2.5 text-xs" style="background: {ws.active ? '#161d2b' : 'transparent'}; border: 1px solid {ws.active ? '#1d3a5c' : '#1c2434'};">
-                <span style="color: {ws.active ? '#e5e7eb' : '#6b7280'}; font-weight: {ws.active ? '600' : '400'};">{ws.name}</span>
-                {#if ws.threads}
-                  <span style="color: #374151;">{ws.active ? 'active · ' : ''}{ws.threads}</span>
-                {/if}
-              </div>
-            {/each}
-          </div>
-        </div>
-
-        <div>
-          <div class="mb-4 inline-flex items-center gap-2 rounded-full border border-purple-200 bg-purple-50 px-3 py-1">
-            <span class="text-xs font-bold uppercase tracking-wide text-purple-700">Workspaces</span>
-          </div>
-          <h3 class="mb-4 text-3xl font-black tracking-tight text-ink leading-tight">
-            Switch projects in a keystroke.<br>Context intact.
-          </h3>
-          <p class="mb-6 text-base leading-relaxed text-ink-muted">
-            Every project is a workspace with its own threads, files, and AI history.
-            Jump between <code class="rounded bg-navy-100 px-1.5 py-0.5 text-xs">kazibee-app</code>,
-            <code class="rounded bg-navy-100 px-1.5 py-0.5 text-xs">client-site</code>, and
-            <code class="rounded bg-navy-100 px-1.5 py-0.5 text-xs">data-pipeline</code>
-            without losing a single thread.
-          </p>
-          <div class="space-y-3" data-test-id="workspace-shortcuts">
-            {#each [
-              ['⌘↑', 'Previous thread in workspace'],
-              ['⌘↓', 'Next thread in workspace'],
-              ['⌘N', 'New thread in current workspace'],
-            ] as [key, desc]}
-              <div class="flex items-center gap-3">
-                <kbd class="shrink-0 rounded border border-navy-700 bg-navy-900 px-2 py-1 font-mono text-xs font-bold text-navy-200">{key}</kbd>
-                <span class="text-sm text-ink-muted">{desc}</span>
-              </div>
-            {/each}
-          </div>
-        </div>
-      </div>
-    </div>
-  </div>
-
-  <!-- ─── FEATURE: MODEL SWITCHING ─── -->
-  <div class="bg-white px-5 py-20 sm:px-8" data-test-id="dev-model-switching">
-    <div class="mx-auto max-w-4xl">
-      <div class="grid gap-12 sm:grid-cols-2 sm:items-center">
-        <div>
-          <div class="mb-4 inline-flex items-center gap-2 rounded-full border border-blue-200 bg-blue-50 px-3 py-1">
-            <span class="text-xs font-bold uppercase tracking-wide text-blue-700">Model Switching</span>
-          </div>
-          <h3 class="mb-4 text-3xl font-black tracking-tight text-ink leading-tight">
-            Swap models mid-thread.<br>Same context.
-          </h3>
-          <p class="mb-6 text-base leading-relaxed text-ink-muted">
-            Start a debugging session with Claude Opus. Get a second opinion from Gemini.
-            Run the fix with Codex. Never leave the thread, never re-explain your setup.
-          </p>
-          <div class="space-y-3" data-test-id="model-shortcuts">
-            {#each [
-              ['⌘/', 'Toggle the model palette'],
-              ['⌃⌘→', 'Raise reasoning level'],
-              ['⌃⌘←', 'Lower reasoning level'],
-            ] as [key, desc]}
-              <div class="flex items-center gap-3">
-                <kbd class="shrink-0 rounded border border-navy-700 bg-navy-900 px-2 py-1 font-mono text-xs font-bold text-navy-200">{key}</kbd>
-                <span class="text-sm text-ink-muted">{desc}</span>
-              </div>
-            {/each}
-          </div>
-        </div>
-
-        <!-- Model switch visual — real app style -->
-        <div class="overflow-hidden rounded-xl border border-[#1c2434] p-4 space-y-4" style="background: #0d1117;" data-test-id="model-switch-visual">
-          {#each [
-            { label: 'Claude Opus', labelBg: '#1e3a5f', labelColor: '#93c5fd', msg: 'The N+1 query is in getMembers(). Hitting the DB once per user — batch it.', note: '' },
-            { label: 'Codex', labelBg: '#14532d', labelColor: '#86efac', msg: 'implementing the batch fix now', note: '↳ same thread — ' },
-            { label: 'Gemini Pro', labelBg: '#2e1065', labelColor: '#c4b5fd', msg: "reviewed Codex's fix — looks good", note: '↳ same thread — ' },
-          ] as item}
-            <div class="flex items-start gap-3">
-              <span class="mt-0.5 shrink-0 rounded px-2 py-0.5 text-[10px] font-bold" style="background: {item.labelBg}; color: {item.labelColor};">{item.label}</span>
-              <span class="text-sm leading-relaxed text-[#9ca3af]">
-                {#if item.note}<span class="text-[#22c55e]">{item.note}</span>{/if}{item.msg}
-              </span>
+          <div class="space-y-4 p-5">
+            <div class="rounded-lg border border-[#24304a] bg-[#101827] p-4">
+              <p class="text-xs font-bold uppercase tracking-wide text-[#6b7280]">User asks</p>
+              <p class="mt-2 text-sm leading-relaxed text-[#e5e7eb]">Checkout started failing for some users. Look at the last hour of production logs and tell me what changed.</p>
             </div>
-          {/each}
-          <div class="border-t border-[#1c2434] pt-3 flex items-center gap-2">
-            <span class="text-[#60a5fa]">⌘/</span>
-            <span class="text-xs text-[#4b5563]">model palette · context preserved across all 3</span>
+            <div class="grid gap-3 sm:grid-cols-2">
+              <div class="rounded-lg border border-[#24304a] bg-[#101827] p-4">
+                <p class="text-xs font-bold uppercase tracking-wide text-[#60a5fa]">AI adapts</p>
+                <p class="mt-2 text-sm leading-relaxed text-[#9ca3af]">Maps checkout to the right service, chooses a safe time window, then asks for error counts by minute.</p>
+              </div>
+              <div class="rounded-lg border border-[#24304a] bg-[#101827] p-4">
+                <p class="text-xs font-bold uppercase tracking-wide text-[#22c55e]">Code guarantees</p>
+                <p class="mt-2 text-sm leading-relaxed text-[#9ca3af]">The AWS plugin controls log access. The chart tool turns the returned counts into a repeatable interface.</p>
+              </div>
+            </div>
+            <div class="rounded-lg border border-[#24304a] bg-[#0b0f19] p-4 font-mono text-xs">
+              <p><span class="text-purple-400">const</span> <span class="text-blue-300">series</span> <span class="text-pink-400">=</span> <span class="text-purple-400">await</span> <span class="text-blue-300">tools</span><span class="text-neutral-400">[</span><span class="text-green-300">"aws-logs"</span><span class="text-neutral-400">].</span><span class="text-blue-300">countErrorsByMinute</span><span class="text-neutral-400">(&#123;</span></p>
+              <p class="pl-4"><span class="text-blue-300">service</span><span class="text-neutral-400">:</span> <span class="text-green-300">"checkout"</span><span class="text-neutral-400">,</span></p>
+              <p class="pl-4"><span class="text-blue-300">windowMinutes</span><span class="text-neutral-400">:</span> <span class="text-amber-300">60</span><span class="text-neutral-400">,</span> <span class="text-blue-300">bucketMinutes</span><span class="text-neutral-400">:</span> <span class="text-amber-300">5</span></p>
+              <p><span class="text-neutral-400">&#125;);</span></p>
+              <p class="mt-2"><span class="text-purple-400">return await</span> <span class="text-blue-300">tools</span><span class="text-neutral-400">[</span><span class="text-green-300">"chartjs"</span><span class="text-neutral-400">].</span><span class="text-blue-300">lineChart</span><span class="text-neutral-400">(&#123;</span></p>
+              <p class="pl-4"><span class="text-blue-300">title</span><span class="text-neutral-400">:</span> <span class="text-green-300">"Checkout errors, last hour"</span><span class="text-neutral-400">,</span></p>
+              <p class="pl-4"><span class="text-blue-300">labels</span><span class="text-neutral-400">:</span> <span class="text-blue-300">series</span><span class="text-neutral-400">.</span><span class="text-blue-300">labels</span><span class="text-neutral-400">,</span> <span class="text-blue-300">values</span><span class="text-neutral-400">:</span> <span class="text-blue-300">series</span><span class="text-neutral-400">.</span><span class="text-blue-300">counts</span></p>
+              <p><span class="text-neutral-400">&#125;);</span></p>
+            </div>
+            <div class="rounded-lg border border-[#24304a] bg-[#101827] p-4">
+              <div class="mb-3 flex items-center justify-between">
+                <p class="text-xs font-bold uppercase tracking-wide text-[#60a5fa]">Chart.js output</p>
+                <span class="text-[10px] text-[#6b7280]">errors / 5 min</span>
+              </div>
+              <svg viewBox="0 0 360 150" class="h-40 w-full" role="img" aria-label="Checkout error count line chart">
+                <line x1="24" y1="128" x2="340" y2="128" stroke="#24304a" stroke-width="1" />
+                <line x1="24" y1="20" x2="24" y2="128" stroke="#24304a" stroke-width="1" />
+                <polyline points="24,116 54,111 84,104 114,96 144,84 174,40 204,54 234,76 264,92 294,101 324,108" fill="none" stroke="#60a5fa" stroke-width="4" stroke-linecap="round" stroke-linejoin="round" />
+                <path d="M24 116 L54 111 L84 104 L114 96 L144 84 L174 40 L204 54 L234 76 L264 92 L294 101 L324 108 L324 128 L24 128 Z" fill="#60a5fa" opacity="0.16" />
+                {#each [
+                  [24, 116],
+                  [54, 111],
+                  [84, 104],
+                  [114, 96],
+                  [144, 84],
+                  [174, 40],
+                  [204, 54],
+                  [234, 76],
+                  [264, 92],
+                  [294, 101],
+                  [324, 108],
+                ] as point (point[0])}
+                  <circle cx={point[0]} cy={point[1]} r="4" fill="#0d1117" stroke="#60a5fa" stroke-width="3" />
+                {/each}
+              </svg>
+            </div>
           </div>
         </div>
       </div>
     </div>
   </div>
 
-  <!-- ─── KEYBOARD SHORTCUT REFERENCE ─── -->
-  <div class="bg-navy-900 px-5 py-20 sm:px-8" data-test-id="dev-shortcuts">
-    <div class="mx-auto max-w-4xl">
-      <div class="mb-12 text-center">
-        <h2 class="text-4xl font-black tracking-tight text-white">Everything on the keyboard.</h2>
-        <p class="mt-3 text-lg text-navy-400">If it's worth doing, it has a shortcut.</p>
+  <!-- CONTRACTS -->
+  <div class="bg-white px-5 py-20 sm:px-8" data-test-id="dev-contracts">
+    <div class="mx-auto max-w-5xl">
+      <div class="mb-12 max-w-3xl">
+        <p class="mb-4 text-xs font-bold uppercase tracking-widest text-blue-600">Bounded by design</p>
+        <h2 class="text-4xl font-black tracking-tight text-ink sm:text-5xl">
+          Extensible does not mean uncontrolled.
+        </h2>
+        <p class="mt-5 text-lg leading-relaxed text-ink-muted">
+          Plugins are locked to the contracts developers provide. The model sees callable methods with declared inputs and outputs, not arbitrary access to the machine.
+        </p>
       </div>
-      <div class="grid gap-4 sm:grid-cols-3">
+
+      <div class="grid gap-5 lg:grid-cols-3">
+        <article class="rounded-xl border border-neutral-200 bg-neutral-50 p-6" data-test-id="contract-typed">
+          <p class="text-sm font-black uppercase tracking-wide text-ink">Typed interface</p>
+          <p class="mt-3 text-sm leading-relaxed text-ink-muted">Each tool exposes named methods. The shape is inspectable before the model calls it.</p>
+        </article>
+        <article class="rounded-xl border border-neutral-200 bg-neutral-50 p-6" data-test-id="contract-bounded">
+          <p class="text-sm font-black uppercase tracking-wide text-ink">Bounded access</p>
+          <p class="mt-3 text-sm leading-relaxed text-ink-muted">If a capability is not on the approved interface, it is not available to the model.</p>
+        </article>
+        <article class="rounded-xl border border-neutral-200 bg-neutral-50 p-6" data-test-id="contract-reviewable">
+          <p class="text-sm font-black uppercase tracking-wide text-ink">Reviewable behavior</p>
+          <p class="mt-3 text-sm leading-relaxed text-ink-muted">The risky parts stay in normal TypeScript: versioned, tested, reviewed, and owned by developers.</p>
+        </article>
+      </div>
+    </div>
+  </div>
+
+  <!-- CLI LOOP -->
+  <div class="bg-navy-50 px-5 py-20 sm:px-8" data-test-id="dev-cli-loop">
+    <div class="mx-auto max-w-5xl">
+      <div class="grid gap-10 lg:grid-cols-[0.85fr_1.15fr] lg:items-start">
+        <div>
+          <p class="mb-4 text-xs font-bold uppercase tracking-widest text-blue-600">The developer loop</p>
+          <h2 class="text-4xl font-black tracking-tight text-ink sm:text-5xl">
+            The contract is visible before anything runs.
+          </h2>
+          <p class="mt-5 text-lg leading-relaxed text-ink-muted">
+            Kazibee's CLI is built around understanding first. Link or install a plugin, inspect its TypeScript interface, read its usage notes, then execute only against the tools that were exposed.
+          </p>
+        </div>
+
+        <div class="overflow-hidden rounded-xl border border-[#1c2434]" style="background: #0d1117;" data-test-id="dev-cli-commands">
+          <div class="border-b border-[#1c2434] px-4 py-2.5" style="background: #0b0f19;">
+            <span class="font-mono text-xs text-[#6b7280]">terminal</span>
+          </div>
+          <div class="space-y-5 p-5 font-mono text-xs leading-relaxed">
+            <div>
+              <p class="text-[#6b7280]"># 1. Add a local TypeScript plugin during development</p>
+              <p><span class="text-cyan-400">kazibee</span> <span class="text-green-400">link</span> <span class="text-amber-300">aws-logs</span> <span class="text-purple-300">./aws-logs</span></p>
+            </div>
+            <div>
+              <p class="text-[#6b7280]"># 2. Inspect the exact interface the model can call</p>
+              <p><span class="text-cyan-400">kazibee</span> <span class="text-green-400">show</span> <span class="text-amber-300">aws-logs</span></p>
+            </div>
+            <div>
+              <p class="text-[#6b7280]"># 3. Read tool-specific instructions before using it</p>
+              <p><span class="text-cyan-400">kazibee</span> <span class="text-green-400">llm</span> <span class="text-amber-300">aws-logs</span></p>
+            </div>
+            <div>
+              <p class="text-[#6b7280]"># 4. Execute against the approved tool surface</p>
+              <p><span class="text-white">echo</span> <span class="text-green-300">'return await tools["aws-logs"].countErrorsByMinute(input)'</span> <span class="text-neutral-500">|</span> <span class="text-cyan-400">kazibee</span> <span class="text-green-400">exec</span></p>
+            </div>
+          </div>
+          <div class="border-t border-[#1c2434] p-4" style="background: #0b0f19;">
+            <p class="text-xs leading-relaxed text-[#9ca3af]">
+              Plugins can also expose their own setup commands, like <span class="font-mono text-[#60a5fa]">kazibee gmail login</span>, while model-facing calls stay inside <span class="font-mono text-[#60a5fa]">tools["plugin"].method(...)</span>.
+            </p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- SECOND EXAMPLE -->
+  <div class="bg-white px-5 py-20 sm:px-8" data-test-id="dev-issue-graph">
+    <div class="mx-auto max-w-5xl">
+      <div class="grid gap-10 lg:grid-cols-[0.9fr_1.1fr] lg:items-start">
+        <div>
+          <p class="mb-4 text-xs font-bold uppercase tracking-widest text-blue-600">From question to interface</p>
+          <h2 class="text-4xl font-black tracking-tight text-ink sm:text-5xl">
+            Ask for a trend. Get a real chart.
+          </h2>
+          <p class="mt-5 text-lg leading-relaxed text-ink-muted">
+            A model can turn “are production bugs getting worse?” into the right query. The issue plugin returns counts. The Chart.js plugin renders the result as an interface people can read.
+          </p>
+          <div class="mt-8 space-y-4">
+            <div class="flex gap-4">
+              <div class="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-blue-600 font-mono text-xs font-black text-white">1</div>
+              <div>
+                <p class="font-bold text-ink">AI chooses the query</p>
+                <p class="mt-1 text-sm leading-relaxed text-ink-muted">It maps “production bugs” to the tracker label, date range, and weekly grouping.</p>
+              </div>
+            </div>
+            <div class="flex gap-4">
+              <div class="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-blue-600 font-mono text-xs font-black text-white">2</div>
+              <div>
+                <p class="font-bold text-ink">TypeScript returns counts</p>
+                <p class="mt-1 text-sm leading-relaxed text-ink-muted">The plugin controls which tracker, fields, labels, and date windows can be queried.</p>
+              </div>
+            </div>
+            <div class="flex gap-4">
+              <div class="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-blue-600 font-mono text-xs font-black text-white">3</div>
+              <div>
+                <p class="font-bold text-ink">Chart.js renders the answer</p>
+                <p class="mt-1 text-sm leading-relaxed text-ink-muted">The chart is deterministic output from structured data, not a generated drawing.</p>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="overflow-hidden rounded-xl border border-[#1c2434]" style="background: #0d1117;">
+          <div class="border-b border-[#1c2434] px-4 py-2.5" style="background: #0b0f19;">
+            <span class="text-xs font-bold uppercase tracking-wide text-[#60a5fa]">Production bugs by week</span>
+          </div>
+          <div class="space-y-4 p-5">
+            <div class="rounded-lg border border-[#24304a] bg-[#101827] p-4">
+              <p class="text-xs font-bold uppercase tracking-wide text-[#6b7280]">User asks</p>
+              <p class="mt-2 text-sm leading-relaxed text-[#e5e7eb]">Are production bugs getting better or worse this quarter?</p>
+            </div>
+            <div class="rounded-lg border border-[#24304a] bg-[#0b0f19] p-4 font-mono text-xs">
+              <p><span class="text-purple-400">const</span> <span class="text-blue-300">issues</span> <span class="text-pink-400">=</span> <span class="text-purple-400">await</span> <span class="text-blue-300">tools</span><span class="text-neutral-400">[</span><span class="text-green-300">"issue-metrics"</span><span class="text-neutral-400">].</span><span class="text-blue-300">countIssues</span><span class="text-neutral-400">(&#123;</span></p>
+              <p class="pl-4"><span class="text-blue-300">label</span><span class="text-neutral-400">:</span> <span class="text-green-300">"production"</span><span class="text-neutral-400">,</span></p>
+              <p class="pl-4"><span class="text-blue-300">groupBy</span><span class="text-neutral-400">:</span> <span class="text-green-300">"week"</span><span class="text-neutral-400">,</span> <span class="text-blue-300">range</span><span class="text-neutral-400">:</span> <span class="text-green-300">"quarter"</span></p>
+              <p><span class="text-neutral-400">&#125;);</span></p>
+              <p class="mt-2"><span class="text-purple-400">return await</span> <span class="text-blue-300">tools</span><span class="text-neutral-400">[</span><span class="text-green-300">"chartjs"</span><span class="text-neutral-400">].</span><span class="text-blue-300">barChart</span><span class="text-neutral-400">(</span><span class="text-blue-300">issues</span><span class="text-neutral-400">);</span></p>
+            </div>
+            <div class="rounded-lg border border-[#24304a] bg-[#101827] p-5">
+              <div class="mb-5 flex items-start justify-between gap-4">
+                <div>
+                  <p class="text-sm font-bold text-[#e5e7eb]">Production bugs opened</p>
+                  <p class="mt-1 text-xs text-[#6b7280]">Grouped weekly from issue tracker results</p>
+                </div>
+                <span class="rounded bg-[#10243d] px-2 py-1 text-[10px] font-bold uppercase tracking-wide text-[#60a5fa]">Chart.js</span>
+              </div>
+              <div class="grid h-44 grid-cols-8 items-end gap-3 border-b border-l border-[#24304a] px-3 pt-4">
+                {#each [
+                  { label: 'W1', value: 18, height: 56 },
+                  { label: 'W2', value: 27, height: 84 },
+                  { label: 'W3', value: 22, height: 68 },
+                  { label: 'W4', value: 36, height: 112 },
+                  { label: 'W5', value: 31, height: 96 },
+                  { label: 'W6', value: 21, height: 65 },
+                  { label: 'W7', value: 16, height: 50 },
+                  { label: 'W8', value: 24, height: 74 },
+                ] as bar (bar.label)}
+                  <div class="flex min-w-0 flex-col items-center justify-end gap-2">
+                    <span class="text-[10px] font-bold text-[#cbd5e1]">{bar.value}</span>
+                    <div class="w-full rounded-t bg-[#60a5fa]" style="height: {bar.height}px; min-width: 18px;"></div>
+                  </div>
+                {/each}
+              </div>
+              <div class="grid grid-cols-8 gap-3 px-3 pt-2">
+                {#each ['W1', 'W2', 'W3', 'W4', 'W5', 'W6', 'W7', 'W8'] as week (week)}
+                  <span class="text-center text-[10px] text-[#6b7280]">{week}</span>
+                {/each}
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- HOW IT WORKS -->
+  <div class="bg-navy-900 px-5 py-20 sm:px-8" data-test-id="dev-how-it-works">
+    <div class="mx-auto max-w-5xl">
+      <div class="mb-12 text-center">
+        <p class="mb-4 text-xs font-bold uppercase tracking-widest text-blue-300">How it works</p>
+        <h2 class="text-4xl font-black tracking-tight text-white sm:text-5xl">A small TypeScript surface. A big capability jump.</h2>
+      </div>
+
+      <div class="grid gap-5 lg:grid-cols-3">
         {#each [
           {
-            group: 'Threads',
-            color: 'text-blue-400',
-            keys: [
-              ['⌘N', 'New thread in current folder'],
-              ['⌘↑', 'Previous thread'],
-              ['⌘↓', 'Next thread'],
-              ['⌘R', 'Rename active thread'],
-              ['⌘D', 'Toggle thread completed'],
-            ]
+            step: '1',
+            title: 'Write the tool',
+            body: 'Use TypeScript to implement the deterministic behavior: query a system, render a chart, validate data, update a record, or run a workflow.'
           },
           {
-            group: 'Models',
-            color: 'text-green-400',
-            keys: [
-              ['⌘/', 'Toggle model palette'],
-              ['⌃⌘→', 'Raise reasoning level'],
-              ['⌃⌘←', 'Lower reasoning level'],
-              ['Esc', 'Cancel running stream'],
-            ]
+            step: '2',
+            title: 'Expose the contract',
+            body: 'Kazibee discovers the methods and gives the model the interface you approved. The contract is the boundary.'
           },
           {
-            group: 'Worktrees',
-            color: 'text-purple-400',
-            keys: [
-              ['⌘K', 'Open worktree branch picker'],
-            ]
-          },
-        ] as group}
-          <div class="overflow-hidden rounded-xl border border-navy-700 bg-navy-800" data-test-id="shortcut-group-{group.group.toLowerCase()}">
-            <div class="border-b border-navy-700 bg-navy-950 px-4 py-3">
-              <span class="text-xs font-bold uppercase tracking-widest {group.color}">{group.group}</span>
-            </div>
-            <div class="space-y-3 p-4">
-              {#each group.keys as [key, desc]}
-                <div class="flex items-center gap-3">
-                  <kbd class="shrink-0 rounded border px-2.5 py-1 font-mono text-xs font-bold" style="background:#1e293b;border-color:#475569;color:#f1f5f9;">{key}</kbd>
-                  <span class="text-sm" style="color:#cbd5e1;">{desc}</span>
-                </div>
-              {/each}
-            </div>
-          </div>
+            step: '3',
+            title: 'Let AI route the work',
+            body: 'The model reads the request, decides when the tool is useful, passes structured input, and uses the result in the conversation.'
+          }
+        ] as item (item.step)}
+          <article class="rounded-xl border border-navy-700 bg-navy-800 p-6">
+            <div class="mb-5 flex h-10 w-10 items-center justify-center rounded-lg bg-blue-600 font-mono text-sm font-black text-white">{item.step}</div>
+            <h3 class="text-xl font-black text-white">{item.title}</h3>
+            <p class="mt-3 text-sm leading-relaxed text-navy-300">{item.body}</p>
+          </article>
         {/each}
       </div>
     </div>
   </div>
 
-  <!-- ─── CTA ─── -->
+  <!-- WORKSPACE CONTEXT -->
+  <div class="bg-white px-5 py-20 sm:px-8" data-test-id="dev-workspace-context">
+    <div class="mx-auto max-w-5xl">
+      <div class="grid gap-10 lg:grid-cols-[0.9fr_1.1fr] lg:items-center">
+        <div>
+          <p class="mb-4 text-xs font-bold uppercase tracking-widest text-blue-600">Built into the workspace</p>
+          <h2 class="text-4xl font-black tracking-tight text-ink sm:text-5xl">
+            Extensions meet the models you already use every day.
+          </h2>
+          <p class="mt-5 text-lg leading-relaxed text-ink-muted">
+            Kazibee still gives developers the workspace basics: named threads, worktrees, project context, and model switching. Plugins add the missing piece: your own capabilities inside those same conversations.
+          </p>
+        </div>
+
+        <div class="grid gap-4 sm:grid-cols-3">
+          <div class="rounded-xl border border-neutral-200 bg-neutral-50 p-5">
+            <p class="text-lg font-black text-ink">Threads</p>
+            <p class="mt-2 text-sm leading-relaxed text-ink-muted">Keep context organized around real work.</p>
+          </div>
+          <div class="rounded-xl border border-neutral-200 bg-neutral-50 p-5">
+            <p class="text-lg font-black text-ink">Worktrees</p>
+            <p class="mt-2 text-sm leading-relaxed text-ink-muted">Bind AI context to the branch you are editing.</p>
+          </div>
+          <div class="rounded-xl border border-neutral-200 bg-neutral-50 p-5">
+            <p class="text-lg font-black text-ink">Models</p>
+            <p class="mt-2 text-sm leading-relaxed text-ink-muted">Use Claude, Codex, Gemini, and more against the same tools.</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- CTA -->
   <div class="bg-navy-950 px-5 py-24 text-center sm:px-8" data-test-id="dev-cta">
-    <div class="mx-auto max-w-xl">
+    <div class="mx-auto max-w-2xl">
       <h2 class="text-5xl font-black tracking-tight text-white">
-        Close those tabs.<br>
-        <span class="italic text-blue-400">You don't need them.</span>
+        Give AI reliable capabilities.
       </h2>
-      <p class="mx-auto mt-6 max-w-md text-lg leading-relaxed text-navy-400">
-        Named threads. Persistent context. Worktrees. One keyboard-first workspace that keeps up with how you actually work.
+      <p class="mx-auto mt-6 max-w-xl text-lg leading-relaxed text-navy-300">
+        Build deterministic TypeScript tools, expose only the contract you trust, and let adaptive models call them at the right moment.
       </p>
       <div class="mt-10 flex flex-wrap items-center justify-center gap-4">
-        <a href="/downloads" class="rounded-xl bg-blue-600 px-8 py-4 text-sm font-bold text-white transition hover:bg-blue-500">
-          Download free →
+        <a href="/docs/quick-start" class="rounded-xl bg-blue-600 px-8 py-4 text-sm font-bold text-white transition hover:bg-blue-500">
+          Start with TypeScript
         </a>
-        <a href="/docs" class="rounded-xl border border-navy-700 px-8 py-4 text-sm font-semibold text-navy-400 transition hover:border-navy-600 hover:text-navy-300">
-          Read the docs
+        <a href="/downloads" class="rounded-xl border border-navy-700 px-8 py-4 text-sm font-semibold text-navy-300 transition hover:border-navy-600 hover:text-white">
+          Download Kazibee
         </a>
       </div>
-      <p class="mt-6 text-xs text-navy-700">Free desktop app · Bring your own keys · Mac, Windows, Linux</p>
+      <p class="mt-6 text-xs text-navy-700">Free desktop app. Bring your own keys. Plugins are bounded by the interfaces you define.</p>
     </div>
   </div>
 

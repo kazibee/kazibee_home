@@ -45,3 +45,14 @@ dev:
   watch: true
   splitServe: true
   port: 3000
+
+hooks:
+  - name: build-tailwind
+    watch:
+      - src/ui/**/*.svelte
+      - src/ui/**/*.ts
+      - src/ui/styles/**/*.css
+      - src/ui/styles/tailwind.css
+    command: npm run build:css
+    cwd: .
+    debounceMs: 250

@@ -21,7 +21,6 @@
       <div class="hidden items-center gap-6 sm:flex">
         <a href="/" class="text-sm text-ink-muted transition hover:text-ink" data-test-id="nav-home">Home</a>
         <a href="/developers" class="text-sm text-ink-muted transition hover:text-ink" data-test-id="nav-developers">For Developers</a>
-        <a href="/downloads" class="text-sm text-ink-muted transition hover:text-ink" data-test-id="nav-downloads">Downloads</a>
         <a href="/downloads" class="rounded-lg bg-blue-600 px-3.5 py-1.5 text-sm font-medium text-white transition hover:bg-blue-500" data-test-id="nav-download-cta">
           Download
         </a>
@@ -56,7 +55,6 @@
         <div class="mx-auto flex max-w-7xl flex-col gap-1">
           <a href="/" class="rounded-lg px-3 py-2 text-sm font-medium text-ink-muted transition hover:bg-neutral-50 hover:text-ink" data-test-id="nav-mobile-home" onclick={() => mobileMenuOpen = false}>Home</a>
           <a href="/developers" class="rounded-lg px-3 py-2 text-sm font-medium text-ink-muted transition hover:bg-neutral-50 hover:text-ink" data-test-id="nav-mobile-developers" onclick={() => mobileMenuOpen = false}>For Developers</a>
-          <a href="/downloads" class="rounded-lg px-3 py-2 text-sm font-medium text-ink-muted transition hover:bg-neutral-50 hover:text-ink" data-test-id="nav-mobile-downloads" onclick={() => mobileMenuOpen = false}>Downloads</a>
           <a href="/downloads" class="mt-1 rounded-lg bg-blue-600 px-3 py-2 text-center text-sm font-medium text-white transition hover:bg-blue-500" data-test-id="nav-mobile-download-cta" onclick={() => mobileMenuOpen = false}>Download</a>
         </div>
       </div>

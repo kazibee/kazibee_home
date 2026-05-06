@@ -2,7 +2,7 @@ paths:
   /developers:
     get:
       summary: For Developers
-      description: Developer-focused features - worktrees, workspaces, keyboard-first workflow
+      description: Developer-focused extensibility - TypeScript plugins, typed tool contracts, bounded model access
       x-view: pages/developers/main.svelte
       x-layout:
         - layout/public_layout.svelte

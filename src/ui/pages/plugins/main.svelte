@@ -1,4 +1,5 @@
 <script lang="ts">
+  import BlurUpImage from '../../component/blur_up_image.svelte';
   import TerminalFrame from '../../component/terminal_frame.svelte';
   import TerminalLine from '../../component/terminal_line.svelte';
 </script>
@@ -26,11 +27,11 @@
 
         <div class="space-y-12 pt-4 lg:px-6 xl:px-8 xl:pt-6">
           <article class="relative py-4" data-test-id="workflow-story-inbox">
-            <img
-              src="/images/work/productive-spreadsheet.jpg"
+            <BlurUpImage
+              src="/images/work/productive-spreadsheet_768.webp"
+              placeholder="/images/work/productive-spreadsheet_blur.webp"
               alt="A young Black woman focused on spreadsheet analysis at her desk"
               class="pointer-events-none absolute right-0 top-0 z-0 hidden -mr-56 -mt-1 h-48 w-72 -rotate-2 rounded-xl object-cover opacity-95 shadow-xl ring-1 ring-black/5 lg:block xl:-mr-72 xl:-mt-3 xl:h-52 xl:w-80 2xl:-mr-80 2xl:-mt-4 2xl:h-56 2xl:w-96"
-              loading="lazy"
             />
             <div class="relative z-10 rounded-2xl border-t border-r border-white/70 bg-white/35 p-4 backdrop-blur-md backdrop-saturate-75 backdrop-brightness-90">
               <p class="text-xs font-bold uppercase tracking-[0.12em] text-honey-700">Inbox to action</p>
@@ -73,11 +74,11 @@
           </article>
 
           <article class="relative py-4" data-test-id="workflow-story-reporting">
-            <img
-              src="/images/work/productive-email.jpg"
+            <BlurUpImage
+              src="/images/work/productive-email_768.webp"
+              placeholder="/images/work/productive-email_blur.webp"
               alt="A person focused on email and planning tasks at a laptop"
               class="pointer-events-none absolute left-0 top-0 z-0 hidden -ml-64 mt-1 h-48 w-72 rotate-3 rounded-xl object-cover opacity-95 shadow-xl ring-1 ring-black/5 lg:block xl:-ml-80 xl:mt-0 xl:h-52 xl:w-80 2xl:-ml-80 2xl:-mt-1 2xl:h-56 2xl:w-96"
-              loading="lazy"
             />
             <div class="relative z-10 rounded-2xl border-t border-r border-white/70 bg-white/35 p-4 backdrop-blur-md backdrop-saturate-75 backdrop-brightness-90">
               <p class="text-xs font-bold uppercase tracking-[0.12em] text-honey-700">Weekly reporting</p>
@@ -119,11 +120,11 @@
           </article>
 
           <article class="relative py-4" data-test-id="workflow-story-media">
-            <img
-              src="/images/work/productive-video-audio.jpg"
+            <BlurUpImage
+              src="/images/work/productive-video-audio_768.webp"
+              placeholder="/images/work/productive-video-audio_blur.webp"
               alt="A person focused on editing a video timeline and audio tracks"
               class="pointer-events-none absolute right-0 bottom-0 z-20 hidden -mr-56 -mb-4 h-48 w-72 -rotate-1 rounded-xl object-cover opacity-95 shadow-xl ring-1 ring-black/5 lg:block xl:-mr-72 xl:-mb-6 xl:h-52 xl:w-80 2xl:-mr-80 2xl:-mb-8 2xl:h-56 2xl:w-96"
-              loading="lazy"
             />
             <div class="relative z-10 rounded-2xl border-t border-r border-white/70 bg-white/35 p-4 backdrop-blur-md backdrop-saturate-75 backdrop-brightness-90">
               <p class="text-xs font-bold uppercase tracking-[0.12em] text-honey-700">Media assembly pipeline</p>

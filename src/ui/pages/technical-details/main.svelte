@@ -1,3 +1,7 @@
+<script lang="ts">
+  import BlurUpImage from '../../component/blur_up_image.svelte';
+</script>
+
 <section>
   <div class="mx-auto max-w-5xl px-5 py-16 sm:px-8 sm:py-20">
     <!-- Header -->
@@ -29,15 +33,19 @@
     <!-- How it works -->
     <div id="how-it-works" class="mt-14 relative" data-test-id="how-it-works">
       <!-- Bees positioned at edges -->
-      <img
-        src="/images/bee-topdown-transparent.png"
+      <BlurUpImage
+        src="/images/bee-topdown-transparent_256.webp"
+        placeholder="/images/bee-topdown-transparent_blur.webp"
         alt=""
         class="absolute w-32 h-32 pointer-events-none z-0 top-[10%] -left-20"
+        imageClass="h-full w-full object-contain"
       />
-      <img
-        src="/images/bee-topdown-alt-transparent.png"
+      <BlurUpImage
+        src="/images/bee-topdown-alt-transparent_256.webp"
+        placeholder="/images/bee-topdown-alt-transparent_blur.webp"
         alt=""
         class="absolute w-32 h-32 pointer-events-none z-0 bottom-[10%] -right-40"
+        imageClass="h-full w-full object-contain"
       />
 
       <p class="mb-3 text-xs font-bold uppercase tracking-[0.2em] text-honey-600">How it works</p>

@@ -1,6 +1,14 @@
 <script>
+  import SeoHead from '../../component/seo_head.svelte';
+
   let activeVisualPreview = 'diagram';
 </script>
+
+<SeoHead
+  title="Kazibee"
+  path="/"
+  description="Kazibee is a desktop AI workspace for switching models, managing threads, running parallel work, and using plugins with your own API keys."
+/>
 
 <section>
 

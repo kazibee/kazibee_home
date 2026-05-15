@@ -1,8 +1,15 @@
 <script lang="ts">
   import BlurUpImage from '../../component/blur_up_image.svelte';
+  import SeoHead from '../../component/seo_head.svelte';
   import TerminalFrame from '../../component/terminal_frame.svelte';
   import TerminalLine from '../../component/terminal_line.svelte';
 </script>
+
+<SeoHead
+  title="Kazibee Plugins"
+  path="/plugins"
+  description="Explore how Kazibee plugins connect AI models to Gmail, Google Sheets, image tools, documents, calendars, and custom workflows."
+/>
 
 <section>
   <div class="mx-auto max-w-5xl px-5 py-16 sm:px-8 sm:py-20">

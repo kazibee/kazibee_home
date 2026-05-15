@@ -1,3 +1,13 @@
+<script>
+  import SeoHead from '../../component/seo_head.svelte';
+</script>
+
+<SeoHead
+  title="Kazibee Docs"
+  path="/docs"
+  description="Read Kazibee documentation for building plugins, defining typed tool interfaces, configuring permissions, and running plugin commands."
+/>
+
 <section>
   <div class="space-y-8" data-test-id="docs-overview">
     <header data-test-id="docs-header">

@@ -11,8 +11,6 @@ import cookiePaser from '../middleware/auth/cookie';
 // Export constants (for backward compatibility)
 const SERVER_ROOT = path.resolve(process.cwd(), 'server');
 export const STITCH_PATH = path.join(SERVER_ROOT, 'stitch.yaml');
-const CONTROLLER_PATH = path.join(SERVER_ROOT, 'controller');
-const MIDDLEWARE_PATH = path.resolve(process.cwd(), 'middleware');
 
 // Default export: (app, config) => void
 export default async function boot(app: express.Express, config: any) {
@@ -29,9 +27,13 @@ export default async function boot(app: express.Express, config: any) {
   // Build asset mappings from config.root
   const imagesPath = path.join(config.root, 'src/ui/resources/images');
   const cssPath = path.join(config.root, 'src/ui/resources/css');
+  const robotsPath = path.join(config.root, 'src/ui/resources/robots.txt');
   const faviconPath = path.join(imagesPath, 'favicon.ico');
   app.get('/favicon.ico', (_req, res) => {
     res.sendFile(faviconPath);
+  });
+  app.get('/robots.txt', (_req, res) => {
+    res.type('text/plain').sendFile(robotsPath);
   });
 
   const assetMappings = assets({

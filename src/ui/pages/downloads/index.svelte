@@ -1,4 +1,6 @@
 <script lang="ts">
+  import SeoHead from '../../component/seo_head.svelte';
+
   const options = [
     {
       kind: "app",
@@ -16,6 +18,12 @@
     },
   ];
 </script>
+
+<SeoHead
+  title="Download Kazibee"
+  path="/downloads"
+  description="Download the Kazibee desktop app or CLI for managing AI sessions, local relay workflows, and command-line automation."
+/>
 
 <section class="mx-auto max-w-5xl px-5 py-16 sm:px-8 sm:py-20" data-test-id="downloads-hub">
   <header class="mb-12 border-b border-neutral-100 pb-10">

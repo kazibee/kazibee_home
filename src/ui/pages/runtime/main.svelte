@@ -1,7 +1,14 @@
 <script lang="ts">
+  import SeoHead from '../../component/seo_head.svelte';
   import TerminalFrame from '../../component/terminal_frame.svelte';
   import TerminalLine from '../../component/terminal_line.svelte';
 </script>
+
+<SeoHead
+  title="Kazibee Runtime"
+  path="/runtime"
+  description="Understand how the Kazibee runtime validates generated code, loads plugin tools, manages permissions, and executes workflows safely."
+/>
 
 <section>
   <div class="mx-auto max-w-5xl px-5 py-16 sm:px-8 sm:py-20">

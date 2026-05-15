@@ -1,3 +1,13 @@
+<script>
+  import SeoHead from '../../component/seo_head.svelte';
+</script>
+
+<SeoHead
+  title="Kazibee for Developers"
+  path="/developers"
+  description="Build deterministic TypeScript plugins for Kazibee so AI models can call your tools, APIs, and workflows through bounded interfaces."
+/>
+
 <section>
 
   <!-- HERO -->

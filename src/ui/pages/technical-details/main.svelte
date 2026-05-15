@@ -1,6 +1,13 @@
 <script lang="ts">
   import BlurUpImage from '../../component/blur_up_image.svelte';
+  import SeoHead from '../../component/seo_head.svelte';
 </script>
+
+<SeoHead
+  title="Technical Details"
+  path="/technical-details"
+  description="Learn how Kazibee constrains AI execution through plugin interfaces, typed tool boundaries, sandboxed runtime behavior, and explicit user control."
+/>
 
 <section>
   <div class="mx-auto max-w-5xl px-5 py-16 sm:px-8 sm:py-20">

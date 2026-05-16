@@ -14,7 +14,7 @@
   <nav class="sticky top-0 z-50 border-b border-neutral-100 bg-white/90 backdrop-blur-md">
     <div class="mx-auto flex h-16 max-w-7xl items-center justify-between px-5 sm:px-8">
       <a href="/" class="flex items-center gap-2.5" data-test-id="nav-logo">
-        <img src="/images/logo_bold_128.png" alt="" class="h-10 w-10" />
+        <img src="/images/logo_bold_128_transparent.png" alt="" class="h-10 w-10" />
         <span class="text-lg font-bold tracking-tight text-ink">Kazibee</span>
       </a>
 
@@ -70,7 +70,7 @@
   <footer class="border-t border-neutral-100 py-12 px-5">
     <div class="mx-auto max-w-7xl flex flex-col items-center gap-4 sm:flex-row sm:justify-between">
       <div class="flex items-center gap-2.5">
-        <img src="/images/logo_bold_128.png" alt="" class="h-8 w-8" />
+        <img src="/images/logo_bold_128_transparent.png" alt="" class="h-8 w-8" />
         <span class="text-sm font-semibold text-ink-muted">Kazibee</span>
       </div>
       <p class="text-xs text-ink-faint">Bounded AI execution. Free and open source.</p>

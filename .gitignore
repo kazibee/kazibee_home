@@ -56,6 +56,9 @@ key/
 .idea/
 .vscode/
 
+# Analytics
+src/ui/resources/analytics/
+
 # Misc
 .noego/
 todo.md

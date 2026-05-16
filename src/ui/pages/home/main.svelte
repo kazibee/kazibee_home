@@ -55,7 +55,7 @@
         </a>
       </div>
 
-      <p class="mt-10 text-xs text-navy-400">Reuse Claude and Codex · Bring your own API keys · Mac, Windows, Linux</p>
+      <p class="mt-10 text-xs text-navy-400">Bring your own API keys · Mac, Windows, Linux</p>
     </div>
   </div>
 

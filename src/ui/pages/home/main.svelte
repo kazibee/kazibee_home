@@ -1,7 +1,18 @@
 <script>
+  import OdometerWordReel from '../../component/odometer_word_reel.svelte';
   import SeoHead from '../../component/seo_head.svelte';
 
   let activeVisualPreview = 'diagram';
+
+  const heroReelPhrases = [
+    'work on UI',
+    'debug code',
+    'ship features',
+    'run agents',
+    'switch models',
+    'branch work',
+    'build tools',
+  ];
 </script>
 
 <SeoHead
@@ -15,21 +26,25 @@
   <!-- ─── HERO ─── -->
   <div class="bg-navy-900 px-5 pt-24 pb-20 text-center sm:px-8">
     <div class="mx-auto max-w-3xl">
-      <div class="mb-7 inline-flex items-center gap-2 rounded-full border border-blue-600/30 bg-blue-600/10 px-4 py-1.5">
-        <span class="h-1.5 w-1.5 rounded-full bg-blue-400"></span>
-        <span class="text-xs font-semibold tracking-widest text-blue-300 uppercase">Built for speed</span>
-      </div>
-
       <h1 class="mt-2 text-5xl font-black leading-[1.1] tracking-tight text-white sm:text-6xl lg:text-7xl">
-        AI is slow.<br>
-        <span class="italic text-blue-400">You don't have to be.</span>
+        Managing multiple AI sessions is hard.<br>
+        <span class="block pt-3 text-3xl italic text-blue-400 sm:text-4xl lg:text-5xl">It doesn't have to feel that way.</span>
       </h1>
 
-      <p class="mx-auto mt-6 max-w-2xl text-lg leading-relaxed text-navy-400 sm:text-xl">
-        Kazibee removes the waiting around models. Swap models without leaving the thread,
-        dial reasoning to the task, fan out to parallel threads, jump to any chat in a keystroke,
-        and get answers as charts and diagrams — not walls of text.
-      </p>
+      <div class="mx-auto mt-6 max-w-2xl text-lg leading-relaxed text-navy-400 sm:text-xl">
+        <p class="flex flex-wrap items-center justify-center gap-x-3 gap-y-3 text-center text-navy-200">
+          <span class="basis-full sm:basis-auto">Kazibee is the #1 place to</span>
+          <span class="flex basis-full justify-center sm:basis-auto">
+            <OdometerWordReel phrases={heroReelPhrases} />
+          </span>
+          <span class="basis-full sm:basis-auto">with AI agents.</span>
+        </p>
+        <p class="mt-5">
+          Swap models without leaving the thread, dial reasoning to the task, fan out to parallel
+          threads, jump to any chat in a keystroke, and get answers as charts and diagrams — not
+          walls of text.
+        </p>
+      </div>
 
       <div class="mt-10 flex flex-wrap items-center justify-center gap-4">
         <a href="/downloads" class="rounded-xl bg-blue-600 px-6 py-3.5 text-sm font-bold text-white transition hover:bg-blue-500">

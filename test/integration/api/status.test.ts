@@ -14,17 +14,18 @@ import request from 'supertest';
 import { getTestApp, cleanupTestApp, type TestAppResult } from '../../helpers/test-app';
 
 describe('Status Controller', () => {
+  let testApp: TestAppResult;
   let app: Express;
   let agent: ReturnType<typeof request.agent>;
 
   beforeAll(async () => {
-    const result: TestAppResult = await getTestApp();
-    app = result.app;
-    agent = result.agent;
+    testApp = await getTestApp();
+    app = testApp.app;
+    agent = testApp.agent;
   });
 
   afterAll(async () => {
-    await cleanupTestApp();
+    await cleanupTestApp(testApp);
   });
 
   describe('GET /api/status', () => {
@@ -68,7 +69,7 @@ describe('Status Controller (direct app)', () => {
   });
 
   afterAll(async () => {
-    await cleanupTestApp();
+    await cleanupTestApp(testResult);
   });
 
   it('should handle the status endpoint', async () => {

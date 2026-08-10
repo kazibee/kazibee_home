@@ -1,7 +1,7 @@
-import { Component, LoadAs } from "@noego/ioc";
+import { Component, Inject, LoadAs } from "@noego/ioc";
 import { getLogger } from "@noego/logger";
-import { getTrace } from "@noego/trace";
 import type { Message } from "../repo/message_repo";
+import TraceAdapter, { type TracePort } from "../observability/trace_adapter";
 
 const logger = getLogger("kazibee:message-bus");
 
@@ -14,7 +14,11 @@ type BusHandler = (message: Message) => void;
 @Component({ scope: LoadAs.Singleton })
 export default class MessageBus {
   private handlers: BusHandler[] = [];
-  private trace = getTrace('MessageBus');
+  private readonly trace: TracePort;
+
+  constructor(@Inject(TraceAdapter) traces: TraceAdapter) {
+    this.trace = traces.forSource("MessageBus");
+  }
 
   publish(message: Message): void {
     logger.info("bus.publish", {

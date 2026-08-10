@@ -55,11 +55,9 @@
 
   let searchQuery = $state('');
   let mobileOpen = $state(false);
-  let currentPath = $state('');
-
-  $effect(() => {
-    currentPath = window.location.pathname;
-  });
+  let currentPath = $derived(
+    typeof window === 'undefined' ? '' : window.location.pathname
+  );
 
   function fuzzyMatch(query: string, text: string): boolean {
     const q = query.toLowerCase();
@@ -142,7 +140,7 @@
         {#if filteredItems}
           <!-- Flat filtered results -->
           <div class="space-y-0.5">
-            {#each filteredItems as item}
+            {#each filteredItems as item (item.href)}
               <a
                 href={item.href}
                 onclick={closeMobile}
@@ -159,13 +157,13 @@
           </div>
         {:else}
           <!-- Grouped sections -->
-          {#each sections as section, i}
+          {#each sections as section, i (section.title)}
             <div class="{i > 0 ? 'mt-5' : ''}">
               <p class="mb-1.5 px-3 text-xs font-bold uppercase tracking-[0.12em] text-ink-faint">
                 {section.title}
               </p>
               <div class="space-y-0.5">
-                {#each section.items as item}
+                {#each section.items as item (item.href)}
                   <a
                     href={item.href}
                     onclick={closeMobile}

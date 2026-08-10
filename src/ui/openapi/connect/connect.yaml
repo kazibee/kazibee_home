@@ -1,0 +1,40 @@
+paths:
+  /connect:
+    get:
+      summary: Connect executor management
+      description: Manage executors owned by the authenticated account
+      x-view: pages/connect/main.svelte
+      x-controller: controllers/connect_dashboard.svelte.ts
+      x-layout:
+        - layout/public_layout.svelte
+  /connect/login:
+    get:
+      summary: Connect sign in
+      description: Sign in to an individual Connect account
+      x-view: pages/connect/auth.svelte
+      x-controller: controllers/connect_auth.svelte.ts
+      x-layout:
+        - layout/public_layout.svelte
+  /connect/signup:
+    get:
+      summary: Connect sign up
+      description: Create an individual Connect account
+      x-view: pages/connect/auth.svelte
+      x-controller: controllers/connect_auth.svelte.ts
+      x-layout:
+        - layout/public_layout.svelte
+  /connect/claim/:claimId:
+    get:
+      summary: Review executor connection request
+      description: Accept or deny an authenticated executor claim
+      parameters:
+        - in: path
+          name: claimId
+          required: true
+          schema:
+            type: string
+            pattern: '^(?:clm_[A-Za-z0-9]{8,64}|[A-Z]{4}-[A-Z]{4})$'
+      x-view: pages/connect/claim.svelte
+      x-controller: controllers/connect_claim.svelte.ts
+      x-layout:
+        - layout/public_layout.svelte

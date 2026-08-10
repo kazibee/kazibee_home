@@ -1,0 +1,412 @@
+module:
+  connectExecutors:
+    basePath: '/v1/connect/executors'
+    paths:
+      '/claims':
+        post:
+          x-controller: connect_executor.controller
+          x-action: createClaim
+          parameters:
+            - $ref: '#/components/parameters/ConnectBootstrapToken'
+          requestBody:
+            required: true
+            content:
+              application/json:
+                schema:
+                  $ref: '#/components/schemas/ConnectClaimCreate'
+          responses:
+            '200': { $ref: '#/components/responses/ConnectClaimChallengeResult' }
+            '201': { $ref: '#/components/responses/ConnectClaimChallengeResult' }
+            '400': { $ref: '#/components/responses/ConnectExecutorErrorResult' }
+            '401': { $ref: '#/components/responses/ConnectExecutorErrorResult' }
+            '409': { $ref: '#/components/responses/ConnectExecutorErrorResult' }
+            '500': { $ref: '#/components/responses/ConnectExecutorErrorResult' }
+      '/claims/{claimId}/status':
+        get:
+          x-controller: connect_executor.controller
+          x-action: claimStatus
+          parameters:
+            - $ref: '#/components/parameters/ConnectClaimPath'
+            - $ref: '#/components/parameters/ConnectBootstrapToken'
+            - $ref: '#/components/parameters/ConnectCorrelationQuery'
+          responses:
+            '200':
+              description: Authenticated claim status
+              content:
+                application/json:
+                  schema: { $ref: '#/components/schemas/ConnectClaimStatus' }
+            '400': { $ref: '#/components/responses/ConnectExecutorErrorResult' }
+            '401': { $ref: '#/components/responses/ConnectExecutorErrorResult' }
+            '404': { $ref: '#/components/responses/ConnectExecutorErrorResult' }
+            '500': { $ref: '#/components/responses/ConnectExecutorErrorResult' }
+      '/claims/review/{lookup}':
+        get:
+          x-controller: connect_executor.controller
+          x-action: reviewClaim
+          parameters:
+            - in: path
+              name: lookup
+              required: true
+              schema:
+                type: string
+                pattern: '^(?:clm_[A-Za-z0-9]{8,64}|[A-Z]{4}-[A-Z]{4})$'
+            - $ref: '#/components/parameters/ConnectOwnerSessionQuery'
+            - $ref: '#/components/parameters/ConnectCorrelationQuery'
+            - $ref: '#/components/parameters/ConnectExecutorSessionCookie'
+          responses:
+            '200':
+              description: Safe claim review
+              content:
+                application/json:
+                  schema: { $ref: '#/components/schemas/ConnectClaimReview' }
+            '400': { $ref: '#/components/responses/ConnectExecutorErrorResult' }
+            '401': { $ref: '#/components/responses/ConnectExecutorErrorResult' }
+            '404': { $ref: '#/components/responses/ConnectExecutorErrorResult' }
+            '500': { $ref: '#/components/responses/ConnectExecutorErrorResult' }
+      '/claims/{claimId}/decision':
+        post:
+          x-controller: connect_executor.controller
+          x-action: decideClaim
+          parameters:
+            - $ref: '#/components/parameters/ConnectClaimPath'
+            - $ref: '#/components/parameters/ConnectExecutorSessionCookie'
+            - $ref: '#/components/parameters/ConnectExecutorCsrfCookie'
+            - $ref: '#/components/parameters/ConnectExecutorCsrfHeader'
+          requestBody:
+            required: true
+            content:
+              application/json:
+                schema: { $ref: '#/components/schemas/ConnectClaimDecision' }
+          responses:
+            '200':
+              description: Claim decision
+              content:
+                application/json:
+                  schema: { $ref: '#/components/schemas/ConnectClaimDecisionResult' }
+            '400': { $ref: '#/components/responses/ConnectExecutorErrorResult' }
+            '401': { $ref: '#/components/responses/ConnectExecutorErrorResult' }
+            '403': { $ref: '#/components/responses/ConnectExecutorErrorResult' }
+            '404': { $ref: '#/components/responses/ConnectExecutorErrorResult' }
+            '409': { $ref: '#/components/responses/ConnectExecutorErrorResult' }
+            '500': { $ref: '#/components/responses/ConnectExecutorErrorResult' }
+      '/':
+        get:
+          x-controller: connect_executor.controller
+          x-action: list
+          parameters:
+            - $ref: '#/components/parameters/ConnectOwnerSessionQuery'
+            - $ref: '#/components/parameters/ConnectCorrelationQuery'
+            - $ref: '#/components/parameters/ConnectExecutorSessionCookie'
+          responses:
+            '200':
+              description: Owner executor list
+              content:
+                application/json:
+                  schema: { $ref: '#/components/schemas/ConnectExecutorList' }
+            '400': { $ref: '#/components/responses/ConnectExecutorErrorResult' }
+            '401': { $ref: '#/components/responses/ConnectExecutorErrorResult' }
+            '500': { $ref: '#/components/responses/ConnectExecutorErrorResult' }
+      '/{executorId}':
+        get:
+          x-controller: connect_executor.controller
+          x-action: detail
+          parameters:
+            - $ref: '#/components/parameters/ConnectExecutorPath'
+            - $ref: '#/components/parameters/ConnectOwnerSessionQuery'
+            - $ref: '#/components/parameters/ConnectCorrelationQuery'
+            - $ref: '#/components/parameters/ConnectExecutorSessionCookie'
+          responses:
+            '200':
+              description: Owner executor detail
+              content:
+                application/json:
+                  schema: { $ref: '#/components/schemas/ConnectExecutorDetail' }
+            '400': { $ref: '#/components/responses/ConnectExecutorErrorResult' }
+            '401': { $ref: '#/components/responses/ConnectExecutorErrorResult' }
+            '404': { $ref: '#/components/responses/ConnectExecutorErrorResult' }
+            '500': { $ref: '#/components/responses/ConnectExecutorErrorResult' }
+      '/{executorId}/rename':
+        post:
+          x-controller: connect_executor.controller
+          x-action: rename
+          parameters:
+            - $ref: '#/components/parameters/ConnectExecutorPath'
+            - $ref: '#/components/parameters/ConnectOwnerSessionQuery'
+            - $ref: '#/components/parameters/ConnectCorrelationQuery'
+            - $ref: '#/components/parameters/ConnectExecutorSessionCookie'
+            - $ref: '#/components/parameters/ConnectExecutorCsrfCookie'
+            - $ref: '#/components/parameters/ConnectExecutorCsrfHeader'
+          requestBody:
+            required: true
+            content:
+              application/json:
+                schema: { $ref: '#/components/schemas/ConnectExecutorRename' }
+          responses:
+            '200':
+              description: Renamed executor detail
+              content:
+                application/json:
+                  schema: { $ref: '#/components/schemas/ConnectExecutorDetail' }
+            '400': { $ref: '#/components/responses/ConnectExecutorErrorResult' }
+            '401': { $ref: '#/components/responses/ConnectExecutorErrorResult' }
+            '403': { $ref: '#/components/responses/ConnectExecutorErrorResult' }
+            '404': { $ref: '#/components/responses/ConnectExecutorErrorResult' }
+            '500': { $ref: '#/components/responses/ConnectExecutorErrorResult' }
+      '/{executorId}/revoke':
+        post:
+          x-controller: connect_executor.controller
+          x-action: revoke
+          parameters:
+            - $ref: '#/components/parameters/ConnectExecutorPath'
+            - $ref: '#/components/parameters/ConnectOwnerSessionQuery'
+            - $ref: '#/components/parameters/ConnectCorrelationQuery'
+            - $ref: '#/components/parameters/ConnectExecutorSessionCookie'
+            - $ref: '#/components/parameters/ConnectExecutorCsrfCookie'
+            - $ref: '#/components/parameters/ConnectExecutorCsrfHeader'
+          requestBody:
+            required: true
+            content:
+              application/json:
+                schema: { $ref: '#/components/schemas/ConnectExecutorRevoke' }
+          responses:
+            '200':
+              description: Revoked executor
+              content:
+                application/json:
+                  schema: { $ref: '#/components/schemas/ConnectExecutorActionResult' }
+            '400': { $ref: '#/components/responses/ConnectExecutorErrorResult' }
+            '401': { $ref: '#/components/responses/ConnectExecutorErrorResult' }
+            '403': { $ref: '#/components/responses/ConnectExecutorErrorResult' }
+            '404': { $ref: '#/components/responses/ConnectExecutorErrorResult' }
+            '500': { $ref: '#/components/responses/ConnectExecutorErrorResult' }
+    components: &executorComponents
+      parameters:
+        ConnectBootstrapToken:
+          in: header
+          name: x-kazi-bootstrap-token
+          required: true
+          schema: { type: string, pattern: '^[A-Za-z0-9_-]{43}$' }
+        ConnectExecutorSessionCookie:
+          in: cookie
+          name: kazi_connect_session
+          required: true
+          schema: { type: string, pattern: '^[A-Za-z0-9_-]{43}$' }
+        ConnectExecutorCsrfCookie:
+          in: cookie
+          name: kazi_connect_csrf
+          required: true
+          schema: { type: string, pattern: '^[A-Za-z0-9_-]{43}$' }
+        ConnectExecutorCsrfHeader:
+          in: header
+          name: x-csrf-token
+          required: true
+          schema: { type: string, pattern: '^[A-Za-z0-9_-]{43}$' }
+        ConnectClaimPath:
+          in: path
+          name: claimId
+          required: true
+          schema: { $ref: '#/components/schemas/ExecutorClaimId' }
+        ConnectExecutorPath:
+          in: path
+          name: executorId
+          required: true
+          schema: { $ref: '#/components/schemas/ExecutorId' }
+        ConnectOwnerSessionQuery:
+          in: query
+          name: sessionId
+          required: true
+          schema: { $ref: '#/components/schemas/ExecutorSessionId' }
+        ConnectCorrelationQuery:
+          in: query
+          name: correlationId
+          required: true
+          schema: { $ref: '#/components/schemas/ExecutorCorrelationId' }
+      schemas:
+        ExecutorClaimId: { type: string, pattern: '^clm_[A-Za-z0-9]{8,64}$', maxLength: 68 }
+        ExecutorId: { type: string, pattern: '^exe_[A-Za-z0-9]{8,64}$', maxLength: 68 }
+        ExecutorDeviceId: { type: string, pattern: '^dev_[A-Za-z0-9]{8,64}$', maxLength: 68 }
+        ExecutorSessionId: { type: string, pattern: '^ses_[A-Za-z0-9]{8,64}$', maxLength: 68 }
+        ExecutorCorrelationId: { type: string, pattern: '^cor_[A-Za-z0-9]{8,64}$', maxLength: 68 }
+        ExecutorIdempotencyKey: { type: string, pattern: '^idem_[A-Za-z0-9_-]{16,80}$', maxLength: 85 }
+        ExecutorDisplayName: { type: string, pattern: '^[A-Za-z0-9][A-Za-z0-9 ._()-]{0,79}$', maxLength: 80 }
+        ConnectClaimCreate:
+          type: object
+          additionalProperties: false
+          required: [kind, protocolVersion, claimId, executorId, deviceId, actorRole, displayName, platform, architecture, executorVersion, keyFingerprint, idempotencyKey, correlationId]
+          properties:
+            kind: { type: string, enum: [executor.claim.create.request] }
+            protocolVersion: { type: string, enum: ['1.0'] }
+            claimId: { $ref: '#/components/schemas/ExecutorClaimId' }
+            executorId: { $ref: '#/components/schemas/ExecutorId' }
+            deviceId: { $ref: '#/components/schemas/ExecutorDeviceId' }
+            actorRole: { type: string, enum: [executor_device] }
+            displayName: { $ref: '#/components/schemas/ExecutorDisplayName' }
+            platform: { type: string, enum: [macos, linux, windows] }
+            architecture: { type: string, enum: [x64, arm64] }
+            executorVersion: { type: string, pattern: '^[0-9]+\.[0-9]+\.[0-9]+(?:[-+][A-Za-z0-9.-]{1,32})?$', maxLength: 64 }
+            keyFingerprint: { type: string, pattern: '^[a-f0-9]{64}$' }
+            idempotencyKey: { $ref: '#/components/schemas/ExecutorIdempotencyKey' }
+            correlationId: { $ref: '#/components/schemas/ExecutorCorrelationId' }
+        ConnectClaimChallenge:
+          type: object
+          additionalProperties: false
+          required: [kind, protocolVersion, claimId, actorRole, claimUrl, shortCode, displayName, platform, architecture, executorVersion, keyFingerprint, expiresAt, correlationId]
+          properties:
+            kind: { type: string, enum: [executor.claim.challenge] }
+            protocolVersion: { type: string, enum: ['1.0'] }
+            claimId: { $ref: '#/components/schemas/ExecutorClaimId' }
+            actorRole: { type: string, enum: [claim_challenge] }
+            claimUrl: { type: string, pattern: '^https://', maxLength: 512 }
+            shortCode: { type: string, pattern: '^[A-Z]{4}-[A-Z]{4}$' }
+            displayName: { $ref: '#/components/schemas/ExecutorDisplayName' }
+            platform: { type: string, enum: [macos, linux, windows] }
+            architecture: { type: string, enum: [x64, arm64] }
+            executorVersion: { type: string, maxLength: 64 }
+            keyFingerprint: { type: string, pattern: '^[a-f0-9]{64}$' }
+            expiresAt: { type: string, format: date-time }
+            correlationId: { $ref: '#/components/schemas/ExecutorCorrelationId' }
+        ConnectClaimStatus:
+          type: object
+          additionalProperties: false
+          required: [kind, protocolVersion, claimId, status, correlationId]
+          properties:
+            kind: { type: string, enum: [executor.claim.status.response] }
+            protocolVersion: { type: string, enum: ['1.0'] }
+            claimId: { $ref: '#/components/schemas/ExecutorClaimId' }
+            status: { type: string, enum: [pending, accepted, denied, expired] }
+            websiteDeploymentId:
+              type: string
+              pattern: '^wdp_[A-Za-z0-9]{32}$'
+              description: Required exactly when status is accepted.
+            correlationId: { $ref: '#/components/schemas/ExecutorCorrelationId' }
+        ConnectClaimReview:
+          type: object
+          additionalProperties: false
+          required: [kind, protocolVersion, claimId, status, displayName, platform, architecture, executorVersion, keyFingerprint, expiresAt, correlationId]
+          properties:
+            kind: { type: string, enum: [executor.claim.review.response] }
+            protocolVersion: { type: string, enum: ['1.0'] }
+            claimId: { $ref: '#/components/schemas/ExecutorClaimId' }
+            status: { type: string, enum: [pending, accepted, denied, expired] }
+            displayName: { $ref: '#/components/schemas/ExecutorDisplayName' }
+            platform: { type: string, enum: [macos, linux, windows] }
+            architecture: { type: string, enum: [x64, arm64] }
+            executorVersion: { type: string, maxLength: 64 }
+            keyFingerprint: { type: string, pattern: '^[a-f0-9]{64}$' }
+            expiresAt: { type: string, format: date-time }
+            correlationId: { $ref: '#/components/schemas/ExecutorCorrelationId' }
+        ConnectClaimDecision:
+          type: object
+          additionalProperties: false
+          required: [kind, protocolVersion, claimId, sessionId, actorRole, decision, idempotencyKey, correlationId]
+          properties:
+            kind: { type: string, enum: [executor.claim.decision.request] }
+            protocolVersion: { type: string, enum: ['1.0'] }
+            claimId: { $ref: '#/components/schemas/ExecutorClaimId' }
+            sessionId: { $ref: '#/components/schemas/ExecutorSessionId' }
+            actorRole: { type: string, enum: [browser_session] }
+            decision: { type: string, enum: [accept, deny] }
+            idempotencyKey: { $ref: '#/components/schemas/ExecutorIdempotencyKey' }
+            correlationId: { $ref: '#/components/schemas/ExecutorCorrelationId' }
+        ConnectClaimDecisionResult:
+          type: object
+          additionalProperties: false
+          required: [kind, protocolVersion, claimId, status, correlationId]
+          properties:
+            kind: { type: string, enum: [executor.claim.decision.response] }
+            protocolVersion: { type: string, enum: ['1.0'] }
+            claimId: { $ref: '#/components/schemas/ExecutorClaimId' }
+            status: { type: string, enum: [accepted, denied] }
+            websiteDeploymentId:
+              type: string
+              pattern: '^wdp_[A-Za-z0-9]{32}$'
+              description: Required exactly when status is accepted.
+            correlationId: { $ref: '#/components/schemas/ExecutorCorrelationId' }
+        ExecutorSummary:
+          type: object
+          additionalProperties: false
+          required: [executorId, displayName, state, online, presence, protocolVersion]
+          properties:
+            executorId: { $ref: '#/components/schemas/ExecutorId' }
+            displayName: { type: string, minLength: 1, maxLength: 80 }
+            state: { type: string, enum: [active, revoked, archived] }
+            online: { type: boolean }
+            presence: { type: string, enum: [online, offline, stale] }
+            protocolVersion: { type: string, enum: ['1.0'] }
+        ConnectExecutorList:
+          type: object
+          additionalProperties: false
+          required: [kind, protocolVersion, executors, correlationId]
+          properties:
+            kind: { type: string, enum: [executor.list.response] }
+            protocolVersion: { type: string, enum: ['1.0'] }
+            executors: { type: array, maxItems: 100, items: { $ref: '#/components/schemas/ExecutorSummary' } }
+            correlationId: { $ref: '#/components/schemas/ExecutorCorrelationId' }
+        ConnectExecutorDetail:
+          type: object
+          additionalProperties: false
+          required: [kind, protocolVersion, executor, deviceId, actorRole, lastSeenAt, correlationId]
+          properties:
+            kind: { type: string, enum: [executor.detail.response] }
+            protocolVersion: { type: string, enum: ['1.0'] }
+            executor: { $ref: '#/components/schemas/ExecutorSummary' }
+            deviceId: { $ref: '#/components/schemas/ExecutorDeviceId' }
+            actorRole: { type: string, enum: [executor_device] }
+            lastSeenAt: { type: string, format: date-time }
+            correlationId: { $ref: '#/components/schemas/ExecutorCorrelationId' }
+        ConnectExecutorRename:
+          type: object
+          additionalProperties: false
+          required: [kind, protocolVersion, executorId, displayName, idempotencyKey, correlationId]
+          properties:
+            kind: { type: string, enum: [executor.rename.request] }
+            protocolVersion: { type: string, enum: ['1.0'] }
+            executorId: { $ref: '#/components/schemas/ExecutorId' }
+            displayName: { $ref: '#/components/schemas/ExecutorDisplayName' }
+            idempotencyKey: { $ref: '#/components/schemas/ExecutorIdempotencyKey' }
+            correlationId: { $ref: '#/components/schemas/ExecutorCorrelationId' }
+        ConnectExecutorRevoke:
+          type: object
+          additionalProperties: false
+          required: [kind, protocolVersion, executorId, action, idempotencyKey, correlationId]
+          properties:
+            kind: { type: string, enum: [executor.action.request] }
+            protocolVersion: { type: string, enum: ['1.0'] }
+            executorId: { $ref: '#/components/schemas/ExecutorId' }
+            action: { type: string, enum: [revoke] }
+            idempotencyKey: { $ref: '#/components/schemas/ExecutorIdempotencyKey' }
+            correlationId: { $ref: '#/components/schemas/ExecutorCorrelationId' }
+        ConnectExecutorActionResult:
+          type: object
+          additionalProperties: false
+          required: [kind, protocolVersion, executorId, state, correlationId]
+          properties:
+            kind: { type: string, enum: [executor.action.response] }
+            protocolVersion: { type: string, enum: ['1.0'] }
+            executorId: { $ref: '#/components/schemas/ExecutorId' }
+            state: { type: string, enum: [revoked] }
+            correlationId: { $ref: '#/components/schemas/ExecutorCorrelationId' }
+        ConnectExecutorError:
+          type: object
+          additionalProperties: false
+          required: [kind, protocolVersion, code, message, retryable, correlationId]
+          properties:
+            kind: { type: string, enum: [error] }
+            protocolVersion: { type: string, enum: ['1.0'] }
+            code: { type: string, enum: [invalid-envelope, protocol-version-mismatch, idempotency-conflict, revoked] }
+            message: { type: string, minLength: 1, maxLength: 240 }
+            retryable: { type: boolean }
+            correlationId: { $ref: '#/components/schemas/ExecutorCorrelationId' }
+      responses:
+        ConnectClaimChallengeResult:
+          description: Single-use claim challenge
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ConnectClaimChallenge' }
+        ConnectExecutorErrorResult:
+          description: Safe Connect error
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ConnectExecutorError' }
+components:
+  <<: *executorComponents

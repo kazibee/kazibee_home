@@ -1,0 +1,23 @@
+{
+  "name": "Desktop-only replay and safe error routing",
+  "clock": "2030-01-01T00:00:00Z",
+  "steps": [
+    {
+      "atMs": 0,
+      "fixture": "exclusive replay request"
+    },
+    {
+      "atMs": 1,
+      "fixture": "desktop owner SSE replay result"
+    },
+    {
+      "atMs": 2,
+      "fixture": "desktop owner SSE replay gap"
+    },
+    {
+      "atMs": 3,
+      "fixture": "desktop owner SSE safe error"
+    }
+  ],
+  "expectedDesktopOnly": true
+}

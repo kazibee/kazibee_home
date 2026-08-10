@@ -5,7 +5,7 @@ import DeviceRepo from "../repo/device_repo";
 import RelayService from "./relay_service";
 import { NotFoundError, ValidationError } from "../errors/domain_errors";
 import { getLogger } from "@noego/logger";
-import { getTrace } from "@noego/trace";
+import TraceAdapter, { type TracePort } from "../observability/trace_adapter";
 
 const logger = getLogger("kazibee:pairing-service");
 
@@ -20,12 +20,15 @@ function generatePairingCode(): string {
 
 @Component()
 export default class PairingService {
-  private trace = getTrace('PairingService');
+  private readonly trace: TracePort;
 
   constructor(
     @Inject(DeviceRepo) private deviceRepo: DeviceRepo,
     @Inject(RelayService) private relayService: RelayService,
-  ) {}
+    @Inject(TraceAdapter) traces: TraceAdapter,
+  ) {
+    this.trace = traces.forSource("PairingService");
+  }
 
   /**
    * Register a new desktop device. Creates a user identity and device record.
@@ -49,8 +52,8 @@ export default class PairingService {
       pairing_expires_at: expiresAt,
     });
 
-    logger.info("Device registered", { userId, deviceId, pairingCode, deviceType: deviceType || "desktop" });
-    this.trace.info('register', { userId, deviceId, pairingCode });
+    logger.info("Device registered", { userId, deviceId, deviceType: deviceType || "desktop" });
+    this.trace.info('register', { userId, deviceId });
 
     return {
       userId,
@@ -138,7 +141,7 @@ export default class PairingService {
    * Authenticate a device by its authToken (Bearer token).
    * Returns the device record or throws UnauthorizedError.
    */
-  async authenticateByToken(authToken: string) {
+  async authenticateByToken(_authToken: string) {
     // We need to check all devices since we hash the token.
     // In production, you would use a lookup table or JWT. For now, we iterate.
     // Since this is a small-scale relay, this is acceptable.

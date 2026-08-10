@@ -1,0 +1,117 @@
+{
+  "package": "@kazibee/connect-protocol",
+  "packageVersion": "1.0.8",
+  "protocolVersion": "1.0",
+  "schemaDraft": "https://json-schema.org/draft/2020-12/schema",
+  "checksumAlgorithm": "sha256",
+  "authContracts": {
+    "desktopClaimCreate": {
+      "header": "X-Kazi-Bootstrap-Token",
+      "required": true,
+      "singleValue": true,
+      "jsonField": false
+    },
+    "desktopRelay": {
+      "transports": [
+        "POST",
+        "SSE"
+      ],
+      "headers": {
+        "authorization": {
+          "name": "Authorization",
+          "scheme": "Bearer",
+          "singleValue": true
+        },
+        "deviceId": {
+          "name": "X-Kazi-Device-Id",
+          "schema": "#/$defs/deviceId",
+          "singleValue": true
+        },
+        "credentialGeneration": {
+          "name": "X-Kazi-Credential-Generation",
+          "schema": "#/$defs/credentialGeneration",
+          "singleValue": true
+        },
+        "audience": {
+          "name": "X-Kazi-Audience",
+          "literal": "desktop-relay",
+          "singleValue": true
+        },
+        "protocolVersion": {
+          "name": "X-Kazi-Protocol-Version",
+          "literal": "1.0",
+          "singleValue": true
+        }
+      },
+      "admissionContextSchema": "#/$defs/desktopRelayAuthContext",
+      "actorRole": "desktop_device",
+      "acceptedBootstrapPromotion": {
+        "credentialGeneration": 1,
+        "reuseAcceptedBootstrapHash": true,
+        "returnsRawCredential": false
+      }
+    }
+  },
+  "files": [
+    {
+      "path": "fixtures/negative.json",
+      "sha256": "530b60ebb6a952c739c201119162fc69674e2409636cddc156d15a30b38ec78f"
+    },
+    {
+      "path": "fixtures/positive.json",
+      "sha256": "acd94249f5ef9dbcb556107347796a69915751a6d3037a52f37a6120a16dcfa8"
+    },
+    {
+      "path": "scenarios/binding-aware-mutations.json",
+      "sha256": "bba70d8d9a273870394424f838acb8acb41f03d2ed40b64157552c754ecc4d7f"
+    },
+    {
+      "path": "scenarios/claim-accept.json",
+      "sha256": "63cc5c4a735f9e9efead9f051d0eca108c240377c4eff87fc638626e76029861"
+    },
+    {
+      "path": "scenarios/desktop-claim-accept.json",
+      "sha256": "73b1bd9d6f76c96659c990e4bbd5a4341ccf6e880b9aa81aa53a8e64eb969174"
+    },
+    {
+      "path": "scenarios/executor-discovery.json",
+      "sha256": "26f318e44469426c95c89c2099faa2e43af6d86bb3905e77c7bea632142775da"
+    },
+    {
+      "path": "scenarios/live-command.json",
+      "sha256": "947fbd18d8774fd073630f84fa8e12f4e71dfacbe218ab9564375378d3ba062a"
+    },
+    {
+      "path": "scenarios/new-thread-send-result.json",
+      "sha256": "210372fdc625c057888425e8fcbfc155cff1434d049b3111ba8c9cdccbb158ee"
+    },
+    {
+      "path": "scenarios/read-result.json",
+      "sha256": "1483e202be69dabd124fff57674a2afc06c798c2cd4060f2659e73a2917e75fc"
+    },
+    {
+      "path": "scenarios/reconnect-replay.json",
+      "sha256": "e32d0d8b439a6c71381c0499438d16428c44e4e6a7f6239a86217ee68071adb6"
+    },
+    {
+      "path": "scenarios/remote-conversation-create.json",
+      "sha256": "96539dc73af0d127da615170948cd3d1e7314e80ce1da6fda8cb164274b8a945"
+    },
+    {
+      "path": "scenarios/replay-error-routing.json",
+      "sha256": "f9cca03fb263b2b006bb00b515e1bd66e83c261df44e731762784fc982bacf5a"
+    },
+    {
+      "path": "scenarios/status-result.json",
+      "sha256": "14c45654e23b0434edd53490828e958188a6bca47f1fd2680810e30b10d80383"
+    },
+    {
+      "path": "schemas/kazi-connect-v1.schema.json",
+      "sha256": "79b7a8be1338855681a3b5b5ce66e0c135eddf7c2a07bdaab96ca9552a3112ec"
+    },
+    {
+      "path": "types-by-schema.d.ts",
+      "sha256": "7434b44649f4baf2db12fe273e162b22e3be5e3cf24c325cb728049e17ba6cbf"
+    }
+  ]
+}

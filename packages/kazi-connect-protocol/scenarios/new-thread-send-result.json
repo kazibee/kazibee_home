@@ -1,0 +1,16 @@
+{
+  "name": "new thread launch returns opaque identities",
+  "clock": "2030-01-01T00:00:00Z",
+  "steps": [
+    {
+      "atMs": 0,
+      "fixture": "new thread send with Claude model"
+    },
+    {
+      "atMs": 1,
+      "fixture": "new thread send command result"
+    }
+  ],
+  "expectedOperation": "thread.send",
+  "expectedCreatedThread": true
+}

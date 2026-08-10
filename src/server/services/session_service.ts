@@ -3,9 +3,9 @@ import { randomUUID } from "crypto";
 import jsonwebtoken from "jsonwebtoken";
 import SessionRepo from "../repo/session_repo";
 import MessageRepo from "../repo/message_repo";
-import { UnauthorizedError, ValidationError } from "../errors/domain_errors";
+import { UnauthorizedError } from "../errors/domain_errors";
 import { getLogger } from "@noego/logger";
-import { getTrace } from "@noego/trace";
+import TraceAdapter, { type TracePort } from "../observability/trace_adapter";
 
 const logger = getLogger("kazibee:session-service");
 
@@ -29,12 +29,15 @@ export interface SessionBootstrapResponse {
 
 @Component()
 export default class SessionService {
-  private trace = getTrace('SessionService');
+  private readonly trace: TracePort;
 
   constructor(
     @Inject(SessionRepo) private sessionRepo: SessionRepo,
     @Inject(MessageRepo) private messageRepo: MessageRepo,
-  ) {}
+    @Inject(TraceAdapter) traces: TraceAdapter,
+  ) {
+    this.trace = traces.forSource("SessionService");
+  }
 
   async createSession(
     userId: string,

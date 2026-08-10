@@ -1,0 +1,214 @@
+module:
+  connectClientRelay:
+    basePath: '/v1/connect/client-relay'
+    paths:
+      '/executors':
+        get:
+          x-controller: connect_client_relay.controller
+          x-action: executors
+          parameters:
+            - { $ref: '#/components/parameters/ClientRelayAuthorization' }
+            - { $ref: '#/components/parameters/ClientRelayDeviceId' }
+            - { $ref: '#/components/parameters/ClientRelayGeneration' }
+            - { $ref: '#/components/parameters/ClientRelayAudience' }
+            - { $ref: '#/components/parameters/ClientRelayProtocol' }
+            - in: query
+              name: correlationId
+              required: true
+              schema: { type: string, pattern: '^cor_[A-Za-z0-9]{8,64}$' }
+          responses:
+            '200':
+              description: Owner-filtered executor discovery for the authenticated Desktop
+              headers:
+                x-kazi-protocol-version: { schema: { type: string, enum: ['1.0'] } }
+              content:
+                application/json:
+                  schema: { $ref: '#/components/schemas/ClientRelayExecutorList' }
+            '400': { $ref: '#/components/responses/ClientRelayErrorResult' }
+            '401': { $ref: '#/components/responses/ClientRelayErrorResult' }
+      '/commands':
+        post:
+          x-controller: connect_client_relay.controller
+          x-action: commands
+          parameters: &desktopRelayHeaders
+            - { $ref: '#/components/parameters/ClientRelayAuthorization' }
+            - { $ref: '#/components/parameters/ClientRelayDeviceId' }
+            - { $ref: '#/components/parameters/ClientRelayGeneration' }
+            - { $ref: '#/components/parameters/ClientRelayAudience' }
+            - { $ref: '#/components/parameters/ClientRelayProtocol' }
+          requestBody:
+            required: true
+            content:
+              application/json:
+                schema: { $ref: '#/components/schemas/ClientRelayCommandPost' }
+          responses:
+            '200':
+              description: Exact executor journal acceptance
+              headers:
+                x-kazi-protocol-version: { schema: { type: string, enum: ['1.0'] } }
+              content:
+                application/json:
+                  schema: { $ref: '#/components/schemas/ClientRelayCommandAccepted' }
+            '400': { $ref: '#/components/responses/ClientRelayErrorResult' }
+            '401': { $ref: '#/components/responses/ClientRelayErrorResult' }
+            '409': { $ref: '#/components/responses/ClientRelayErrorResult' }
+            '413': { $ref: '#/components/responses/ClientRelayErrorResult' }
+            '429': { $ref: '#/components/responses/ClientRelayErrorResult' }
+            '503': { $ref: '#/components/responses/ClientRelayErrorResult' }
+      '/events':
+        get:
+          x-controller: connect_client_relay.controller
+          x-action: events
+          parameters: *desktopRelayHeaders
+          responses:
+            '200':
+              description: Transient owner SSE stream for this exact Desktop
+              headers:
+                x-kazi-protocol-version: { schema: { type: string, enum: ['1.0'] } }
+              content:
+                text/event-stream:
+                  schema: { type: string }
+            '401': { $ref: '#/components/responses/ClientRelayErrorResult' }
+            '409': { $ref: '#/components/responses/ClientRelayErrorResult' }
+    components: &clientRelayComponents
+      parameters:
+        ClientRelayAuthorization:
+          in: header
+          name: Authorization
+          required: true
+          schema: { type: string, minLength: 1, maxLength: 512 }
+        ClientRelayDeviceId:
+          in: header
+          name: X-Kazi-Device-Id
+          required: true
+          schema: { type: string, pattern: '^dev_[A-Za-z0-9]{8,64}$' }
+        ClientRelayGeneration:
+          in: header
+          name: X-Kazi-Credential-Generation
+          required: true
+          schema: { type: string, pattern: '^[1-9][0-9]{0,15}$' }
+        ClientRelayAudience:
+          in: header
+          name: X-Kazi-Audience
+          required: true
+          schema: { type: string, enum: [desktop-relay] }
+        ClientRelayProtocol:
+          in: header
+          name: X-Kazi-Protocol-Version
+          required: true
+          schema: { type: string, enum: ['1.0'] }
+      schemas:
+        ClientRelayExecutorSummary:
+          type: object
+          additionalProperties: false
+          required: [executorId, displayName, state, online, presence, protocolVersion]
+          properties:
+            executorId: { type: string, pattern: '^exe_[A-Za-z0-9]{8,64}$' }
+            displayName: { type: string, minLength: 1, maxLength: 80 }
+            state: { type: string, enum: [active, revoked, archived] }
+            online: { type: boolean }
+            presence: { type: string, enum: [online, offline, stale] }
+            protocolVersion: { type: string, enum: ['1.0'] }
+        ClientRelayExecutorList:
+          type: object
+          additionalProperties: false
+          required: [kind, protocolVersion, executors, correlationId]
+          properties:
+            kind: { type: string, enum: [executor.list.response] }
+            protocolVersion: { type: string, enum: ['1.0'] }
+            executors:
+              type: array
+              maxItems: 100
+              items: { $ref: '#/components/schemas/ClientRelayExecutorSummary' }
+            correlationId: { type: string, pattern: '^cor_[A-Za-z0-9]{8,64}$' }
+        ClientRelayCommandPost:
+          type: object
+          additionalProperties: false
+          required: [kind, protocolVersion, commandId, correlationId, idempotencyKey, websiteDeploymentId, executorId, deviceId, actorRole, operation, payload]
+          properties:
+            kind: { type: string, enum: [command.post] }
+            protocolVersion: { type: string, enum: ['1.0'] }
+            commandId: { type: string, pattern: '^cmd_[A-Za-z0-9]{8,64}$' }
+            correlationId: { type: string, pattern: '^cor_[A-Za-z0-9]{8,64}$' }
+            idempotencyKey: { type: string, pattern: '^idem_[A-Za-z0-9_-]{16,80}$' }
+            websiteDeploymentId: { type: string, pattern: '^wdp_[A-Za-z0-9]{32}$' }
+            executorId: { type: string, pattern: '^exe_[A-Za-z0-9]{8,64}$' }
+            deviceId: { type: string, pattern: '^dev_[A-Za-z0-9]{8,64}$' }
+            actorRole: { type: string, enum: [desktop_device] }
+            operation:
+              type: string
+              enum: [executor.status.read, workspaces.read, threads.read, thread.read, conversation.create, thread.send, thread.retry, thread.cancel, events.replay]
+            payload:
+              type: object
+              maxProperties: 8
+              description: Exact operation-discriminated payload from the canonical Kazi Connect JSON Schema; no unlisted fields are admitted.
+        ClientRelayRemoteExecutionBindingReceipt:
+          type: object
+          additionalProperties: false
+          required: [conversationId, kind, websiteDeploymentId, executorId, remoteWorkspaceId]
+          properties:
+            conversationId: { type: string, pattern: '^thr_[A-Za-z0-9]{8,64}$' }
+            kind: { type: string, enum: [remote] }
+            websiteDeploymentId: { type: string, pattern: '^wdp_[A-Za-z0-9]{32}$' }
+            executorId: { type: string, pattern: '^exe_[A-Za-z0-9]{8,64}$' }
+            remoteWorkspaceId: { type: string, pattern: '^wrk_[A-Za-z0-9]{8,64}$' }
+        ClientRelayConversationCreatePayload:
+          type: object
+          additionalProperties: false
+          required: [clientCreationId, title, websiteDeploymentId, executorId, remoteWorkspaceId]
+          properties:
+            clientCreationId: { type: string, pattern: '^ccr_[A-Za-z0-9_-]{16,80}$' }
+            title: { type: string, minLength: 1, maxLength: 160, pattern: "^[A-Za-z0-9][A-Za-z0-9 ._(),:;'-]{0,159}$" }
+            websiteDeploymentId: { type: string, pattern: '^wdp_[A-Za-z0-9]{32}$' }
+            executorId: { type: string, pattern: '^exe_[A-Za-z0-9]{8,64}$' }
+            remoteWorkspaceId: { type: string, pattern: '^wrk_[A-Za-z0-9]{8,64}$' }
+        ClientRelayCanonicalMutationTarget:
+          type: object
+          additionalProperties: false
+          required: [conversationId, clientOperationId, expectedExecutionBinding]
+          properties:
+            conversationId: { type: string, pattern: '^thr_[A-Za-z0-9]{8,64}$' }
+            clientOperationId: { type: string, pattern: '^cop_[A-Za-z0-9_-]{16,80}$' }
+            expectedExecutionBinding: { $ref: '#/components/schemas/ClientRelayRemoteExecutionBindingReceipt' }
+        ClientRelayConversationCreateResult:
+          type: object
+          additionalProperties: false
+          required: [conversationId, title, createdAt, executionBinding]
+          properties:
+            conversationId: { type: string, pattern: '^thr_[A-Za-z0-9]{8,64}$' }
+            title: { type: string, minLength: 1, maxLength: 160 }
+            createdAt: { type: string, format: date-time }
+            executionBinding: { $ref: '#/components/schemas/ClientRelayRemoteExecutionBindingReceipt' }
+        ClientRelayCommandAccepted:
+          type: object
+          additionalProperties: false
+          required: [kind, protocolVersion, commandId, correlationId, idempotencyKey, executorId, accepted]
+          properties:
+            kind: { type: string, enum: [command.accepted] }
+            protocolVersion: { type: string, enum: ['1.0'] }
+            commandId: { type: string, pattern: '^cmd_[A-Za-z0-9]{8,64}$' }
+            correlationId: { type: string, pattern: '^cor_[A-Za-z0-9]{8,64}$' }
+            idempotencyKey: { type: string, pattern: '^idem_[A-Za-z0-9_-]{16,80}$' }
+            executorId: { type: string, pattern: '^exe_[A-Za-z0-9]{8,64}$' }
+            accepted: { type: boolean, enum: [true] }
+        ClientRelayError:
+          type: object
+          additionalProperties: false
+          required: [kind, protocolVersion, code, message, retryable, correlationId]
+          properties:
+            kind: { type: string, enum: [error] }
+            protocolVersion: { type: string, enum: ['1.0'] }
+            code: { type: string, enum: [executor-offline, protocol-version-mismatch, website-deployment-mismatch, invalid-envelope, revoked] }
+            message: { type: string, minLength: 1, maxLength: 240 }
+            retryable: { type: boolean }
+            correlationId: { type: string, pattern: '^cor_[A-Za-z0-9]{8,64}$' }
+      responses:
+        ClientRelayErrorResult:
+          description: Safe bounded relay error
+          headers:
+            x-kazi-protocol-version: { schema: { type: string, enum: ['1.0'] } }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ClientRelayError' }
+components:
+  <<: *clientRelayComponents

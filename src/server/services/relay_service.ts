@@ -5,25 +5,28 @@ import MessageRepo from "../repo/message_repo";
 import MessageBus from "./message_bus";
 import { ConflictError, NotFoundError, UnauthorizedError } from "../errors/domain_errors";
 import { getLogger } from "@noego/logger";
-import { getTrace } from "@noego/trace";
+import TraceAdapter, { type TracePort } from "../observability/trace_adapter";
 
 const logger = getLogger("kazibee:relay-service");
 
 @Component()
 export default class RelayService {
-  private trace = getTrace('RelayService');
+  private readonly trace: TracePort;
 
   constructor(
     @Inject(DeviceRepo) private deviceRepo: DeviceRepo,
     @Inject(MessageRepo) private messageRepo: MessageRepo,
     @Inject(MessageBus) private messageBus: MessageBus,
-  ) {}
+    @Inject(TraceAdapter) traces: TraceAdapter,
+  ) {
+    this.trace = traces.forSource("RelayService");
+  }
 
   /**
    * Authenticate a device by deviceId + raw authToken (Bearer token).
    * Compares against bcrypt hash stored in devices table.
    */
-  async authenticateDevice(authToken: string) {
+  async authenticateDevice(_authToken: string) {
     // Extract all devices and check token against each.
     // Token format: sk_<hex>
     // This is a small personal relay so device count is low (2-5 devices).
@@ -100,7 +103,6 @@ export default class RelayService {
 
       if (existing) {
         // Check if it is the same message (same type + target)
-        const existingPayload = existing.payload;
         if (existing.type === params.type && existing.target_kind === params.targetKind) {
           logger.info("Idempotent retry detected, returning original", { requestId: params.requestId, messageId: existing.message_id });
           return {

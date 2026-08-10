@@ -1,0 +1,3493 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://kazibee.example/schemas/kazi-connect-v1.schema.json",
+  "title": "Kazi Connect V1",
+  "oneOf": [
+    {
+      "$ref": "#/$defs/signupRequest"
+    },
+    {
+      "$ref": "#/$defs/signupResponse"
+    },
+    {
+      "$ref": "#/$defs/loginRequest"
+    },
+    {
+      "$ref": "#/$defs/loginResponse"
+    },
+    {
+      "$ref": "#/$defs/sessionRequest"
+    },
+    {
+      "$ref": "#/$defs/sessionResponse"
+    },
+    {
+      "$ref": "#/$defs/logoutRequest"
+    },
+    {
+      "$ref": "#/$defs/logoutResponse"
+    },
+    {
+      "$ref": "#/$defs/claimChallenge"
+    },
+    {
+      "$ref": "#/$defs/claimCreateRequest"
+    },
+    {
+      "$ref": "#/$defs/claimStatusResponse"
+    },
+    {
+      "$ref": "#/$defs/claimDecisionRequest"
+    },
+    {
+      "$ref": "#/$defs/claimDecisionResponse"
+    },
+    {
+      "$ref": "#/$defs/desktopClaimCreateRequest"
+    },
+    {
+      "$ref": "#/$defs/desktopClaimChallenge"
+    },
+    {
+      "$ref": "#/$defs/desktopClaimStatusResponse"
+    },
+    {
+      "$ref": "#/$defs/desktopClaimDecisionRequest"
+    },
+    {
+      "$ref": "#/$defs/desktopClaimDecisionResponse"
+    },
+    {
+      "$ref": "#/$defs/desktopRelayAuthContext"
+    },
+    {
+      "$ref": "#/$defs/executorListResponse"
+    },
+    {
+      "$ref": "#/$defs/executorDetailResponse"
+    },
+    {
+      "$ref": "#/$defs/executorRenameRequest"
+    },
+    {
+      "$ref": "#/$defs/executorActionRequest"
+    },
+    {
+      "$ref": "#/$defs/executorActionResponse"
+    },
+    {
+      "$ref": "#/$defs/channelHello"
+    },
+    {
+      "$ref": "#/$defs/channelHeartbeat"
+    },
+    {
+      "$ref": "#/$defs/channelAck"
+    },
+    {
+      "$ref": "#/$defs/revokedControl"
+    },
+    {
+      "$ref": "#/$defs/commandPost"
+    },
+    {
+      "$ref": "#/$defs/commandAccepted"
+    },
+    {
+      "$ref": "#/$defs/commandResult"
+    },
+    {
+      "$ref": "#/$defs/ownerSseEvent"
+    },
+    {
+      "$ref": "#/$defs/executorEventFrame"
+    },
+    {
+      "$ref": "#/$defs/replayRequest"
+    },
+    {
+      "$ref": "#/$defs/replayResult"
+    },
+    {
+      "$ref": "#/$defs/replayGap"
+    },
+    {
+      "$ref": "#/$defs/errorEnvelope"
+    }
+  ],
+  "$defs": {
+    "protocolVersion": {
+      "type": "string",
+      "const": "1.0"
+    },
+    "timestamp": {
+      "type": "string",
+      "pattern": "^(?:[0-9]{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12][0-9]|3[01])|(?:0[469]|11)-(?:0[1-9]|[12][0-9]|30)|02-(?:0[1-9]|1[0-9]|2[0-8]))|(?:[0-9]{2}(?:0[48]|[2468][048]|[13579][26])|(?:[02468][048]|[13579][26])00)-02-29)T(?:[01][0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9](?:\\.[0-9]{1,9})?Z$",
+      "maxLength": 30
+    },
+    "userId": {
+      "type": "string",
+      "pattern": "^usr_[A-Za-z0-9]{8,64}$",
+      "maxLength": 68
+    },
+    "sessionId": {
+      "type": "string",
+      "pattern": "^ses_[A-Za-z0-9]{8,64}$",
+      "maxLength": 68
+    },
+    "executorId": {
+      "type": "string",
+      "pattern": "^exe_[A-Za-z0-9]{8,64}$",
+      "maxLength": 68
+    },
+    "deviceId": {
+      "type": "string",
+      "pattern": "^dev_[A-Za-z0-9]{8,64}$",
+      "maxLength": 68
+    },
+    "claimId": {
+      "type": "string",
+      "pattern": "^clm_[A-Za-z0-9]{8,64}$",
+      "maxLength": 68
+    },
+    "commandId": {
+      "type": "string",
+      "pattern": "^cmd_[A-Za-z0-9]{8,64}$",
+      "maxLength": 68
+    },
+    "correlationId": {
+      "type": "string",
+      "pattern": "^cor_[A-Za-z0-9]{8,64}$",
+      "maxLength": 68
+    },
+    "workspaceId": {
+      "type": "string",
+      "pattern": "^wrk_[A-Za-z0-9]{8,64}$",
+      "maxLength": 68
+    },
+    "threadId": {
+      "type": "string",
+      "pattern": "^thr_[A-Za-z0-9]{8,64}$",
+      "maxLength": 68
+    },
+    "conversationId": {
+      "type": "string",
+      "pattern": "^thr_[A-Za-z0-9]{8,64}$",
+      "maxLength": 68
+    },
+    "clientCreationId": {
+      "type": "string",
+      "pattern": "^ccr_[A-Za-z0-9_-]{16,80}$",
+      "maxLength": 84
+    },
+    "clientOperationId": {
+      "type": "string",
+      "pattern": "^cop_[A-Za-z0-9_-]{16,80}$",
+      "maxLength": 84
+    },
+    "messageId": {
+      "type": "string",
+      "pattern": "^msg_[A-Za-z0-9]{8,64}$",
+      "maxLength": 68
+    },
+    "eventId": {
+      "type": "string",
+      "pattern": "^evt_[A-Za-z0-9]{8,64}$",
+      "maxLength": 68
+    },
+    "streamId": {
+      "type": "string",
+      "pattern": "^str_[A-Za-z0-9]{8,64}$",
+      "maxLength": 68
+    },
+    "cursor": {
+      "type": "string",
+      "pattern": "^cur_[A-Za-z0-9_-]{8,128}$",
+      "maxLength": 132
+    },
+    "idempotencyKey": {
+      "type": "string",
+      "pattern": "^idem_[A-Za-z0-9_-]{16,80}$",
+      "maxLength": 85
+    },
+    "sequence": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 9007199254740991
+    },
+    "role": {
+      "type": "string",
+      "enum": [
+        "browser_session",
+        "desktop_device",
+        "executor_device",
+        "claim_challenge"
+      ]
+    },
+    "operation": {
+      "type": "string",
+      "enum": [
+        "executor.status.read",
+        "workspaces.read",
+        "threads.read",
+        "thread.read",
+        "conversation.create",
+        "thread.send",
+        "thread.retry",
+        "thread.cancel",
+        "events.replay"
+      ]
+    },
+    "errorCode": {
+      "type": "string",
+      "enum": [
+        "executor-offline",
+        "protocol-version-mismatch",
+        "unknown-operation",
+        "invalid-envelope",
+        "idempotency-conflict",
+        "replay-gap",
+        "revoked",
+        "website-deployment-mismatch"
+      ]
+    },
+    "rawUsername": {
+      "type": "string",
+      "description": "Raw account input; implementations trim leading/trailing whitespace and lowercase ASCII letters before validation.",
+      "pattern": "^\\s*[A-Za-z0-9][A-Za-z0-9._-]{2,63}\\s*$",
+      "minLength": 3,
+      "maxLength": 128
+    },
+    "username": {
+      "type": "string",
+      "description": "Canonical normalized account username used for storage and responses.",
+      "pattern": "^[a-z0-9][a-z0-9._-]{2,63}$",
+      "minLength": 3,
+      "maxLength": 64
+    },
+    "password": {
+      "type": "string",
+      "minLength": 12,
+      "maxLength": 128
+    },
+    "displayName": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9 ._()-]{0,79}$",
+      "maxLength": 80
+    },
+    "platform": {
+      "type": "string",
+      "enum": [
+        "macos",
+        "linux",
+        "windows"
+      ]
+    },
+    "architecture": {
+      "type": "string",
+      "enum": [
+        "x64",
+        "arm64"
+      ]
+    },
+    "executorVersion": {
+      "type": "string",
+      "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+(?:[-+][A-Za-z0-9.-]{1,32})?$",
+      "maxLength": 64
+    },
+    "desktopVersion": {
+      "type": "string",
+      "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+(?:[-+][A-Za-z0-9.-]{1,32})?$",
+      "maxLength": 64
+    },
+    "credentialGeneration": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 9007199254740991
+    },
+    "desktopRelayAudience": {
+      "type": "string",
+      "const": "desktop-relay"
+    },
+    "keyFingerprint": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$",
+      "maxLength": 64
+    },
+    "claimUrl": {
+      "type": "string",
+      "pattern": "^https://[A-Za-z0-9](?:[A-Za-z0-9.-]{0,251}[A-Za-z0-9])?(?::[0-9]{1,5})?(?:/[A-Za-z0-9._~!$&'()*+,;=:@%/-]*)?(?:\\?[A-Za-z0-9._~!$&'()*+,;=:@%/?-]*)?$",
+      "maxLength": 512
+    },
+    "modelId": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/-]{0,127}$",
+      "maxLength": 128
+    },
+    "signupRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "protocolVersion",
+        "username",
+        "password",
+        "idempotencyKey",
+        "correlationId"
+      ],
+      "properties": {
+        "kind": {
+          "const": "auth.signup.request"
+        },
+        "protocolVersion": {
+          "$ref": "#/$defs/protocolVersion"
+        },
+        "username": {
+          "$ref": "#/$defs/rawUsername"
+        },
+        "password": {
+          "$ref": "#/$defs/password"
+        },
+        "idempotencyKey": {
+          "$ref": "#/$defs/idempotencyKey"
+        },
+        "correlationId": {
+          "$ref": "#/$defs/correlationId"
+        }
+      }
+    },
+    "signupResponse": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "protocolVersion",
+        "userId",
+        "username",
+        "correlationId"
+      ],
+      "properties": {
+        "kind": {
+          "const": "auth.signup.response"
+        },
+        "protocolVersion": {
+          "$ref": "#/$defs/protocolVersion"
+        },
+        "userId": {
+          "$ref": "#/$defs/userId"
+        },
+        "username": {
+          "$ref": "#/$defs/username"
+        },
+        "correlationId": {
+          "$ref": "#/$defs/correlationId"
+        }
+      }
+    },
+    "loginRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "protocolVersion",
+        "username",
+        "password",
+        "idempotencyKey",
+        "correlationId"
+      ],
+      "properties": {
+        "kind": {
+          "const": "auth.login.request"
+        },
+        "protocolVersion": {
+          "$ref": "#/$defs/protocolVersion"
+        },
+        "username": {
+          "$ref": "#/$defs/rawUsername"
+        },
+        "password": {
+          "$ref": "#/$defs/password"
+        },
+        "idempotencyKey": {
+          "$ref": "#/$defs/idempotencyKey"
+        },
+        "correlationId": {
+          "$ref": "#/$defs/correlationId"
+        }
+      }
+    },
+    "loginResponse": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "protocolVersion",
+        "userId",
+        "sessionId",
+        "actorRole",
+        "expiresAt",
+        "correlationId"
+      ],
+      "properties": {
+        "kind": {
+          "const": "auth.login.response"
+        },
+        "protocolVersion": {
+          "$ref": "#/$defs/protocolVersion"
+        },
+        "userId": {
+          "$ref": "#/$defs/userId"
+        },
+        "sessionId": {
+          "$ref": "#/$defs/sessionId"
+        },
+        "actorRole": {
+          "const": "browser_session"
+        },
+        "expiresAt": {
+          "$ref": "#/$defs/timestamp"
+        },
+        "correlationId": {
+          "$ref": "#/$defs/correlationId"
+        }
+      }
+    },
+    "sessionRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "protocolVersion",
+        "sessionId",
+        "actorRole",
+        "correlationId"
+      ],
+      "properties": {
+        "kind": {
+          "const": "auth.session.request"
+        },
+        "protocolVersion": {
+          "$ref": "#/$defs/protocolVersion"
+        },
+        "sessionId": {
+          "$ref": "#/$defs/sessionId"
+        },
+        "actorRole": {
+          "const": "browser_session"
+        },
+        "correlationId": {
+          "$ref": "#/$defs/correlationId"
+        }
+      }
+    },
+    "sessionResponse": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "protocolVersion",
+        "userId",
+        "sessionId",
+        "actorRole",
+        "expiresAt",
+        "correlationId"
+      ],
+      "properties": {
+        "kind": {
+          "const": "auth.session.response"
+        },
+        "protocolVersion": {
+          "$ref": "#/$defs/protocolVersion"
+        },
+        "userId": {
+          "$ref": "#/$defs/userId"
+        },
+        "sessionId": {
+          "$ref": "#/$defs/sessionId"
+        },
+        "actorRole": {
+          "const": "browser_session"
+        },
+        "expiresAt": {
+          "$ref": "#/$defs/timestamp"
+        },
+        "correlationId": {
+          "$ref": "#/$defs/correlationId"
+        }
+      }
+    },
+    "logoutRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "protocolVersion",
+        "sessionId",
+        "actorRole",
+        "idempotencyKey",
+        "correlationId"
+      ],
+      "properties": {
+        "kind": {
+          "const": "auth.logout.request"
+        },
+        "protocolVersion": {
+          "$ref": "#/$defs/protocolVersion"
+        },
+        "sessionId": {
+          "$ref": "#/$defs/sessionId"
+        },
+        "actorRole": {
+          "const": "browser_session"
+        },
+        "idempotencyKey": {
+          "$ref": "#/$defs/idempotencyKey"
+        },
+        "correlationId": {
+          "$ref": "#/$defs/correlationId"
+        }
+      }
+    },
+    "logoutResponse": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "protocolVersion",
+        "sessionId",
+        "ended",
+        "correlationId"
+      ],
+      "properties": {
+        "kind": {
+          "const": "auth.logout.response"
+        },
+        "protocolVersion": {
+          "$ref": "#/$defs/protocolVersion"
+        },
+        "sessionId": {
+          "$ref": "#/$defs/sessionId"
+        },
+        "ended": {
+          "const": true
+        },
+        "correlationId": {
+          "$ref": "#/$defs/correlationId"
+        }
+      }
+    },
+    "claimChallenge": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "protocolVersion",
+        "claimId",
+        "actorRole",
+        "claimUrl",
+        "shortCode",
+        "displayName",
+        "platform",
+        "architecture",
+        "executorVersion",
+        "keyFingerprint",
+        "expiresAt",
+        "correlationId"
+      ],
+      "properties": {
+        "kind": {
+          "const": "executor.claim.challenge"
+        },
+        "protocolVersion": {
+          "$ref": "#/$defs/protocolVersion"
+        },
+        "claimId": {
+          "$ref": "#/$defs/claimId"
+        },
+        "actorRole": {
+          "const": "claim_challenge"
+        },
+        "claimUrl": {
+          "$ref": "#/$defs/claimUrl"
+        },
+        "shortCode": {
+          "type": "string",
+          "pattern": "^[A-Z]{4}-[A-Z]{4}$",
+          "maxLength": 9
+        },
+        "displayName": {
+          "$ref": "#/$defs/displayName"
+        },
+        "platform": {
+          "$ref": "#/$defs/platform"
+        },
+        "architecture": {
+          "$ref": "#/$defs/architecture"
+        },
+        "executorVersion": {
+          "$ref": "#/$defs/executorVersion"
+        },
+        "keyFingerprint": {
+          "$ref": "#/$defs/keyFingerprint"
+        },
+        "expiresAt": {
+          "$ref": "#/$defs/timestamp"
+        },
+        "correlationId": {
+          "$ref": "#/$defs/correlationId"
+        }
+      }
+    },
+    "claimCreateRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "protocolVersion",
+        "claimId",
+        "executorId",
+        "deviceId",
+        "actorRole",
+        "displayName",
+        "platform",
+        "architecture",
+        "executorVersion",
+        "keyFingerprint",
+        "idempotencyKey",
+        "correlationId"
+      ],
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "platform": {
+                "const": "windows"
+              }
+            },
+            "required": [
+              "platform"
+            ]
+          },
+          "then": {
+            "properties": {
+              "architecture": {
+                "const": "x64"
+              }
+            }
+          }
+        }
+      ],
+      "properties": {
+        "kind": {
+          "const": "executor.claim.create.request"
+        },
+        "protocolVersion": {
+          "$ref": "#/$defs/protocolVersion"
+        },
+        "claimId": {
+          "$ref": "#/$defs/claimId"
+        },
+        "executorId": {
+          "$ref": "#/$defs/executorId"
+        },
+        "deviceId": {
+          "$ref": "#/$defs/deviceId"
+        },
+        "actorRole": {
+          "const": "executor_device"
+        },
+        "displayName": {
+          "$ref": "#/$defs/displayName"
+        },
+        "platform": {
+          "$ref": "#/$defs/platform"
+        },
+        "architecture": {
+          "$ref": "#/$defs/architecture"
+        },
+        "executorVersion": {
+          "$ref": "#/$defs/executorVersion"
+        },
+        "keyFingerprint": {
+          "$ref": "#/$defs/keyFingerprint"
+        },
+        "idempotencyKey": {
+          "$ref": "#/$defs/idempotencyKey"
+        },
+        "correlationId": {
+          "$ref": "#/$defs/correlationId"
+        }
+      }
+    },
+    "claimStatusResponse": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "protocolVersion",
+        "claimId",
+        "status",
+        "correlationId"
+      ],
+      "properties": {
+        "kind": {
+          "const": "executor.claim.status.response"
+        },
+        "protocolVersion": {
+          "$ref": "#/$defs/protocolVersion"
+        },
+        "claimId": {
+          "$ref": "#/$defs/claimId"
+        },
+        "status": {
+          "enum": [
+            "pending",
+            "accepted",
+            "denied",
+            "expired"
+          ]
+        },
+        "correlationId": {
+          "$ref": "#/$defs/correlationId"
+        },
+        "websiteDeploymentId": {
+          "$ref": "#/$defs/websiteDeploymentId"
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "status": {
+                "const": "accepted"
+              }
+            },
+            "required": [
+              "status"
+            ]
+          },
+          "then": {
+            "required": [
+              "websiteDeploymentId"
+            ],
+            "properties": {
+              "websiteDeploymentId": {
+                "$ref": "#/$defs/websiteDeploymentId"
+              }
+            }
+          },
+          "else": {
+            "properties": {
+              "websiteDeploymentId": false
+            }
+          }
+        }
+      ]
+    },
+    "claimDecisionRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "protocolVersion",
+        "claimId",
+        "sessionId",
+        "actorRole",
+        "decision",
+        "idempotencyKey",
+        "correlationId"
+      ],
+      "properties": {
+        "kind": {
+          "const": "executor.claim.decision.request"
+        },
+        "protocolVersion": {
+          "$ref": "#/$defs/protocolVersion"
+        },
+        "claimId": {
+          "$ref": "#/$defs/claimId"
+        },
+        "sessionId": {
+          "$ref": "#/$defs/sessionId"
+        },
+        "actorRole": {
+          "const": "browser_session"
+        },
+        "decision": {
+          "enum": [
+            "accept",
+            "deny"
+          ]
+        },
+        "idempotencyKey": {
+          "$ref": "#/$defs/idempotencyKey"
+        },
+        "correlationId": {
+          "$ref": "#/$defs/correlationId"
+        }
+      }
+    },
+    "claimDecisionResponse": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "protocolVersion",
+        "claimId",
+        "status",
+        "correlationId"
+      ],
+      "properties": {
+        "kind": {
+          "const": "executor.claim.decision.response"
+        },
+        "protocolVersion": {
+          "$ref": "#/$defs/protocolVersion"
+        },
+        "claimId": {
+          "$ref": "#/$defs/claimId"
+        },
+        "status": {
+          "enum": [
+            "accepted",
+            "denied"
+          ]
+        },
+        "correlationId": {
+          "$ref": "#/$defs/correlationId"
+        },
+        "websiteDeploymentId": {
+          "$ref": "#/$defs/websiteDeploymentId"
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "status": {
+                "const": "accepted"
+              }
+            },
+            "required": [
+              "status"
+            ]
+          },
+          "then": {
+            "required": [
+              "websiteDeploymentId"
+            ],
+            "properties": {
+              "websiteDeploymentId": {
+                "$ref": "#/$defs/websiteDeploymentId"
+              }
+            }
+          },
+          "else": {
+            "properties": {
+              "websiteDeploymentId": false
+            }
+          }
+        }
+      ]
+    },
+    "desktopClaimCreateRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "protocolVersion",
+        "claimId",
+        "deviceId",
+        "actorRole",
+        "displayName",
+        "platform",
+        "architecture",
+        "desktopVersion",
+        "keyFingerprint",
+        "idempotencyKey",
+        "correlationId"
+      ],
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "platform": {
+                "const": "windows"
+              }
+            },
+            "required": [
+              "platform"
+            ]
+          },
+          "then": {
+            "properties": {
+              "architecture": {
+                "const": "x64"
+              }
+            }
+          }
+        }
+      ],
+      "properties": {
+        "kind": {
+          "const": "desktop.claim.create.request"
+        },
+        "protocolVersion": {
+          "$ref": "#/$defs/protocolVersion"
+        },
+        "claimId": {
+          "$ref": "#/$defs/claimId"
+        },
+        "deviceId": {
+          "$ref": "#/$defs/deviceId"
+        },
+        "actorRole": {
+          "const": "desktop_device"
+        },
+        "displayName": {
+          "$ref": "#/$defs/displayName"
+        },
+        "platform": {
+          "$ref": "#/$defs/platform"
+        },
+        "architecture": {
+          "$ref": "#/$defs/architecture"
+        },
+        "desktopVersion": {
+          "$ref": "#/$defs/desktopVersion"
+        },
+        "keyFingerprint": {
+          "$ref": "#/$defs/keyFingerprint"
+        },
+        "idempotencyKey": {
+          "$ref": "#/$defs/idempotencyKey"
+        },
+        "correlationId": {
+          "$ref": "#/$defs/correlationId"
+        }
+      }
+    },
+    "desktopClaimChallenge": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "protocolVersion",
+        "claimId",
+        "actorRole",
+        "claimUrl",
+        "shortCode",
+        "deviceId",
+        "displayName",
+        "platform",
+        "architecture",
+        "desktopVersion",
+        "keyFingerprint",
+        "expiresAt",
+        "correlationId"
+      ],
+      "properties": {
+        "kind": {
+          "const": "desktop.claim.challenge"
+        },
+        "protocolVersion": {
+          "$ref": "#/$defs/protocolVersion"
+        },
+        "claimId": {
+          "$ref": "#/$defs/claimId"
+        },
+        "actorRole": {
+          "const": "claim_challenge"
+        },
+        "claimUrl": {
+          "$ref": "#/$defs/claimUrl"
+        },
+        "shortCode": {
+          "type": "string",
+          "pattern": "^[A-Z]{4}-[A-Z]{4}$",
+          "maxLength": 9
+        },
+        "deviceId": {
+          "$ref": "#/$defs/deviceId"
+        },
+        "displayName": {
+          "$ref": "#/$defs/displayName"
+        },
+        "platform": {
+          "$ref": "#/$defs/platform"
+        },
+        "architecture": {
+          "$ref": "#/$defs/architecture"
+        },
+        "desktopVersion": {
+          "$ref": "#/$defs/desktopVersion"
+        },
+        "keyFingerprint": {
+          "$ref": "#/$defs/keyFingerprint"
+        },
+        "expiresAt": {
+          "$ref": "#/$defs/timestamp"
+        },
+        "correlationId": {
+          "$ref": "#/$defs/correlationId"
+        }
+      }
+    },
+    "desktopClaimStatusResponse": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/desktopClaimPendingStatus"
+        },
+        {
+          "$ref": "#/$defs/desktopClaimAcceptedStatus"
+        },
+        {
+          "$ref": "#/$defs/desktopClaimDeniedStatus"
+        },
+        {
+          "$ref": "#/$defs/desktopClaimExpiredStatus"
+        }
+      ]
+    },
+    "desktopClaimPendingStatus": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "protocolVersion",
+        "claimId",
+        "status",
+        "correlationId"
+      ],
+      "properties": {
+        "kind": {
+          "const": "desktop.claim.status.response"
+        },
+        "protocolVersion": {
+          "$ref": "#/$defs/protocolVersion"
+        },
+        "claimId": {
+          "$ref": "#/$defs/claimId"
+        },
+        "status": {
+          "const": "pending"
+        },
+        "correlationId": {
+          "$ref": "#/$defs/correlationId"
+        }
+      }
+    },
+    "desktopClaimAcceptedStatus": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "protocolVersion",
+        "claimId",
+        "status",
+        "deviceId",
+        "actorRole",
+        "credentialAudience",
+        "credentialGeneration",
+        "credentialExpiresAt",
+        "websiteAccountId",
+        "websiteDeploymentId",
+        "correlationId"
+      ],
+      "properties": {
+        "kind": {
+          "const": "desktop.claim.status.response"
+        },
+        "protocolVersion": {
+          "$ref": "#/$defs/protocolVersion"
+        },
+        "claimId": {
+          "$ref": "#/$defs/claimId"
+        },
+        "status": {
+          "const": "accepted"
+        },
+        "deviceId": {
+          "$ref": "#/$defs/deviceId"
+        },
+        "actorRole": {
+          "const": "desktop_device"
+        },
+        "credentialAudience": {
+          "$ref": "#/$defs/desktopRelayAudience"
+        },
+        "credentialGeneration": {
+          "const": 1
+        },
+        "credentialExpiresAt": {
+          "$ref": "#/$defs/timestamp"
+        },
+        "correlationId": {
+          "$ref": "#/$defs/correlationId"
+        },
+        "websiteAccountId": {
+          "$ref": "#/$defs/websiteAccountId"
+        },
+        "websiteDeploymentId": {
+          "$ref": "#/$defs/websiteDeploymentId"
+        }
+      }
+    },
+    "desktopClaimDeniedStatus": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "protocolVersion",
+        "claimId",
+        "status",
+        "correlationId"
+      ],
+      "properties": {
+        "kind": {
+          "const": "desktop.claim.status.response"
+        },
+        "protocolVersion": {
+          "$ref": "#/$defs/protocolVersion"
+        },
+        "claimId": {
+          "$ref": "#/$defs/claimId"
+        },
+        "status": {
+          "const": "denied"
+        },
+        "correlationId": {
+          "$ref": "#/$defs/correlationId"
+        }
+      }
+    },
+    "desktopClaimExpiredStatus": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "protocolVersion",
+        "claimId",
+        "status",
+        "correlationId"
+      ],
+      "properties": {
+        "kind": {
+          "const": "desktop.claim.status.response"
+        },
+        "protocolVersion": {
+          "$ref": "#/$defs/protocolVersion"
+        },
+        "claimId": {
+          "$ref": "#/$defs/claimId"
+        },
+        "status": {
+          "const": "expired"
+        },
+        "correlationId": {
+          "$ref": "#/$defs/correlationId"
+        }
+      }
+    },
+    "desktopClaimDecisionRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "protocolVersion",
+        "claimId",
+        "sessionId",
+        "actorRole",
+        "decision",
+        "idempotencyKey",
+        "correlationId"
+      ],
+      "properties": {
+        "kind": {
+          "const": "desktop.claim.decision.request"
+        },
+        "protocolVersion": {
+          "$ref": "#/$defs/protocolVersion"
+        },
+        "claimId": {
+          "$ref": "#/$defs/claimId"
+        },
+        "sessionId": {
+          "$ref": "#/$defs/sessionId"
+        },
+        "actorRole": {
+          "const": "browser_session"
+        },
+        "decision": {
+          "enum": [
+            "accept",
+            "deny"
+          ]
+        },
+        "idempotencyKey": {
+          "$ref": "#/$defs/idempotencyKey"
+        },
+        "correlationId": {
+          "$ref": "#/$defs/correlationId"
+        }
+      }
+    },
+    "desktopClaimDecisionResponse": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/desktopClaimAcceptedDecision"
+        },
+        {
+          "$ref": "#/$defs/desktopClaimDeniedDecision"
+        }
+      ]
+    },
+    "desktopClaimAcceptedDecision": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "protocolVersion",
+        "claimId",
+        "status",
+        "deviceId",
+        "actorRole",
+        "credentialAudience",
+        "credentialGeneration",
+        "credentialExpiresAt",
+        "websiteAccountId",
+        "websiteDeploymentId",
+        "correlationId"
+      ],
+      "properties": {
+        "kind": {
+          "const": "desktop.claim.decision.response"
+        },
+        "protocolVersion": {
+          "$ref": "#/$defs/protocolVersion"
+        },
+        "claimId": {
+          "$ref": "#/$defs/claimId"
+        },
+        "status": {
+          "const": "accepted"
+        },
+        "deviceId": {
+          "$ref": "#/$defs/deviceId"
+        },
+        "actorRole": {
+          "const": "desktop_device"
+        },
+        "credentialAudience": {
+          "$ref": "#/$defs/desktopRelayAudience"
+        },
+        "credentialGeneration": {
+          "const": 1
+        },
+        "credentialExpiresAt": {
+          "$ref": "#/$defs/timestamp"
+        },
+        "correlationId": {
+          "$ref": "#/$defs/correlationId"
+        },
+        "websiteAccountId": {
+          "$ref": "#/$defs/websiteAccountId"
+        },
+        "websiteDeploymentId": {
+          "$ref": "#/$defs/websiteDeploymentId"
+        }
+      }
+    },
+    "desktopClaimDeniedDecision": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "protocolVersion",
+        "claimId",
+        "status",
+        "correlationId"
+      ],
+      "properties": {
+        "kind": {
+          "const": "desktop.claim.decision.response"
+        },
+        "protocolVersion": {
+          "$ref": "#/$defs/protocolVersion"
+        },
+        "claimId": {
+          "$ref": "#/$defs/claimId"
+        },
+        "status": {
+          "const": "denied"
+        },
+        "correlationId": {
+          "$ref": "#/$defs/correlationId"
+        }
+      }
+    },
+    "desktopRelayAuthContext": {
+      "description": "Strict admission projection after exactly one X-Kazi-Protocol-Version: 1.0 header and all Desktop relay credential headers have been validated.",
+      "oneOf": [
+        {
+          "$ref": "#/$defs/desktopActiveCredentialContext"
+        },
+        {
+          "$ref": "#/$defs/desktopExpiredCredentialContext"
+        },
+        {
+          "$ref": "#/$defs/desktopRevokedCredentialContext"
+        }
+      ]
+    },
+    "desktopActiveCredentialContext": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "protocolVersion",
+        "deviceId",
+        "actorRole",
+        "audience",
+        "credentialGeneration",
+        "credentialState",
+        "expiresAt"
+      ],
+      "properties": {
+        "kind": {
+          "const": "desktop.relay.auth.context"
+        },
+        "protocolVersion": {
+          "$ref": "#/$defs/protocolVersion",
+          "description": "The single admitted X-Kazi-Protocol-Version header value."
+        },
+        "deviceId": {
+          "$ref": "#/$defs/deviceId"
+        },
+        "actorRole": {
+          "const": "desktop_device"
+        },
+        "audience": {
+          "$ref": "#/$defs/desktopRelayAudience"
+        },
+        "credentialGeneration": {
+          "$ref": "#/$defs/credentialGeneration"
+        },
+        "credentialState": {
+          "const": "active"
+        },
+        "expiresAt": {
+          "$ref": "#/$defs/timestamp"
+        }
+      }
+    },
+    "desktopExpiredCredentialContext": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "protocolVersion",
+        "deviceId",
+        "actorRole",
+        "audience",
+        "credentialGeneration",
+        "credentialState",
+        "expiresAt"
+      ],
+      "properties": {
+        "kind": {
+          "const": "desktop.relay.auth.context"
+        },
+        "protocolVersion": {
+          "$ref": "#/$defs/protocolVersion",
+          "description": "The single admitted X-Kazi-Protocol-Version header value."
+        },
+        "deviceId": {
+          "$ref": "#/$defs/deviceId"
+        },
+        "actorRole": {
+          "const": "desktop_device"
+        },
+        "audience": {
+          "$ref": "#/$defs/desktopRelayAudience"
+        },
+        "credentialGeneration": {
+          "$ref": "#/$defs/credentialGeneration"
+        },
+        "credentialState": {
+          "const": "expired"
+        },
+        "expiresAt": {
+          "$ref": "#/$defs/timestamp"
+        }
+      }
+    },
+    "desktopRevokedCredentialContext": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "protocolVersion",
+        "deviceId",
+        "actorRole",
+        "audience",
+        "credentialGeneration",
+        "credentialState",
+        "expiresAt",
+        "revokedAt"
+      ],
+      "properties": {
+        "kind": {
+          "const": "desktop.relay.auth.context"
+        },
+        "protocolVersion": {
+          "$ref": "#/$defs/protocolVersion",
+          "description": "The single admitted X-Kazi-Protocol-Version header value."
+        },
+        "deviceId": {
+          "$ref": "#/$defs/deviceId"
+        },
+        "actorRole": {
+          "const": "desktop_device"
+        },
+        "audience": {
+          "$ref": "#/$defs/desktopRelayAudience"
+        },
+        "credentialGeneration": {
+          "$ref": "#/$defs/credentialGeneration"
+        },
+        "credentialState": {
+          "const": "revoked"
+        },
+        "expiresAt": {
+          "$ref": "#/$defs/timestamp"
+        },
+        "revokedAt": {
+          "$ref": "#/$defs/timestamp"
+        }
+      }
+    },
+    "executorSummary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "executorId",
+        "displayName",
+        "state",
+        "online",
+        "presence",
+        "protocolVersion"
+      ],
+      "properties": {
+        "executorId": {
+          "$ref": "#/$defs/executorId"
+        },
+        "displayName": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 80
+        },
+        "state": {
+          "enum": [
+            "active",
+            "revoked",
+            "archived"
+          ]
+        },
+        "online": {
+          "type": "boolean"
+        },
+        "protocolVersion": {
+          "$ref": "#/$defs/protocolVersion"
+        },
+        "presence": {
+          "enum": [
+            "online",
+            "offline",
+            "stale"
+          ]
+        }
+      }
+    },
+    "executorListResponse": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "protocolVersion",
+        "executors",
+        "correlationId"
+      ],
+      "properties": {
+        "kind": {
+          "const": "executor.list.response"
+        },
+        "protocolVersion": {
+          "$ref": "#/$defs/protocolVersion"
+        },
+        "executors": {
+          "type": "array",
+          "maxItems": 100,
+          "items": {
+            "$ref": "#/$defs/executorSummary"
+          }
+        },
+        "correlationId": {
+          "$ref": "#/$defs/correlationId"
+        }
+      }
+    },
+    "executorDetailResponse": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "protocolVersion",
+        "executor",
+        "deviceId",
+        "actorRole",
+        "lastSeenAt",
+        "correlationId"
+      ],
+      "properties": {
+        "kind": {
+          "const": "executor.detail.response"
+        },
+        "protocolVersion": {
+          "$ref": "#/$defs/protocolVersion"
+        },
+        "executor": {
+          "$ref": "#/$defs/executorSummary"
+        },
+        "deviceId": {
+          "$ref": "#/$defs/deviceId"
+        },
+        "actorRole": {
+          "const": "executor_device"
+        },
+        "lastSeenAt": {
+          "$ref": "#/$defs/timestamp"
+        },
+        "correlationId": {
+          "$ref": "#/$defs/correlationId"
+        }
+      }
+    },
+    "executorRenameRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "protocolVersion",
+        "executorId",
+        "displayName",
+        "idempotencyKey",
+        "correlationId"
+      ],
+      "properties": {
+        "kind": {
+          "const": "executor.rename.request"
+        },
+        "protocolVersion": {
+          "$ref": "#/$defs/protocolVersion"
+        },
+        "executorId": {
+          "$ref": "#/$defs/executorId"
+        },
+        "displayName": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 80
+        },
+        "idempotencyKey": {
+          "$ref": "#/$defs/idempotencyKey"
+        },
+        "correlationId": {
+          "$ref": "#/$defs/correlationId"
+        }
+      }
+    },
+    "executorActionRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "protocolVersion",
+        "executorId",
+        "action",
+        "idempotencyKey",
+        "correlationId"
+      ],
+      "properties": {
+        "kind": {
+          "const": "executor.action.request"
+        },
+        "protocolVersion": {
+          "$ref": "#/$defs/protocolVersion"
+        },
+        "executorId": {
+          "$ref": "#/$defs/executorId"
+        },
+        "action": {
+          "enum": [
+            "revoke",
+            "archive"
+          ]
+        },
+        "idempotencyKey": {
+          "$ref": "#/$defs/idempotencyKey"
+        },
+        "correlationId": {
+          "$ref": "#/$defs/correlationId"
+        }
+      }
+    },
+    "executorActionResponse": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "protocolVersion",
+        "executorId",
+        "state",
+        "correlationId"
+      ],
+      "properties": {
+        "kind": {
+          "const": "executor.action.response"
+        },
+        "protocolVersion": {
+          "$ref": "#/$defs/protocolVersion"
+        },
+        "executorId": {
+          "$ref": "#/$defs/executorId"
+        },
+        "state": {
+          "enum": [
+            "revoked",
+            "archived"
+          ]
+        },
+        "correlationId": {
+          "$ref": "#/$defs/correlationId"
+        }
+      }
+    },
+    "channelHello": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "protocolVersion",
+        "executorId",
+        "deviceId",
+        "actorRole",
+        "correlationId"
+      ],
+      "properties": {
+        "kind": {
+          "const": "channel.hello"
+        },
+        "protocolVersion": {
+          "$ref": "#/$defs/protocolVersion"
+        },
+        "executorId": {
+          "$ref": "#/$defs/executorId"
+        },
+        "deviceId": {
+          "$ref": "#/$defs/deviceId"
+        },
+        "actorRole": {
+          "const": "executor_device"
+        },
+        "correlationId": {
+          "$ref": "#/$defs/correlationId"
+        }
+      }
+    },
+    "channelHeartbeat": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "protocolVersion",
+        "executorId",
+        "deviceId",
+        "actorRole",
+        "state",
+        "sentAt",
+        "correlationId"
+      ],
+      "properties": {
+        "kind": {
+          "const": "channel.heartbeat"
+        },
+        "protocolVersion": {
+          "$ref": "#/$defs/protocolVersion"
+        },
+        "executorId": {
+          "$ref": "#/$defs/executorId"
+        },
+        "deviceId": {
+          "$ref": "#/$defs/deviceId"
+        },
+        "actorRole": {
+          "const": "executor_device"
+        },
+        "state": {
+          "enum": [
+            "idle",
+            "busy"
+          ]
+        },
+        "sentAt": {
+          "$ref": "#/$defs/timestamp"
+        },
+        "correlationId": {
+          "$ref": "#/$defs/correlationId"
+        }
+      }
+    },
+    "channelAck": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "protocolVersion",
+        "executorId",
+        "acknowledgedKind",
+        "correlationId"
+      ],
+      "properties": {
+        "kind": {
+          "const": "channel.ack"
+        },
+        "protocolVersion": {
+          "$ref": "#/$defs/protocolVersion"
+        },
+        "executorId": {
+          "$ref": "#/$defs/executorId"
+        },
+        "acknowledgedKind": {
+          "enum": [
+            "channel.hello",
+            "channel.heartbeat"
+          ]
+        },
+        "correlationId": {
+          "$ref": "#/$defs/correlationId"
+        }
+      }
+    },
+    "revokedControl": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "protocolVersion",
+        "executorId",
+        "code",
+        "correlationId"
+      ],
+      "properties": {
+        "kind": {
+          "const": "channel.revoked"
+        },
+        "protocolVersion": {
+          "$ref": "#/$defs/protocolVersion"
+        },
+        "executorId": {
+          "$ref": "#/$defs/executorId"
+        },
+        "code": {
+          "const": "revoked"
+        },
+        "correlationId": {
+          "$ref": "#/$defs/correlationId"
+        }
+      }
+    },
+    "commandPayload": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/statusPayload"
+        },
+        {
+          "$ref": "#/$defs/workspacesPayload"
+        },
+        {
+          "$ref": "#/$defs/threadsPayload"
+        },
+        {
+          "$ref": "#/$defs/threadReadPayload"
+        },
+        {
+          "$ref": "#/$defs/conversationCreatePayload"
+        },
+        {
+          "$ref": "#/$defs/threadSendPayload"
+        },
+        {
+          "$ref": "#/$defs/threadRetryPayload"
+        },
+        {
+          "$ref": "#/$defs/threadCancelPayload"
+        },
+        {
+          "$ref": "#/$defs/replayPayload"
+        }
+      ]
+    },
+    "statusPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [],
+      "properties": {}
+    },
+    "workspacesPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "limit"
+      ],
+      "properties": {
+        "limit": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 100
+        },
+        "cursor": {
+          "$ref": "#/$defs/cursor"
+        }
+      }
+    },
+    "threadsPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "workspaceId",
+        "limit"
+      ],
+      "properties": {
+        "workspaceId": {
+          "$ref": "#/$defs/workspaceId"
+        },
+        "limit": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 100
+        },
+        "cursor": {
+          "$ref": "#/$defs/cursor"
+        }
+      }
+    },
+    "threadReadPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "threadId",
+        "afterSequence",
+        "limit"
+      ],
+      "properties": {
+        "threadId": {
+          "$ref": "#/$defs/threadId"
+        },
+        "afterSequence": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740990
+        },
+        "limit": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 200
+        },
+        "cursor": {
+          "$ref": "#/$defs/cursor"
+        }
+      }
+    },
+    "executionBindingReceipt": {
+      "$ref": "#/$defs/remoteExecutionBindingReceipt"
+    },
+    "remoteExecutionBindingReceipt": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "conversationId",
+        "kind",
+        "websiteDeploymentId",
+        "executorId",
+        "remoteWorkspaceId"
+      ],
+      "properties": {
+        "conversationId": {
+          "$ref": "#/$defs/conversationId"
+        },
+        "kind": {
+          "const": "remote"
+        },
+        "websiteDeploymentId": {
+          "$ref": "#/$defs/websiteDeploymentId"
+        },
+        "executorId": {
+          "$ref": "#/$defs/executorId"
+        },
+        "remoteWorkspaceId": {
+          "$ref": "#/$defs/workspaceId"
+        }
+      }
+    },
+    "conversationTitle": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9 ._(),:;'-]{0,159}$",
+      "minLength": 1,
+      "maxLength": 160
+    },
+    "conversationCreatePayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "clientCreationId",
+        "title",
+        "websiteDeploymentId",
+        "executorId",
+        "remoteWorkspaceId"
+      ],
+      "properties": {
+        "clientCreationId": {
+          "$ref": "#/$defs/clientCreationId"
+        },
+        "title": {
+          "$ref": "#/$defs/conversationTitle"
+        },
+        "websiteDeploymentId": {
+          "$ref": "#/$defs/websiteDeploymentId"
+        },
+        "executorId": {
+          "$ref": "#/$defs/executorId"
+        },
+        "remoteWorkspaceId": {
+          "$ref": "#/$defs/workspaceId"
+        }
+      }
+    },
+    "threadSendPayload": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/threadSendExistingPayload"
+        },
+        {
+          "$ref": "#/$defs/threadSendNewPayload"
+        }
+      ]
+    },
+    "threadSendExistingPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "conversationId",
+        "clientOperationId",
+        "text",
+        "mode",
+        "model",
+        "expectedExecutionBinding"
+      ],
+      "properties": {
+        "conversationId": {
+          "$ref": "#/$defs/conversationId"
+        },
+        "clientOperationId": {
+          "$ref": "#/$defs/clientOperationId"
+        },
+        "text": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 20000
+        },
+        "mode": {
+          "type": "string",
+          "enum": [
+            "normal",
+            "readonly",
+            "plan",
+            "edit"
+          ]
+        },
+        "model": {
+          "$ref": "#/$defs/modelId"
+        },
+        "expectedExecutionBinding": {
+          "$ref": "#/$defs/remoteExecutionBindingReceipt"
+        }
+      }
+    },
+    "threadSendNewPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "workspaceId",
+        "title",
+        "text",
+        "mode",
+        "model",
+        "phase"
+      ],
+      "properties": {
+        "workspaceId": {
+          "$ref": "#/$defs/workspaceId"
+        },
+        "title": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "text": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 20000
+        },
+        "mode": {
+          "type": "string",
+          "enum": [
+            "normal",
+            "readonly",
+            "plan",
+            "edit"
+          ]
+        },
+        "model": {
+          "$ref": "#/$defs/modelId"
+        },
+        "phase": {
+          "const": "start"
+        }
+      }
+    },
+    "threadRetryPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "conversationId",
+        "clientOperationId",
+        "expectedExecutionBinding"
+      ],
+      "properties": {
+        "conversationId": {
+          "$ref": "#/$defs/conversationId"
+        },
+        "clientOperationId": {
+          "$ref": "#/$defs/clientOperationId"
+        },
+        "expectedExecutionBinding": {
+          "$ref": "#/$defs/remoteExecutionBindingReceipt"
+        },
+        "streamId": {
+          "$ref": "#/$defs/streamId"
+        }
+      }
+    },
+    "threadCancelPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "conversationId",
+        "clientOperationId",
+        "expectedExecutionBinding"
+      ],
+      "properties": {
+        "conversationId": {
+          "$ref": "#/$defs/conversationId"
+        },
+        "clientOperationId": {
+          "$ref": "#/$defs/clientOperationId"
+        },
+        "expectedExecutionBinding": {
+          "$ref": "#/$defs/remoteExecutionBindingReceipt"
+        },
+        "streamId": {
+          "$ref": "#/$defs/streamId"
+        }
+      }
+    },
+    "replayPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "threadId",
+        "afterSequence",
+        "limit"
+      ],
+      "properties": {
+        "threadId": {
+          "$ref": "#/$defs/threadId"
+        },
+        "afterSequence": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740990
+        },
+        "limit": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 200
+        }
+      }
+    },
+    "commandPost": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "protocolVersion",
+        "commandId",
+        "correlationId",
+        "idempotencyKey",
+        "websiteDeploymentId",
+        "executorId",
+        "deviceId",
+        "actorRole",
+        "operation",
+        "payload"
+      ],
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "operation": {
+                "const": "executor.status.read"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "payload": {
+                "$ref": "#/$defs/statusPayload"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "operation": {
+                "const": "workspaces.read"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "payload": {
+                "$ref": "#/$defs/workspacesPayload"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "operation": {
+                "const": "threads.read"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "payload": {
+                "$ref": "#/$defs/threadsPayload"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "operation": {
+                "const": "thread.read"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "payload": {
+                "$ref": "#/$defs/threadReadPayload"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "operation": {
+                "const": "conversation.create"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "payload": {
+                "$ref": "#/$defs/conversationCreatePayload"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "operation": {
+                "const": "thread.send"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "payload": {
+                "$ref": "#/$defs/threadSendPayload"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "operation": {
+                "const": "thread.retry"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "payload": {
+                "$ref": "#/$defs/threadRetryPayload"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "operation": {
+                "const": "thread.cancel"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "payload": {
+                "$ref": "#/$defs/threadCancelPayload"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "operation": {
+                "const": "events.replay"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "payload": {
+                "$ref": "#/$defs/replayPayload"
+              }
+            }
+          }
+        }
+      ],
+      "properties": {
+        "kind": {
+          "const": "command.post"
+        },
+        "protocolVersion": {
+          "$ref": "#/$defs/protocolVersion"
+        },
+        "commandId": {
+          "$ref": "#/$defs/commandId"
+        },
+        "correlationId": {
+          "$ref": "#/$defs/correlationId"
+        },
+        "idempotencyKey": {
+          "$ref": "#/$defs/idempotencyKey"
+        },
+        "executorId": {
+          "$ref": "#/$defs/executorId"
+        },
+        "deviceId": {
+          "$ref": "#/$defs/deviceId"
+        },
+        "actorRole": {
+          "const": "desktop_device"
+        },
+        "operation": {
+          "$ref": "#/$defs/operation"
+        },
+        "payload": {
+          "$ref": "#/$defs/commandPayload"
+        },
+        "websiteDeploymentId": {
+          "$ref": "#/$defs/websiteDeploymentId"
+        }
+      }
+    },
+    "commandAccepted": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "protocolVersion",
+        "commandId",
+        "correlationId",
+        "idempotencyKey",
+        "executorId",
+        "accepted"
+      ],
+      "properties": {
+        "kind": {
+          "const": "command.accepted"
+        },
+        "protocolVersion": {
+          "$ref": "#/$defs/protocolVersion"
+        },
+        "commandId": {
+          "$ref": "#/$defs/commandId"
+        },
+        "correlationId": {
+          "$ref": "#/$defs/correlationId"
+        },
+        "idempotencyKey": {
+          "$ref": "#/$defs/idempotencyKey"
+        },
+        "executorId": {
+          "$ref": "#/$defs/executorId"
+        },
+        "accepted": {
+          "const": true
+        }
+      }
+    },
+    "commandResultOperation": {
+      "type": "string",
+      "enum": [
+        "executor.status.read",
+        "workspaces.read",
+        "threads.read",
+        "thread.read",
+        "conversation.create",
+        "thread.send",
+        "thread.retry",
+        "thread.cancel"
+      ]
+    },
+    "executorRuntimeState": {
+      "type": "string",
+      "enum": [
+        "idle",
+        "busy"
+      ]
+    },
+    "executorCapabilities": {
+      "type": "object",
+      "description": "Redacted availability projection. Values report availability only and must not expose paths, versions, configuration, credentials, model lists, or provider output.",
+      "additionalProperties": false,
+      "required": [
+        "git",
+        "codex",
+        "claude"
+      ],
+      "properties": {
+        "git": {
+          "type": "boolean"
+        },
+        "codex": {
+          "type": "boolean"
+        },
+        "claude": {
+          "type": "boolean"
+        }
+      }
+    },
+    "threadStatus": {
+      "type": "string",
+      "enum": [
+        "queued",
+        "running",
+        "completed",
+        "failed",
+        "cancelled"
+      ]
+    },
+    "messageRole": {
+      "type": "string",
+      "enum": [
+        "user",
+        "assistant",
+        "system"
+      ]
+    },
+    "messageStatus": {
+      "type": "string",
+      "enum": [
+        "pending",
+        "streaming",
+        "completed",
+        "failed",
+        "cancelled"
+      ]
+    },
+    "workspaceSummary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "workspaceId",
+        "displayName",
+        "createdAt",
+        "updatedAt"
+      ],
+      "properties": {
+        "workspaceId": {
+          "$ref": "#/$defs/workspaceId"
+        },
+        "displayName": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 120
+        },
+        "createdAt": {
+          "$ref": "#/$defs/timestamp"
+        },
+        "updatedAt": {
+          "$ref": "#/$defs/timestamp"
+        }
+      }
+    },
+    "threadSummary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "threadId",
+        "workspaceId",
+        "title",
+        "status",
+        "createdAt",
+        "updatedAt"
+      ],
+      "properties": {
+        "threadId": {
+          "$ref": "#/$defs/threadId"
+        },
+        "workspaceId": {
+          "$ref": "#/$defs/workspaceId"
+        },
+        "title": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "status": {
+          "$ref": "#/$defs/threadStatus"
+        },
+        "createdAt": {
+          "$ref": "#/$defs/timestamp"
+        },
+        "updatedAt": {
+          "$ref": "#/$defs/timestamp"
+        }
+      }
+    },
+    "threadMessage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "messageId",
+        "threadId",
+        "sequence",
+        "role",
+        "status",
+        "text",
+        "createdAt",
+        "updatedAt"
+      ],
+      "properties": {
+        "messageId": {
+          "$ref": "#/$defs/messageId"
+        },
+        "threadId": {
+          "$ref": "#/$defs/threadId"
+        },
+        "sequence": {
+          "$ref": "#/$defs/sequence"
+        },
+        "role": {
+          "$ref": "#/$defs/messageRole"
+        },
+        "status": {
+          "$ref": "#/$defs/messageStatus"
+        },
+        "text": {
+          "type": "string",
+          "maxLength": 20000
+        },
+        "createdAt": {
+          "$ref": "#/$defs/timestamp"
+        },
+        "updatedAt": {
+          "$ref": "#/$defs/timestamp"
+        }
+      }
+    },
+    "executorStatusResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "displayName",
+        "state",
+        "capabilities",
+        "observedAt"
+      ],
+      "properties": {
+        "displayName": {
+          "$ref": "#/$defs/displayName"
+        },
+        "state": {
+          "$ref": "#/$defs/executorRuntimeState"
+        },
+        "capabilities": {
+          "$ref": "#/$defs/executorCapabilities"
+        },
+        "observedAt": {
+          "$ref": "#/$defs/timestamp"
+        }
+      }
+    },
+    "workspacesReadResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "workspaces",
+        "hasMore"
+      ],
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "hasMore": {
+                "const": true
+              }
+            },
+            "required": [
+              "hasMore"
+            ]
+          },
+          "then": {
+            "properties": {
+              "nextCursor": {
+                "$ref": "#/$defs/cursor"
+              }
+            },
+            "required": [
+              "nextCursor"
+            ]
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "hasMore": {
+                "const": false
+              }
+            },
+            "required": [
+              "hasMore"
+            ]
+          },
+          "then": {
+            "not": {
+              "properties": {
+                "nextCursor": {}
+              },
+              "required": [
+                "nextCursor"
+              ]
+            }
+          }
+        }
+      ],
+      "properties": {
+        "workspaces": {
+          "type": "array",
+          "maxItems": 100,
+          "items": {
+            "$ref": "#/$defs/workspaceSummary"
+          }
+        },
+        "hasMore": {
+          "type": "boolean"
+        },
+        "nextCursor": {
+          "$ref": "#/$defs/cursor"
+        }
+      }
+    },
+    "threadsReadResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "workspaceId",
+        "threads",
+        "hasMore"
+      ],
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "hasMore": {
+                "const": true
+              }
+            },
+            "required": [
+              "hasMore"
+            ]
+          },
+          "then": {
+            "properties": {
+              "nextCursor": {
+                "$ref": "#/$defs/cursor"
+              }
+            },
+            "required": [
+              "nextCursor"
+            ]
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "hasMore": {
+                "const": false
+              }
+            },
+            "required": [
+              "hasMore"
+            ]
+          },
+          "then": {
+            "not": {
+              "properties": {
+                "nextCursor": {}
+              },
+              "required": [
+                "nextCursor"
+              ]
+            }
+          }
+        }
+      ],
+      "properties": {
+        "workspaceId": {
+          "$ref": "#/$defs/workspaceId"
+        },
+        "threads": {
+          "type": "array",
+          "maxItems": 100,
+          "items": {
+            "$ref": "#/$defs/threadSummary"
+          }
+        },
+        "hasMore": {
+          "type": "boolean"
+        },
+        "nextCursor": {
+          "$ref": "#/$defs/cursor"
+        }
+      }
+    },
+    "threadReadResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "thread",
+        "afterSequence",
+        "highWaterSequence",
+        "messages",
+        "hasMore"
+      ],
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "hasMore": {
+                "const": true
+              }
+            },
+            "required": [
+              "hasMore"
+            ]
+          },
+          "then": {
+            "properties": {
+              "nextCursor": {
+                "$ref": "#/$defs/cursor"
+              }
+            },
+            "required": [
+              "nextCursor"
+            ]
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "hasMore": {
+                "const": false
+              }
+            },
+            "required": [
+              "hasMore"
+            ]
+          },
+          "then": {
+            "not": {
+              "properties": {
+                "nextCursor": {}
+              },
+              "required": [
+                "nextCursor"
+              ]
+            }
+          }
+        }
+      ],
+      "properties": {
+        "thread": {
+          "$ref": "#/$defs/threadSummary"
+        },
+        "afterSequence": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740990
+        },
+        "highWaterSequence": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "messages": {
+          "type": "array",
+          "maxItems": 200,
+          "items": {
+            "$ref": "#/$defs/threadMessage"
+          }
+        },
+        "hasMore": {
+          "type": "boolean"
+        },
+        "nextCursor": {
+          "$ref": "#/$defs/cursor"
+        }
+      }
+    },
+    "threadSendResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "thread",
+        "streamId",
+        "createdThread",
+        "startedAt"
+      ],
+      "properties": {
+        "thread": {
+          "$ref": "#/$defs/threadSummary"
+        },
+        "streamId": {
+          "$ref": "#/$defs/streamId"
+        },
+        "createdThread": {
+          "type": "boolean"
+        },
+        "startedAt": {
+          "$ref": "#/$defs/timestamp"
+        }
+      }
+    },
+    "conversationCreateResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "conversationId",
+        "title",
+        "createdAt",
+        "executionBinding"
+      ],
+      "properties": {
+        "conversationId": {
+          "$ref": "#/$defs/conversationId"
+        },
+        "title": {
+          "$ref": "#/$defs/conversationTitle"
+        },
+        "createdAt": {
+          "$ref": "#/$defs/timestamp"
+        },
+        "executionBinding": {
+          "$ref": "#/$defs/remoteExecutionBindingReceipt"
+        }
+      }
+    },
+    "threadRetryResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "threadId",
+        "streamId",
+        "status",
+        "startedAt"
+      ],
+      "properties": {
+        "threadId": {
+          "$ref": "#/$defs/threadId"
+        },
+        "streamId": {
+          "$ref": "#/$defs/streamId"
+        },
+        "status": {
+          "const": "running"
+        },
+        "startedAt": {
+          "$ref": "#/$defs/timestamp"
+        }
+      }
+    },
+    "threadCancelResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "threadId",
+        "streamId",
+        "status",
+        "cancelledAt"
+      ],
+      "properties": {
+        "threadId": {
+          "$ref": "#/$defs/threadId"
+        },
+        "streamId": {
+          "$ref": "#/$defs/streamId"
+        },
+        "status": {
+          "const": "cancelled"
+        },
+        "cancelledAt": {
+          "$ref": "#/$defs/timestamp"
+        }
+      }
+    },
+    "commandResultPayload": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/executorStatusResult"
+        },
+        {
+          "$ref": "#/$defs/workspacesReadResult"
+        },
+        {
+          "$ref": "#/$defs/threadsReadResult"
+        },
+        {
+          "$ref": "#/$defs/threadReadResult"
+        },
+        {
+          "$ref": "#/$defs/conversationCreateResult"
+        },
+        {
+          "$ref": "#/$defs/threadSendResult"
+        },
+        {
+          "$ref": "#/$defs/threadRetryResult"
+        },
+        {
+          "$ref": "#/$defs/threadCancelResult"
+        }
+      ]
+    },
+    "commandResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "protocolVersion",
+        "commandId",
+        "correlationId",
+        "executorId",
+        "actorRole",
+        "operation",
+        "completedAt",
+        "result"
+      ],
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "operation": {
+                "const": "executor.status.read"
+              }
+            },
+            "required": [
+              "operation"
+            ]
+          },
+          "then": {
+            "properties": {
+              "result": {
+                "$ref": "#/$defs/executorStatusResult"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "operation": {
+                "const": "workspaces.read"
+              }
+            },
+            "required": [
+              "operation"
+            ]
+          },
+          "then": {
+            "properties": {
+              "result": {
+                "$ref": "#/$defs/workspacesReadResult"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "operation": {
+                "const": "threads.read"
+              }
+            },
+            "required": [
+              "operation"
+            ]
+          },
+          "then": {
+            "properties": {
+              "result": {
+                "$ref": "#/$defs/threadsReadResult"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "operation": {
+                "const": "thread.read"
+              }
+            },
+            "required": [
+              "operation"
+            ]
+          },
+          "then": {
+            "properties": {
+              "result": {
+                "$ref": "#/$defs/threadReadResult"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "operation": {
+                "const": "conversation.create"
+              }
+            },
+            "required": [
+              "operation"
+            ]
+          },
+          "then": {
+            "properties": {
+              "result": {
+                "$ref": "#/$defs/conversationCreateResult"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "operation": {
+                "const": "thread.send"
+              }
+            },
+            "required": [
+              "operation"
+            ]
+          },
+          "then": {
+            "properties": {
+              "result": {
+                "$ref": "#/$defs/threadSendResult"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "operation": {
+                "const": "thread.retry"
+              }
+            },
+            "required": [
+              "operation"
+            ]
+          },
+          "then": {
+            "properties": {
+              "result": {
+                "$ref": "#/$defs/threadRetryResult"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "operation": {
+                "const": "thread.cancel"
+              }
+            },
+            "required": [
+              "operation"
+            ]
+          },
+          "then": {
+            "properties": {
+              "result": {
+                "$ref": "#/$defs/threadCancelResult"
+              }
+            }
+          }
+        }
+      ],
+      "properties": {
+        "kind": {
+          "const": "command.result"
+        },
+        "protocolVersion": {
+          "$ref": "#/$defs/protocolVersion"
+        },
+        "commandId": {
+          "$ref": "#/$defs/commandId"
+        },
+        "correlationId": {
+          "$ref": "#/$defs/correlationId"
+        },
+        "executorId": {
+          "$ref": "#/$defs/executorId"
+        },
+        "actorRole": {
+          "const": "executor_device"
+        },
+        "operation": {
+          "$ref": "#/$defs/commandResultOperation"
+        },
+        "completedAt": {
+          "$ref": "#/$defs/timestamp"
+        },
+        "result": {
+          "$ref": "#/$defs/commandResultPayload"
+        }
+      }
+    },
+    "eventData": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "eventType",
+        "text"
+      ],
+      "properties": {
+        "eventType": {
+          "enum": [
+            "thread.message",
+            "thread.status",
+            "command.completed",
+            "command.failed"
+          ]
+        },
+        "text": {
+          "type": "string",
+          "maxLength": 20000
+        }
+      }
+    },
+    "executorEventFrame": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "protocolVersion",
+        "eventId",
+        "correlationId",
+        "executorId",
+        "threadId",
+        "sequence",
+        "occurredAt",
+        "data"
+      ],
+      "properties": {
+        "kind": {
+          "const": "executor.event"
+        },
+        "protocolVersion": {
+          "$ref": "#/$defs/protocolVersion"
+        },
+        "eventId": {
+          "$ref": "#/$defs/eventId"
+        },
+        "correlationId": {
+          "$ref": "#/$defs/correlationId"
+        },
+        "executorId": {
+          "$ref": "#/$defs/executorId"
+        },
+        "threadId": {
+          "$ref": "#/$defs/threadId"
+        },
+        "sequence": {
+          "$ref": "#/$defs/sequence"
+        },
+        "occurredAt": {
+          "$ref": "#/$defs/timestamp"
+        },
+        "data": {
+          "$ref": "#/$defs/eventData"
+        }
+      }
+    },
+    "executorPresenceEvent": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "protocolVersion",
+        "executorId",
+        "status",
+        "reason",
+        "observedAt"
+      ],
+      "properties": {
+        "kind": {
+          "const": "executor.presence"
+        },
+        "protocolVersion": {
+          "$ref": "#/$defs/protocolVersion"
+        },
+        "executorId": {
+          "$ref": "#/$defs/executorId"
+        },
+        "status": {
+          "type": "string",
+          "enum": [
+            "unknown",
+            "online",
+            "stale",
+            "offline"
+          ]
+        },
+        "reason": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9 ._(),:;'-]{0,159}$",
+          "maxLength": 160
+        },
+        "observedAt": {
+          "$ref": "#/$defs/timestamp"
+        }
+      }
+    },
+    "ownerSseDesktopPayload": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/executorPresenceEvent"
+        },
+        {
+          "$ref": "#/$defs/commandResult"
+        },
+        {
+          "$ref": "#/$defs/executorEventFrame"
+        },
+        {
+          "$ref": "#/$defs/replayResult"
+        },
+        {
+          "$ref": "#/$defs/replayGap"
+        },
+        {
+          "$ref": "#/$defs/errorEnvelope"
+        }
+      ]
+    },
+    "ownerSseDesktopEvent": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "protocolVersion",
+        "deviceId",
+        "actorRole",
+        "event"
+      ],
+      "properties": {
+        "kind": {
+          "const": "owner.sse.event"
+        },
+        "protocolVersion": {
+          "$ref": "#/$defs/protocolVersion"
+        },
+        "deviceId": {
+          "$ref": "#/$defs/deviceId"
+        },
+        "actorRole": {
+          "const": "desktop_device"
+        },
+        "event": {
+          "$ref": "#/$defs/ownerSseDesktopPayload"
+        }
+      }
+    },
+    "ownerSseBrowserEvent": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "protocolVersion",
+        "sessionId",
+        "actorRole",
+        "event"
+      ],
+      "properties": {
+        "kind": {
+          "const": "owner.sse.event"
+        },
+        "protocolVersion": {
+          "$ref": "#/$defs/protocolVersion"
+        },
+        "sessionId": {
+          "$ref": "#/$defs/sessionId"
+        },
+        "actorRole": {
+          "const": "browser_session"
+        },
+        "event": {
+          "$ref": "#/$defs/executorPresenceEvent"
+        }
+      }
+    },
+    "ownerSseEvent": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/ownerSseDesktopEvent"
+        },
+        {
+          "$ref": "#/$defs/ownerSseBrowserEvent"
+        }
+      ]
+    },
+    "replayRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "protocolVersion",
+        "executorId",
+        "threadId",
+        "afterSequence",
+        "limit",
+        "correlationId"
+      ],
+      "properties": {
+        "kind": {
+          "const": "events.replay.request"
+        },
+        "protocolVersion": {
+          "$ref": "#/$defs/protocolVersion"
+        },
+        "executorId": {
+          "$ref": "#/$defs/executorId"
+        },
+        "threadId": {
+          "$ref": "#/$defs/threadId"
+        },
+        "afterSequence": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740990
+        },
+        "limit": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 200
+        },
+        "correlationId": {
+          "$ref": "#/$defs/correlationId"
+        }
+      }
+    },
+    "replayResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "protocolVersion",
+        "executorId",
+        "threadId",
+        "afterSequence",
+        "highWaterSequence",
+        "events",
+        "hasMore",
+        "correlationId"
+      ],
+      "properties": {
+        "kind": {
+          "const": "events.replay.result"
+        },
+        "protocolVersion": {
+          "$ref": "#/$defs/protocolVersion"
+        },
+        "executorId": {
+          "$ref": "#/$defs/executorId"
+        },
+        "threadId": {
+          "$ref": "#/$defs/threadId"
+        },
+        "afterSequence": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740990
+        },
+        "highWaterSequence": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "events": {
+          "type": "array",
+          "maxItems": 200,
+          "items": {
+            "$ref": "#/$defs/executorEventFrame"
+          }
+        },
+        "hasMore": {
+          "type": "boolean"
+        },
+        "correlationId": {
+          "$ref": "#/$defs/correlationId"
+        }
+      }
+    },
+    "replayGap": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "protocolVersion",
+        "executorId",
+        "threadId",
+        "afterSequence",
+        "earliestAvailableSequence",
+        "highWaterSequence",
+        "code",
+        "correlationId"
+      ],
+      "properties": {
+        "kind": {
+          "const": "events.replay.gap"
+        },
+        "protocolVersion": {
+          "$ref": "#/$defs/protocolVersion"
+        },
+        "executorId": {
+          "$ref": "#/$defs/executorId"
+        },
+        "threadId": {
+          "$ref": "#/$defs/threadId"
+        },
+        "afterSequence": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740990
+        },
+        "earliestAvailableSequence": {
+          "$ref": "#/$defs/sequence"
+        },
+        "highWaterSequence": {
+          "$ref": "#/$defs/sequence"
+        },
+        "code": {
+          "const": "replay-gap"
+        },
+        "correlationId": {
+          "$ref": "#/$defs/correlationId"
+        }
+      }
+    },
+    "errorEnvelope": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "protocolVersion",
+        "code",
+        "message",
+        "retryable",
+        "correlationId"
+      ],
+      "properties": {
+        "kind": {
+          "const": "error"
+        },
+        "protocolVersion": {
+          "$ref": "#/$defs/protocolVersion"
+        },
+        "code": {
+          "$ref": "#/$defs/errorCode"
+        },
+        "message": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 240
+        },
+        "retryable": {
+          "type": "boolean"
+        },
+        "correlationId": {
+          "$ref": "#/$defs/correlationId"
+        }
+      }
+    },
+    "websiteAccountId": {
+      "type": "string",
+      "pattern": "^usr_[A-Za-z0-9]{8,64}$",
+      "maxLength": 68
+    },
+    "websiteDeploymentId": {
+      "type": "string",
+      "pattern": "^wdp_[A-Za-z0-9]{32}$",
+      "maxLength": 36
+    }
+  }
+}

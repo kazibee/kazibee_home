@@ -16,4 +16,4 @@
   } = $props();
 </script>
 
-<span class={userClass}>{user}</span><span class={separatorClass}>:</span><span class={pathClass}>{path}</span> <span class={dollarClass}>$</span>{' '}
+<span class={userClass}>{user}</span><span class={separatorClass}>:</span><span class={pathClass}>{path}</span> <span class={dollarClass}>$</span>{'\x20'}

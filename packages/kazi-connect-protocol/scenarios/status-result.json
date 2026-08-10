@@ -1,0 +1,20 @@
+{
+  "name": "executor status reports redacted availability",
+  "clock": "2030-01-01T00:00:00Z",
+  "steps": [
+    {
+      "atMs": 0,
+      "fixture": "executor status command result"
+    },
+    {
+      "atMs": 1,
+      "fixture": "executor status redacted capabilities projection"
+    }
+  ],
+  "expectedOperation": "executor.status.read",
+  "expectedCapabilities": [
+    "git",
+    "codex",
+    "claude"
+  ]
+}

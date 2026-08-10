@@ -48,7 +48,7 @@ export async function initDatabase(database?: Database): Promise<Database> {
     baseLogger.info("Using existing default database connection");
     DATABASE = existingDb;
     return existingDb;
-  } catch (error) {
+  } catch {
     // No default connection exists - create one
     baseLogger.info("Initializing new database at", SQLITE_URL);
 

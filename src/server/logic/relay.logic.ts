@@ -28,7 +28,7 @@ export default class RelayLogic {
     }
   }
 
-  async authenticateDevice(authToken: string) {
+  async authenticateDevice(_authToken: string) {
     // Extract deviceId from a broader set
     // For auth by token alone, we need to iterate (small device count)
     throw new Error("Use authenticateDeviceById instead");

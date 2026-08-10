@@ -2,7 +2,7 @@ import { client } from '@noego/app/client';
 import { initDatabase } from '../server/repo/boot';
 
 // Default export: (app, config) => void
-export default async function boot(app: import('express').Express, config: any) {
+export default async function boot(_app: import('express').Express, _config: any) {
   await initDatabase();
   await client.boot();
 }

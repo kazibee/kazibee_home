@@ -1,0 +1,24 @@
+import { Component } from "@noego/ioc";
+import { Query, QueryBinder, SqlStackError } from "sqlstack";
+
+export type ConnectExecutorAuditKind =
+  | "claim.created" | "claim.accepted" | "claim.denied"
+  | "executor.renamed" | "executor.revoked";
+
+@QueryBinder()
+@Component()
+export default class ConnectExecutorAuditRepo {
+  @Query()
+  appendEvent(_params: {
+    audit_event_id: string;
+    executor_id: string;
+    claim_id: string | null;
+    actor_user_id: string | null;
+    event_kind: ConnectExecutorAuditKind;
+    credential_generation: number;
+    occurred_at: string;
+    correlation_id: string;
+  }): Promise<void> {
+    throw new SqlStackError("Not implemented");
+  }
+}

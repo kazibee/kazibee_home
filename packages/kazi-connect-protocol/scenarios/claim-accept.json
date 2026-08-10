@@ -1,0 +1,23 @@
+{
+  "name": "claim challenge is accepted once",
+  "clock": "2030-01-01T00:00:00Z",
+  "steps": [
+    {
+      "atMs": 0,
+      "actorRole": "claim_challenge",
+      "fixture": "claim challenge with deterministic safe code"
+    },
+    {
+      "atMs": 10,
+      "actorRole": "executor_device",
+      "fixture": "claim create"
+    },
+    {
+      "atMs": 20,
+      "actorRole": "browser_session",
+      "fixture": "claim accept"
+    }
+  ],
+  "expectedClaimUrl": "https://connect.kazibee.example/claim/clm_sample001",
+  "expectedTerminalState": "accepted"
+}

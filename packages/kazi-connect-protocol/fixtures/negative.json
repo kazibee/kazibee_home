@@ -1,0 +1,1441 @@
+[
+  {
+    "name": "rejects protocol downgrade",
+    "schema": "commandPost",
+    "expectedKeyword": "const",
+    "expectedInstancePath": "/protocolVersion",
+    "payload": {
+      "kind": "command.post",
+      "protocolVersion": "0.9",
+      "commandId": "cmd_sample001",
+      "correlationId": "cor_command01",
+      "idempotencyKey": "idem_thread_send_0001",
+      "executorId": "exe_sample001",
+      "deviceId": "dev_desktop01",
+      "actorRole": "desktop_device",
+      "operation": "thread.send",
+      "payload": {
+        "workspaceId": "wrk_sample001",
+        "threadId": "thr_sample001",
+        "text": "Safe text.",
+        "mode": "normal",
+        "model": "sample-model"
+      }
+    }
+  },
+  {
+    "name": "rejects unknown operation",
+    "schema": "commandPost",
+    "expectedKeyword": "enum",
+    "expectedInstancePath": "/operation",
+    "payload": {
+      "kind": "command.post",
+      "protocolVersion": "1.0",
+      "commandId": "cmd_sample001",
+      "correlationId": "cor_command01",
+      "idempotencyKey": "idem_thread_send_0001",
+      "executorId": "exe_sample001",
+      "deviceId": "dev_desktop01",
+      "actorRole": "desktop_device",
+      "operation": "worktree.create",
+      "payload": {}
+    }
+  },
+  {
+    "name": "rejects an unknown envelope field",
+    "schema": "channelHello",
+    "expectedKeyword": "additionalProperties",
+    "expectedInstancePath": "",
+    "payload": {
+      "kind": "channel.hello",
+      "protocolVersion": "1.0",
+      "executorId": "exe_sample001",
+      "deviceId": "dev_executor1",
+      "actorRole": "executor_device",
+      "correlationId": "cor_hello0001",
+      "unexpected": true
+    }
+  },
+  {
+    "name": "rejects role confusion",
+    "schema": "channelHello",
+    "expectedKeyword": "const",
+    "expectedInstancePath": "/actorRole",
+    "payload": {
+      "kind": "channel.hello",
+      "protocolVersion": "1.0",
+      "executorId": "exe_sample001",
+      "deviceId": "dev_executor1",
+      "actorRole": "desktop_device",
+      "correlationId": "cor_hello0001"
+    }
+  },
+  {
+    "name": "rejects non-positive executor sequence",
+    "schema": "executorEventFrame",
+    "expectedKeyword": "minimum",
+    "expectedInstancePath": "/sequence",
+    "payload": {
+      "kind": "executor.event",
+      "protocolVersion": "1.0",
+      "eventId": "evt_sample001",
+      "correlationId": "cor_command01",
+      "executorId": "exe_sample001",
+      "threadId": "thr_sample001",
+      "sequence": 0,
+      "occurredAt": "2030-01-01T00:00:01Z",
+      "data": {
+        "eventType": "thread.status",
+        "text": "completed"
+      }
+    }
+  },
+  {
+    "name": "rejects unbounded replay page",
+    "schema": "replayRequest",
+    "expectedKeyword": "maximum",
+    "expectedInstancePath": "/limit",
+    "payload": {
+      "kind": "events.replay.request",
+      "protocolVersion": "1.0",
+      "executorId": "exe_sample001",
+      "threadId": "thr_sample001",
+      "afterSequence": 40,
+      "limit": 201,
+      "correlationId": "cor_replay001"
+    }
+  },
+  {
+    "name": "rejects malformed opaque ID",
+    "schema": "executorDetailResponse",
+    "expectedKeyword": "pattern",
+    "expectedInstancePath": "/deviceId",
+    "payload": {
+      "kind": "executor.detail.response",
+      "protocolVersion": "1.0",
+      "executor": {
+        "executorId": "exe_sample001",
+        "displayName": "Sample executor",
+        "state": "active",
+        "online": true,
+        "protocolVersion": "1.0",
+        "presence": "online"
+      },
+      "deviceId": "desktop",
+      "actorRole": "executor_device",
+      "lastSeenAt": "2030-01-01T00:00:00Z",
+      "correlationId": "cor_detail001"
+    }
+  },
+  {
+    "name": "rejects missing idempotency key",
+    "schema": "executorRenameRequest",
+    "expectedKeyword": "required",
+    "expectedInstancePath": "",
+    "payload": {
+      "kind": "executor.rename.request",
+      "protocolVersion": "1.0",
+      "executorId": "exe_sample001",
+      "displayName": "Renamed executor",
+      "correlationId": "cor_rename001"
+    }
+  },
+  {
+    "name": "rejects invalid short code",
+    "schema": "claimChallenge",
+    "expectedKeyword": "pattern",
+    "expectedInstancePath": "/shortCode",
+    "payload": {
+      "kind": "executor.claim.challenge",
+      "protocolVersion": "1.0",
+      "claimId": "clm_sample001",
+      "actorRole": "claim_challenge",
+      "claimUrl": "https://connect.kazibee.example/claim/clm_sample001",
+      "shortCode": "abcd-efgh",
+      "displayName": "Sample executor",
+      "platform": "macos",
+      "architecture": "arm64",
+      "executorVersion": "1.0.0",
+      "keyFingerprint": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+      "expiresAt": "2030-01-01T00:05:00Z",
+      "correlationId": "cor_claim0001"
+    }
+  },
+  {
+    "name": "rejects noncanonical error",
+    "schema": "errorEnvelope",
+    "expectedKeyword": "enum",
+    "expectedInstancePath": "/code",
+    "payload": {
+      "kind": "error",
+      "protocolVersion": "1.0",
+      "code": "server-error",
+      "message": "Rejected.",
+      "retryable": false,
+      "correlationId": "cor_error0001"
+    }
+  },
+  {
+    "name": "rejects claim challenge missing link",
+    "schema": "claimChallenge",
+    "expectedKeyword": "required",
+    "expectedInstancePath": "",
+    "payload": {
+      "kind": "executor.claim.challenge",
+      "protocolVersion": "1.0",
+      "claimId": "clm_sample001",
+      "actorRole": "claim_challenge",
+      "shortCode": "ABCD-EFGH",
+      "displayName": "Sample executor",
+      "platform": "macos",
+      "architecture": "arm64",
+      "executorVersion": "1.0.0",
+      "keyFingerprint": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+      "expiresAt": "2030-01-01T00:05:00Z",
+      "correlationId": "cor_claim0001"
+    }
+  },
+  {
+    "name": "rejects non-HTTPS claim link",
+    "schema": "claimChallenge",
+    "expectedKeyword": "pattern",
+    "expectedInstancePath": "/claimUrl",
+    "payload": {
+      "kind": "executor.claim.challenge",
+      "protocolVersion": "1.0",
+      "claimId": "clm_sample001",
+      "actorRole": "claim_challenge",
+      "claimUrl": "http://connect.kazibee.example/claim/clm_sample001",
+      "shortCode": "ABCD-EFGH",
+      "displayName": "Sample executor",
+      "platform": "macos",
+      "architecture": "arm64",
+      "executorVersion": "1.0.0",
+      "keyFingerprint": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+      "expiresAt": "2030-01-01T00:05:00Z",
+      "correlationId": "cor_claim0001"
+    }
+  },
+  {
+    "name": "rejects claim create missing fingerprint",
+    "schema": "claimCreateRequest",
+    "expectedKeyword": "required",
+    "expectedInstancePath": "",
+    "payload": {
+      "kind": "executor.claim.create.request",
+      "protocolVersion": "1.0",
+      "claimId": "clm_sample001",
+      "executorId": "exe_sample001",
+      "deviceId": "dev_executor1",
+      "actorRole": "executor_device",
+      "displayName": "Sample executor",
+      "platform": "linux",
+      "architecture": "x64",
+      "executorVersion": "1.0.0",
+      "idempotencyKey": "idem_claim_create_0001",
+      "correlationId": "cor_claim0001"
+    }
+  },
+  {
+    "name": "rejects invalid uppercase fingerprint",
+    "schema": "claimCreateRequest",
+    "expectedKeyword": "pattern",
+    "expectedInstancePath": "/keyFingerprint",
+    "payload": {
+      "kind": "executor.claim.create.request",
+      "protocolVersion": "1.0",
+      "claimId": "clm_sample001",
+      "executorId": "exe_sample001",
+      "deviceId": "dev_executor1",
+      "actorRole": "executor_device",
+      "displayName": "Sample executor",
+      "platform": "linux",
+      "architecture": "x64",
+      "executorVersion": "1.0.0",
+      "keyFingerprint": "0123456789ABCDEF0123456789ABCDEF0123456789ABCDEF0123456789ABCDEF",
+      "idempotencyKey": "idem_claim_create_0001",
+      "correlationId": "cor_claim0001"
+    }
+  },
+  {
+    "name": "rejects claim create missing platform",
+    "schema": "claimCreateRequest",
+    "expectedKeyword": "required",
+    "expectedInstancePath": "",
+    "payload": {
+      "kind": "executor.claim.create.request",
+      "protocolVersion": "1.0",
+      "claimId": "clm_sample001",
+      "executorId": "exe_sample001",
+      "deviceId": "dev_executor1",
+      "actorRole": "executor_device",
+      "displayName": "Sample executor",
+      "architecture": "x64",
+      "executorVersion": "1.0.0",
+      "keyFingerprint": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+      "idempotencyKey": "idem_claim_create_0001",
+      "correlationId": "cor_claim0001"
+    }
+  },
+  {
+    "name": "rejects unsupported platform",
+    "schema": "claimCreateRequest",
+    "expectedKeyword": "enum",
+    "expectedInstancePath": "/platform",
+    "payload": {
+      "kind": "executor.claim.create.request",
+      "protocolVersion": "1.0",
+      "claimId": "clm_sample001",
+      "executorId": "exe_sample001",
+      "deviceId": "dev_executor1",
+      "actorRole": "executor_device",
+      "displayName": "Sample executor",
+      "platform": "darwin",
+      "architecture": "arm64",
+      "executorVersion": "1.0.0",
+      "keyFingerprint": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+      "idempotencyKey": "idem_claim_create_0001",
+      "correlationId": "cor_claim0001"
+    }
+  },
+  {
+    "name": "rejects claim create missing architecture",
+    "schema": "claimCreateRequest",
+    "expectedKeyword": "required",
+    "expectedInstancePath": "",
+    "payload": {
+      "kind": "executor.claim.create.request",
+      "protocolVersion": "1.0",
+      "claimId": "clm_sample001",
+      "executorId": "exe_sample001",
+      "deviceId": "dev_executor1",
+      "actorRole": "executor_device",
+      "displayName": "Sample executor",
+      "platform": "linux",
+      "executorVersion": "1.0.0",
+      "keyFingerprint": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+      "idempotencyKey": "idem_claim_create_0001",
+      "correlationId": "cor_claim0001"
+    }
+  },
+  {
+    "name": "rejects unsupported architecture",
+    "schema": "claimCreateRequest",
+    "expectedKeyword": "enum",
+    "expectedInstancePath": "/architecture",
+    "payload": {
+      "kind": "executor.claim.create.request",
+      "protocolVersion": "1.0",
+      "claimId": "clm_sample001",
+      "executorId": "exe_sample001",
+      "deviceId": "dev_executor1",
+      "actorRole": "executor_device",
+      "displayName": "Sample executor",
+      "platform": "linux",
+      "architecture": "ia32",
+      "executorVersion": "1.0.0",
+      "keyFingerprint": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+      "idempotencyKey": "idem_claim_create_0001",
+      "correlationId": "cor_claim0001"
+    }
+  },
+  {
+    "name": "rejects Windows arm64 claim",
+    "schema": "claimCreateRequest",
+    "expectedKeyword": "const",
+    "expectedInstancePath": "/architecture",
+    "payload": {
+      "kind": "executor.claim.create.request",
+      "protocolVersion": "1.0",
+      "claimId": "clm_sample001",
+      "executorId": "exe_sample001",
+      "deviceId": "dev_executor1",
+      "actorRole": "executor_device",
+      "displayName": "Sample executor",
+      "platform": "windows",
+      "architecture": "arm64",
+      "executorVersion": "1.0.0",
+      "keyFingerprint": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+      "idempotencyKey": "idem_claim_create_0001",
+      "correlationId": "cor_claim0001"
+    }
+  },
+  {
+    "name": "rejects claim create missing executor version",
+    "schema": "claimCreateRequest",
+    "expectedKeyword": "required",
+    "expectedInstancePath": "",
+    "payload": {
+      "kind": "executor.claim.create.request",
+      "protocolVersion": "1.0",
+      "claimId": "clm_sample001",
+      "executorId": "exe_sample001",
+      "deviceId": "dev_executor1",
+      "actorRole": "executor_device",
+      "displayName": "Sample executor",
+      "platform": "linux",
+      "architecture": "x64",
+      "keyFingerprint": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+      "idempotencyKey": "idem_claim_create_0001",
+      "correlationId": "cor_claim0001"
+    }
+  },
+  {
+    "name": "rejects unsafe executor version",
+    "schema": "claimCreateRequest",
+    "expectedKeyword": "pattern",
+    "expectedInstancePath": "/executorVersion",
+    "payload": {
+      "kind": "executor.claim.create.request",
+      "protocolVersion": "1.0",
+      "claimId": "clm_sample001",
+      "executorId": "exe_sample001",
+      "deviceId": "dev_executor1",
+      "actorRole": "executor_device",
+      "displayName": "Sample executor",
+      "platform": "linux",
+      "architecture": "x64",
+      "executorVersion": "v1/secret",
+      "keyFingerprint": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+      "idempotencyKey": "idem_claim_create_0001",
+      "correlationId": "cor_claim0001"
+    }
+  },
+  {
+    "name": "rejects thread send missing thread identity and title",
+    "schema": "threadSendPayload",
+    "expectedKeyword": "oneOf",
+    "expectedInstancePath": "",
+    "payload": {
+      "workspaceId": "wrk_sample001",
+      "text": "Safe text.",
+      "mode": "normal",
+      "model": "app:codex/gpt-5.6-luna"
+    }
+  },
+  {
+    "name": "rejects thread send with both thread identity and title",
+    "schema": "threadSendPayload",
+    "expectedKeyword": "oneOf",
+    "expectedInstancePath": "",
+    "payload": {
+      "workspaceId": "wrk_sample001",
+      "threadId": "thr_sample001",
+      "title": "Conflicting shape",
+      "text": "Safe text.",
+      "mode": "normal",
+      "model": "app:codex/gpt-5.6-luna"
+    }
+  },
+  {
+    "name": "rejects legacy invented agent mode",
+    "schema": "threadSendPayload",
+    "expectedKeyword": "enum",
+    "expectedInstancePath": "/mode",
+    "payload": {
+      "workspaceId": "wrk_sample001",
+      "threadId": "thr_sample001",
+      "text": "Safe text.",
+      "mode": "agent",
+      "model": "app:codex/gpt-5.6-luna"
+    }
+  },
+  {
+    "name": "rejects unsafe model characters",
+    "schema": "threadSendPayload",
+    "expectedKeyword": "pattern",
+    "expectedInstancePath": "/model",
+    "payload": {
+      "workspaceId": "wrk_sample001",
+      "title": "Safe title",
+      "text": "Safe text.",
+      "mode": "plan",
+      "model": "app:codex/gpt-5.6-luna?token=bad"
+    }
+  },
+  {
+    "name": "rejects unsafe presence reason",
+    "schema": "ownerSseEvent",
+    "expectedKeyword": "pattern",
+    "expectedInstancePath": "/event/reason",
+    "payload": {
+      "kind": "owner.sse.event",
+      "protocolVersion": "1.0",
+      "sessionId": "ses_sample001",
+      "actorRole": "browser_session",
+      "event": {
+        "kind": "executor.presence",
+        "protocolVersion": "1.0",
+        "executorId": "exe_sample001",
+        "status": "offline",
+        "reason": "Host path /not/allowed",
+        "observedAt": "2030-01-01T00:00:02Z"
+      }
+    }
+  },
+  {
+    "name": "rejects presence unknown extension",
+    "schema": "ownerSseEvent",
+    "expectedKeyword": "additionalProperties",
+    "expectedInstancePath": "/event",
+    "payload": {
+      "kind": "owner.sse.event",
+      "protocolVersion": "1.0",
+      "deviceId": "dev_desktop01",
+      "actorRole": "desktop_device",
+      "event": {
+        "kind": "executor.presence",
+        "protocolVersion": "1.0",
+        "executorId": "exe_sample001",
+        "status": "online",
+        "reason": "Heartbeat received",
+        "observedAt": "2030-01-01T00:00:02Z",
+        "extra": {}
+      }
+    }
+  },
+  {
+    "name": "rejects non-UTC timestamp offset",
+    "schema": "channelHeartbeat",
+    "expectedKeyword": "pattern",
+    "expectedInstancePath": "/sentAt",
+    "payload": {
+      "kind": "channel.heartbeat",
+      "protocolVersion": "1.0",
+      "executorId": "exe_sample001",
+      "deviceId": "dev_executor1",
+      "actorRole": "executor_device",
+      "state": "idle",
+      "sentAt": "2030-01-01T00:00:00+00:00",
+      "correlationId": "cor_heartbeat"
+    }
+  },
+  {
+    "name": "rejects impossible calendar timestamp",
+    "schema": "channelHeartbeat",
+    "expectedKeyword": "pattern",
+    "expectedInstancePath": "/sentAt",
+    "payload": {
+      "kind": "channel.heartbeat",
+      "protocolVersion": "1.0",
+      "executorId": "exe_sample001",
+      "deviceId": "dev_executor1",
+      "actorRole": "executor_device",
+      "state": "idle",
+      "sentAt": "2030-02-29T00:00:00Z",
+      "correlationId": "cor_heartbeat"
+    }
+  },
+  {
+    "name": "rejects non-normalized signup response username",
+    "schema": "signupResponse",
+    "expectedKeyword": "pattern",
+    "expectedInstancePath": "/username",
+    "payload": {
+      "kind": "auth.signup.response",
+      "protocolVersion": "1.0",
+      "userId": "usr_sample001",
+      "username": "Sample.User",
+      "correlationId": "cor_signup001"
+    }
+  },
+  {
+    "name": "rejects unknown desktop claim kind",
+    "schema": "desktopClaimCreateRequest",
+    "expectedKeyword": "const",
+    "expectedInstancePath": "/kind",
+    "payload": {
+      "kind": "desktop.claim.unknown",
+      "protocolVersion": "1.0",
+      "claimId": "clm_desktop001",
+      "deviceId": "dev_desktop01",
+      "actorRole": "desktop_device",
+      "displayName": "Sample Desktop",
+      "platform": "macos",
+      "architecture": "arm64",
+      "desktopVersion": "1.0.0",
+      "keyFingerprint": "abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789",
+      "idempotencyKey": "idem_desktop_claim_0001",
+      "correlationId": "cor_desktop01"
+    }
+  },
+  {
+    "name": "rejects extra desktop claim create field",
+    "schema": "desktopClaimCreateRequest",
+    "expectedKeyword": "additionalProperties",
+    "expectedInstancePath": "",
+    "payload": {
+      "kind": "desktop.claim.create.request",
+      "protocolVersion": "1.0",
+      "claimId": "clm_desktop001",
+      "deviceId": "dev_desktop01",
+      "actorRole": "desktop_device",
+      "displayName": "Sample Desktop",
+      "platform": "macos",
+      "architecture": "arm64",
+      "desktopVersion": "1.0.0",
+      "keyFingerprint": "abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789",
+      "idempotencyKey": "idem_desktop_claim_0001",
+      "correlationId": "cor_desktop01",
+      "unexpected": true
+    }
+  },
+  {
+    "name": "rejects wrong desktop claim actor",
+    "schema": "desktopClaimCreateRequest",
+    "expectedKeyword": "const",
+    "expectedInstancePath": "/actorRole",
+    "payload": {
+      "kind": "desktop.claim.create.request",
+      "protocolVersion": "1.0",
+      "claimId": "clm_desktop001",
+      "deviceId": "dev_desktop01",
+      "actorRole": "executor_device",
+      "displayName": "Sample Desktop",
+      "platform": "macos",
+      "architecture": "arm64",
+      "desktopVersion": "1.0.0",
+      "keyFingerprint": "abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789",
+      "idempotencyKey": "idem_desktop_claim_0001",
+      "correlationId": "cor_desktop01"
+    }
+  },
+  {
+    "name": "rejects malformed desktop device identity",
+    "schema": "desktopClaimCreateRequest",
+    "expectedKeyword": "pattern",
+    "expectedInstancePath": "/deviceId",
+    "payload": {
+      "kind": "desktop.claim.create.request",
+      "protocolVersion": "1.0",
+      "claimId": "clm_desktop001",
+      "deviceId": "desktop",
+      "actorRole": "desktop_device",
+      "displayName": "Sample Desktop",
+      "platform": "macos",
+      "architecture": "arm64",
+      "desktopVersion": "1.0.0",
+      "keyFingerprint": "abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789",
+      "idempotencyKey": "idem_desktop_claim_0001",
+      "correlationId": "cor_desktop01"
+    }
+  },
+  {
+    "name": "rejects unsafe desktop version",
+    "schema": "desktopClaimCreateRequest",
+    "expectedKeyword": "pattern",
+    "expectedInstancePath": "/desktopVersion",
+    "payload": {
+      "kind": "desktop.claim.create.request",
+      "protocolVersion": "1.0",
+      "claimId": "clm_desktop001",
+      "deviceId": "dev_desktop01",
+      "actorRole": "desktop_device",
+      "displayName": "Sample Desktop",
+      "platform": "macos",
+      "architecture": "arm64",
+      "desktopVersion": "v1/private",
+      "keyFingerprint": "abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789",
+      "idempotencyKey": "idem_desktop_claim_0001",
+      "correlationId": "cor_desktop01"
+    }
+  },
+  {
+    "name": "rejects malformed desktop challenge expiry",
+    "schema": "desktopClaimChallenge",
+    "expectedKeyword": "pattern",
+    "expectedInstancePath": "/expiresAt",
+    "payload": {
+      "kind": "desktop.claim.challenge",
+      "protocolVersion": "1.0",
+      "claimId": "clm_desktop001",
+      "actorRole": "claim_challenge",
+      "claimUrl": "https://connect.kazibee.example/device/clm_desktop001",
+      "shortCode": "WXYZ-BCDF",
+      "deviceId": "dev_desktop01",
+      "displayName": "Sample Desktop",
+      "platform": "macos",
+      "architecture": "arm64",
+      "desktopVersion": "1.0.0",
+      "keyFingerprint": "abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789",
+      "expiresAt": "2030-02-29T00:00:00Z",
+      "correlationId": "cor_desktop01"
+    }
+  },
+  {
+    "name": "rejects unknown desktop claim status",
+    "schema": "desktopClaimStatusResponse",
+    "expectedKeyword": "const",
+    "expectedInstancePath": "/status",
+    "payload": {
+      "kind": "desktop.claim.status.response",
+      "protocolVersion": "1.0",
+      "claimId": "clm_desktop001",
+      "status": "approved",
+      "correlationId": "cor_desktop01"
+    }
+  },
+  {
+    "name": "rejects wrong desktop decision actor",
+    "schema": "desktopClaimDecisionRequest",
+    "expectedKeyword": "const",
+    "expectedInstancePath": "/actorRole",
+    "payload": {
+      "kind": "desktop.claim.decision.request",
+      "protocolVersion": "1.0",
+      "claimId": "clm_desktop001",
+      "sessionId": "ses_sample001",
+      "actorRole": "desktop_device",
+      "decision": "accept",
+      "idempotencyKey": "idem_desktop_accept_0001",
+      "correlationId": "cor_desktop01"
+    }
+  },
+  {
+    "name": "rejects wrong desktop credential audience",
+    "schema": "desktopClaimDecisionResponse",
+    "expectedKeyword": "const",
+    "expectedInstancePath": "/credentialAudience",
+    "payload": {
+      "kind": "desktop.claim.decision.response",
+      "protocolVersion": "1.0",
+      "claimId": "clm_desktop001",
+      "status": "accepted",
+      "deviceId": "dev_desktop01",
+      "actorRole": "desktop_device",
+      "credentialAudience": "executor-relay",
+      "credentialGeneration": 1,
+      "credentialExpiresAt": "2030-02-01T00:00:00Z",
+      "correlationId": "cor_desktop01",
+      "websiteAccountId": "usr_sample001"
+    }
+  },
+  {
+    "name": "rejects desktop accepted credential generation above one",
+    "schema": "desktopClaimStatusResponse",
+    "expectedKeyword": "const",
+    "expectedInstancePath": "/credentialGeneration",
+    "payload": {
+      "kind": "desktop.claim.status.response",
+      "protocolVersion": "1.0",
+      "claimId": "clm_desktop001",
+      "status": "accepted",
+      "deviceId": "dev_desktop01",
+      "actorRole": "desktop_device",
+      "credentialAudience": "desktop-relay",
+      "credentialGeneration": 2,
+      "credentialExpiresAt": "2030-02-01T00:00:00Z",
+      "correlationId": "cor_desktop01",
+      "websiteAccountId": "usr_sample001"
+    }
+  },
+  {
+    "name": "rejects desktop relay protocol version mismatch",
+    "schema": "desktopRelayAuthContext",
+    "expectedKeyword": "const",
+    "expectedInstancePath": "/protocolVersion",
+    "payload": {
+      "kind": "desktop.relay.auth.context",
+      "protocolVersion": "1.1",
+      "deviceId": "dev_desktop01",
+      "actorRole": "desktop_device",
+      "audience": "desktop-relay",
+      "credentialGeneration": 1,
+      "credentialState": "active",
+      "expiresAt": "2030-02-01T00:00:00Z"
+    }
+  },
+  {
+    "name": "rejects desktop relay generation zero",
+    "schema": "desktopRelayAuthContext",
+    "expectedKeyword": "minimum",
+    "expectedInstancePath": "/credentialGeneration",
+    "payload": {
+      "kind": "desktop.relay.auth.context",
+      "protocolVersion": "1.0",
+      "deviceId": "dev_desktop01",
+      "actorRole": "desktop_device",
+      "audience": "desktop-relay",
+      "credentialGeneration": 0,
+      "credentialState": "active",
+      "expiresAt": "2030-02-01T00:00:00Z"
+    }
+  },
+  {
+    "name": "rejects malformed active desktop credential expiry",
+    "schema": "desktopRelayAuthContext",
+    "expectedKeyword": "pattern",
+    "expectedInstancePath": "/expiresAt",
+    "payload": {
+      "kind": "desktop.relay.auth.context",
+      "protocolVersion": "1.0",
+      "deviceId": "dev_desktop01",
+      "actorRole": "desktop_device",
+      "audience": "desktop-relay",
+      "credentialGeneration": 1,
+      "credentialState": "active",
+      "expiresAt": "never"
+    }
+  },
+  {
+    "name": "rejects revoked desktop credential without revocation time",
+    "schema": "desktopRelayAuthContext",
+    "expectedKeyword": "required",
+    "expectedInstancePath": "",
+    "payload": {
+      "kind": "desktop.relay.auth.context",
+      "protocolVersion": "1.0",
+      "deviceId": "dev_desktop01",
+      "actorRole": "desktop_device",
+      "audience": "desktop-relay",
+      "credentialGeneration": 1,
+      "credentialState": "revoked",
+      "expiresAt": "2030-02-01T00:00:00Z"
+    }
+  },
+  {
+    "name": "rejects revocation time on active desktop credential",
+    "schema": "desktopRelayAuthContext",
+    "expectedKeyword": "additionalProperties",
+    "expectedInstancePath": "",
+    "payload": {
+      "kind": "desktop.relay.auth.context",
+      "protocolVersion": "1.0",
+      "deviceId": "dev_desktop01",
+      "actorRole": "desktop_device",
+      "audience": "desktop-relay",
+      "credentialGeneration": 1,
+      "credentialState": "active",
+      "expiresAt": "2030-02-01T00:00:00Z",
+      "revokedAt": "2030-01-15T00:00:00Z"
+    }
+  },
+  {
+    "name": "rejects wrong operation result pairing",
+    "schema": "commandResult",
+    "expectedKeyword": "required",
+    "expectedInstancePath": "/result",
+    "payload": {
+      "kind": "command.result",
+      "protocolVersion": "1.0",
+      "commandId": "cmd_status0001",
+      "correlationId": "cor_status0001",
+      "executorId": "exe_sample001",
+      "actorRole": "executor_device",
+      "operation": "workspaces.read",
+      "completedAt": "2030-01-01T00:00:01Z",
+      "result": {
+        "state": "idle",
+        "observedAt": "2030-01-01T00:00:01Z"
+      }
+    }
+  },
+  {
+    "name": "rejects command result extra field",
+    "schema": "commandResult",
+    "expectedKeyword": "additionalProperties",
+    "expectedInstancePath": "/result",
+    "payload": {
+      "kind": "command.result",
+      "protocolVersion": "1.0",
+      "commandId": "cmd_status0001",
+      "correlationId": "cor_status0001",
+      "executorId": "exe_sample001",
+      "actorRole": "executor_device",
+      "operation": "executor.status.read",
+      "completedAt": "2030-01-01T00:00:01Z",
+      "result": {
+        "state": "idle",
+        "observedAt": "2030-01-01T00:00:01Z",
+        "unexpected": true,
+        "displayName": "Sample executor",
+        "capabilities": {
+          "git": true,
+          "codex": true,
+          "claude": false
+        }
+      }
+    }
+  },
+  {
+    "name": "rejects oversized result cursor",
+    "schema": "commandResult",
+    "expectedKeyword": "maxLength",
+    "expectedInstancePath": "/result/nextCursor",
+    "payload": {
+      "kind": "command.result",
+      "protocolVersion": "1.0",
+      "commandId": "cmd_workspace1",
+      "correlationId": "cor_workspace1",
+      "executorId": "exe_sample001",
+      "actorRole": "executor_device",
+      "operation": "workspaces.read",
+      "completedAt": "2030-01-01T00:00:01Z",
+      "result": {
+        "workspaces": [],
+        "hasMore": true,
+        "nextCursor": "cur_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      }
+    }
+  },
+  {
+    "name": "rejects missing cursor on incomplete result page",
+    "schema": "commandResult",
+    "expectedKeyword": "required",
+    "expectedInstancePath": "/result",
+    "payload": {
+      "kind": "command.result",
+      "protocolVersion": "1.0",
+      "commandId": "cmd_workspace1",
+      "correlationId": "cor_workspace1",
+      "executorId": "exe_sample001",
+      "actorRole": "executor_device",
+      "operation": "workspaces.read",
+      "completedAt": "2030-01-01T00:00:01Z",
+      "result": {
+        "workspaces": [],
+        "hasMore": true
+      }
+    }
+  },
+  {
+    "name": "rejects command result actor confusion",
+    "schema": "commandResult",
+    "expectedKeyword": "const",
+    "expectedInstancePath": "/actorRole",
+    "payload": {
+      "kind": "command.result",
+      "protocolVersion": "1.0",
+      "commandId": "cmd_status0001",
+      "correlationId": "cor_status0001",
+      "executorId": "exe_sample001",
+      "actorRole": "desktop_device",
+      "operation": "executor.status.read",
+      "completedAt": "2030-01-01T00:00:01Z",
+      "result": {
+        "state": "idle",
+        "observedAt": "2030-01-01T00:00:01Z",
+        "displayName": "Sample executor",
+        "capabilities": {
+          "git": true,
+          "codex": true,
+          "claude": false
+        }
+      }
+    }
+  },
+  {
+    "name": "rejects replay result routed to browser owner SSE",
+    "schema": "ownerSseEvent",
+    "expectedKeyword": "const",
+    "expectedInstancePath": "/event/kind",
+    "payload": {
+      "kind": "owner.sse.event",
+      "protocolVersion": "1.0",
+      "sessionId": "ses_sample001",
+      "actorRole": "browser_session",
+      "event": {
+        "kind": "events.replay.result",
+        "protocolVersion": "1.0",
+        "executorId": "exe_sample001",
+        "threadId": "thr_sample001",
+        "afterSequence": 41,
+        "highWaterSequence": 41,
+        "events": [],
+        "hasMore": false,
+        "correlationId": "cor_replay001"
+      }
+    }
+  },
+  {
+    "name": "rejects safe error routed to browser owner SSE",
+    "schema": "ownerSseEvent",
+    "expectedKeyword": "const",
+    "expectedInstancePath": "/event/kind",
+    "payload": {
+      "kind": "owner.sse.event",
+      "protocolVersion": "1.0",
+      "sessionId": "ses_sample001",
+      "actorRole": "browser_session",
+      "event": {
+        "kind": "error",
+        "protocolVersion": "1.0",
+        "code": "executor-offline",
+        "message": "Executor is offline; nothing was queued.",
+        "retryable": true,
+        "correlationId": "cor_offline01"
+      }
+    }
+  },
+  {
+    "name": "rejects executor status missing display name",
+    "schema": "executorStatusResult",
+    "expectedKeyword": "required",
+    "expectedInstancePath": "",
+    "payload": {
+      "state": "idle",
+      "capabilities": {
+        "git": true,
+        "codex": true,
+        "claude": false
+      },
+      "observedAt": "2030-01-01T00:00:01Z"
+    }
+  },
+  {
+    "name": "rejects executor status missing capabilities",
+    "schema": "executorStatusResult",
+    "expectedKeyword": "required",
+    "expectedInstancePath": "",
+    "payload": {
+      "displayName": "Sample executor",
+      "state": "idle",
+      "observedAt": "2030-01-01T00:00:01Z"
+    }
+  },
+  {
+    "name": "rejects executor status extra field",
+    "schema": "executorStatusResult",
+    "expectedKeyword": "additionalProperties",
+    "expectedInstancePath": "",
+    "payload": {
+      "displayName": "Sample executor",
+      "state": "idle",
+      "capabilities": {
+        "git": true,
+        "codex": true,
+        "claude": false
+      },
+      "observedAt": "2030-01-01T00:00:01Z",
+      "protocolVersion": "1.0"
+    }
+  },
+  {
+    "name": "rejects executor status capability wrong type",
+    "schema": "executorStatusResult",
+    "expectedKeyword": "type",
+    "expectedInstancePath": "/capabilities/git",
+    "payload": {
+      "displayName": "Sample executor",
+      "state": "idle",
+      "capabilities": {
+        "git": "true",
+        "codex": true,
+        "claude": false
+      },
+      "observedAt": "2030-01-01T00:00:01Z"
+    }
+  },
+  {
+    "name": "rejects executor status capability path attempt",
+    "schema": "executorStatusResult",
+    "expectedKeyword": "additionalProperties",
+    "expectedInstancePath": "/capabilities",
+    "payload": {
+      "displayName": "Sample executor",
+      "state": "idle",
+      "capabilities": {
+        "git": true,
+        "codex": true,
+        "claude": false,
+        "gitPath": "local-location"
+      },
+      "observedAt": "2030-01-01T00:00:01Z"
+    }
+  },
+  {
+    "name": "rejects executor status capability version attempt",
+    "schema": "executorStatusResult",
+    "expectedKeyword": "additionalProperties",
+    "expectedInstancePath": "/capabilities",
+    "payload": {
+      "displayName": "Sample executor",
+      "state": "idle",
+      "capabilities": {
+        "git": true,
+        "codex": true,
+        "claude": false,
+        "codexVersion": "test-version"
+      },
+      "observedAt": "2030-01-01T00:00:01Z"
+    }
+  },
+  {
+    "name": "rejects executor status capability config attempt",
+    "schema": "executorStatusResult",
+    "expectedKeyword": "additionalProperties",
+    "expectedInstancePath": "/capabilities",
+    "payload": {
+      "displayName": "Sample executor",
+      "state": "idle",
+      "capabilities": {
+        "git": true,
+        "codex": true,
+        "claude": false,
+        "claudeConfig": "configured"
+      },
+      "observedAt": "2030-01-01T00:00:01Z"
+    }
+  },
+  {
+    "name": "rejects executor status capability credential attempt",
+    "schema": "executorStatusResult",
+    "expectedKeyword": "additionalProperties",
+    "expectedInstancePath": "/capabilities",
+    "payload": {
+      "displayName": "Sample executor",
+      "state": "idle",
+      "capabilities": {
+        "git": true,
+        "codex": true,
+        "claude": false,
+        "hasCredentials": true
+      },
+      "observedAt": "2030-01-01T00:00:01Z"
+    }
+  },
+  {
+    "name": "rejects executor status capability model list attempt",
+    "schema": "executorStatusResult",
+    "expectedKeyword": "additionalProperties",
+    "expectedInstancePath": "/capabilities",
+    "payload": {
+      "displayName": "Sample executor",
+      "state": "idle",
+      "capabilities": {
+        "git": true,
+        "codex": true,
+        "claude": false,
+        "modelList": [
+          "test-model"
+        ]
+      },
+      "observedAt": "2030-01-01T00:00:01Z"
+    }
+  },
+  {
+    "name": "rejects executor status capability provider output attempt",
+    "schema": "executorStatusResult",
+    "expectedKeyword": "additionalProperties",
+    "expectedInstancePath": "/capabilities",
+    "payload": {
+      "displayName": "Sample executor",
+      "state": "idle",
+      "capabilities": {
+        "git": true,
+        "codex": true,
+        "claude": false,
+        "providerOutputAvailable": true
+      },
+      "observedAt": "2030-01-01T00:00:01Z"
+    }
+  },
+  {
+    "name": "rejects executor summary missing presence",
+    "schema": "executorListResponse",
+    "expectedKeyword": "required",
+    "expectedInstancePath": "/executors/0",
+    "payload": {
+      "kind": "executor.list.response",
+      "protocolVersion": "1.0",
+      "executors": [
+        {
+          "executorId": "exe_sample001",
+          "displayName": "Sample executor",
+          "state": "active",
+          "online": true,
+          "protocolVersion": "1.0"
+        }
+      ],
+      "correlationId": "cor_list00001"
+    }
+  },
+  {
+    "name": "rejects executor summary unknown presence",
+    "schema": "executorListResponse",
+    "expectedKeyword": "enum",
+    "expectedInstancePath": "/executors/0/presence",
+    "payload": {
+      "kind": "executor.list.response",
+      "protocolVersion": "1.0",
+      "executors": [
+        {
+          "executorId": "exe_sample001",
+          "displayName": "Sample executor",
+          "state": "active",
+          "online": true,
+          "protocolVersion": "1.0",
+          "presence": "unknown"
+        }
+      ],
+      "correlationId": "cor_list00001"
+    }
+  },
+  {
+    "name": "rejects accepted executor status missing deployment identity",
+    "schema": "claimStatusResponse",
+    "expectedKeyword": "required",
+    "expectedInstancePath": "",
+    "payload": {
+      "kind": "executor.claim.status.response",
+      "protocolVersion": "1.0",
+      "claimId": "clm_sample001",
+      "status": "accepted",
+      "correlationId": "cor_claim001"
+    }
+  },
+  {
+    "name": "rejects accepted executor decision missing deployment identity",
+    "schema": "claimDecisionResponse",
+    "expectedKeyword": "required",
+    "expectedInstancePath": "",
+    "payload": {
+      "kind": "executor.claim.decision.response",
+      "protocolVersion": "1.0",
+      "claimId": "clm_sample001",
+      "status": "accepted",
+      "correlationId": "cor_claim001"
+    }
+  },
+  {
+    "name": "rejects accepted desktop status missing deployment identity",
+    "schema": "desktopClaimStatusResponse",
+    "expectedKeyword": "required",
+    "expectedInstancePath": "",
+    "payload": {
+      "kind": "desktop.claim.status.response",
+      "protocolVersion": "1.0",
+      "claimId": "clm_desktop001",
+      "status": "accepted",
+      "deviceId": "dev_desktop01",
+      "actorRole": "desktop_device",
+      "credentialAudience": "desktop-relay",
+      "credentialGeneration": 1,
+      "credentialExpiresAt": "2030-02-01T00:00:00Z",
+      "correlationId": "cor_desktop01",
+      "websiteAccountId": "usr_sample001"
+    }
+  },
+  {
+    "name": "rejects command missing deployment identity",
+    "schema": "commandPost",
+    "expectedKeyword": "required",
+    "expectedInstancePath": "",
+    "payload": {
+      "kind": "command.post",
+      "protocolVersion": "1.0",
+      "commandId": "cmd_sample001",
+      "correlationId": "cor_command01",
+      "idempotencyKey": "idem_thread_send_0001",
+      "executorId": "exe_sample001",
+      "deviceId": "dev_desktop01",
+      "actorRole": "desktop_device",
+      "operation": "thread.send",
+      "payload": {
+        "workspaceId": "wrk_sample001",
+        "threadId": "thr_sample001",
+        "text": "Summarize the current change.",
+        "mode": "normal",
+        "model": "app:codex/gpt-5.6-luna"
+      }
+    }
+  },
+  {
+    "name": "rejects command unknown deployment identity spelling",
+    "schema": "commandPost",
+    "expectedKeyword": "additionalProperties",
+    "expectedInstancePath": "",
+    "payload": {
+      "kind": "command.post",
+      "protocolVersion": "1.0",
+      "commandId": "cmd_sample001",
+      "correlationId": "cor_command01",
+      "idempotencyKey": "idem_thread_send_0001",
+      "executorId": "exe_sample001",
+      "deviceId": "dev_desktop01",
+      "actorRole": "desktop_device",
+      "operation": "thread.send",
+      "payload": {
+        "workspaceId": "wrk_sample001",
+        "threadId": "thr_sample001",
+        "text": "Summarize the current change.",
+        "mode": "normal",
+        "model": "app:codex/gpt-5.6-luna"
+      },
+      "websiteDeploymentID": "wdp_0123456789abcdef0123456789abcdef"
+    }
+  },
+  {
+    "name": "rejects malformed deployment identity",
+    "schema": "commandPost",
+    "expectedKeyword": "pattern",
+    "expectedInstancePath": "/websiteDeploymentId",
+    "payload": {
+      "kind": "command.post",
+      "protocolVersion": "1.0",
+      "commandId": "cmd_sample001",
+      "correlationId": "cor_command01",
+      "idempotencyKey": "idem_thread_send_0001",
+      "executorId": "exe_sample001",
+      "deviceId": "dev_desktop01",
+      "actorRole": "desktop_device",
+      "operation": "thread.send",
+      "payload": {
+        "workspaceId": "wrk_sample001",
+        "threadId": "thr_sample001",
+        "text": "Summarize the current change.",
+        "mode": "normal",
+        "model": "app:codex/gpt-5.6-luna"
+      },
+      "websiteDeploymentId": "wdp_too-short"
+    }
+  },
+  {
+    "name": "rejects conversation create missing title",
+    "schema": "conversationCreatePayload",
+    "expectedKeyword": "required",
+    "expectedInstancePath": "",
+    "payload": {
+      "clientCreationId": "ccr_sample_creation_0001",
+      "websiteDeploymentId": "wdp_0123456789abcdef0123456789abcdef",
+      "executorId": "exe_sample001",
+      "remoteWorkspaceId": "wrk_sample001"
+    }
+  },
+  {
+    "name": "rejects conversation create extra field",
+    "schema": "conversationCreatePayload",
+    "expectedKeyword": "additionalProperties",
+    "expectedInstancePath": "",
+    "payload": {
+      "clientCreationId": "ccr_sample_creation_0001",
+      "title": "Review the current change",
+      "websiteDeploymentId": "wdp_0123456789abcdef0123456789abcdef",
+      "executorId": "exe_sample001",
+      "remoteWorkspaceId": "wrk_sample001",
+      "displayName": "Not allowed"
+    }
+  },
+  {
+    "name": "rejects conversation create case variant field",
+    "schema": "conversationCreatePayload",
+    "expectedKeyword": "additionalProperties",
+    "expectedInstancePath": "",
+    "payload": {
+      "clientCreationID": "ccr_sample_creation_0001",
+      "title": "Review the current change",
+      "websiteDeploymentId": "wdp_0123456789abcdef0123456789abcdef",
+      "executorId": "exe_sample001",
+      "remoteWorkspaceId": "wrk_sample001"
+    }
+  },
+  {
+    "name": "rejects remote receipt missing workspace",
+    "schema": "remoteExecutionBindingReceipt",
+    "expectedKeyword": "required",
+    "expectedInstancePath": "",
+    "payload": {
+      "conversationId": "thr_sample001",
+      "kind": "remote",
+      "websiteDeploymentId": "wdp_0123456789abcdef0123456789abcdef",
+      "executorId": "exe_sample001"
+    }
+  },
+  {
+    "name": "rejects remote receipt extra authority field",
+    "schema": "remoteExecutionBindingReceipt",
+    "expectedKeyword": "additionalProperties",
+    "expectedInstancePath": "",
+    "payload": {
+      "conversationId": "thr_sample001",
+      "kind": "remote",
+      "websiteDeploymentId": "wdp_0123456789abcdef0123456789abcdef",
+      "executorId": "exe_sample001",
+      "remoteWorkspaceId": "wrk_sample001",
+      "websiteAccountId": "usr_sample001"
+    }
+  },
+  {
+    "name": "rejects canonical send missing operation identity",
+    "schema": "threadSendExistingPayload",
+    "expectedKeyword": "required",
+    "expectedInstancePath": "",
+    "payload": {
+      "conversationId": "thr_sample001",
+      "text": "Continue the existing thread.",
+      "mode": "readonly",
+      "model": "app:codex/gpt-5.6-luna",
+      "expectedExecutionBinding": {
+        "conversationId": "thr_sample001",
+        "kind": "remote",
+        "websiteDeploymentId": "wdp_0123456789abcdef0123456789abcdef",
+        "executorId": "exe_sample001",
+        "remoteWorkspaceId": "wrk_sample001"
+      }
+    }
+  },
+  {
+    "name": "rejects canonical send legacy phase",
+    "schema": "threadSendExistingPayload",
+    "expectedKeyword": "additionalProperties",
+    "expectedInstancePath": "",
+    "payload": {
+      "conversationId": "thr_sample001",
+      "clientOperationId": "cop_sample_operation_0001",
+      "text": "Continue the existing thread.",
+      "mode": "readonly",
+      "model": "app:codex/gpt-5.6-luna",
+      "phase": "start",
+      "expectedExecutionBinding": {
+        "conversationId": "thr_sample001",
+        "kind": "remote",
+        "websiteDeploymentId": "wdp_0123456789abcdef0123456789abcdef",
+        "executorId": "exe_sample001",
+        "remoteWorkspaceId": "wrk_sample001"
+      }
+    }
+  },
+  {
+    "name": "rejects legacy start without phase discriminant",
+    "schema": "threadSendNewPayload",
+    "expectedKeyword": "required",
+    "expectedInstancePath": "",
+    "payload": {
+      "workspaceId": "wrk_sample001",
+      "title": "Review the current change",
+      "text": "Start a review thread.",
+      "mode": "edit",
+      "model": "app:claude/claude-sonnet-4"
+    }
+  },
+  {
+    "name": "rejects create result missing execution binding",
+    "schema": "conversationCreateResult",
+    "expectedKeyword": "required",
+    "expectedInstancePath": "",
+    "payload": {
+      "conversationId": "thr_created001",
+      "title": "Review the current change",
+      "createdAt": "2030-01-01T00:00:01Z"
+    }
+  },
+  {
+    "name": "rejects create result extra field",
+    "schema": "conversationCreateResult",
+    "expectedKeyword": "additionalProperties",
+    "expectedInstancePath": "",
+    "payload": {
+      "conversationId": "thr_created001",
+      "title": "Review the current change",
+      "createdAt": "2030-01-01T00:00:01Z",
+      "executionBinding": {
+        "conversationId": "thr_created001",
+        "kind": "remote",
+        "websiteDeploymentId": "wdp_0123456789abcdef0123456789abcdef",
+        "executorId": "exe_sample001",
+        "remoteWorkspaceId": "wrk_sample001"
+      },
+      "remoteThreadId": "thr_forbidden01"
+    }
+  }
+]

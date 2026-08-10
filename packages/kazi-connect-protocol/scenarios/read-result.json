@@ -1,0 +1,12 @@
+{
+  "name": "bounded text-first thread read result",
+  "clock": "2030-01-01T00:00:00Z",
+  "steps": [
+    {
+      "atMs": 0,
+      "fixture": "text-first thread read command result"
+    }
+  ],
+  "expectedOperation": "thread.read",
+  "expectedHighWaterSequence": 1
+}

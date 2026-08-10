@@ -41,20 +41,6 @@ export async function is_auth(
   });
 
   try {
-    // Debug bypass: X-Debug-User-Id header allows acting as any user (dev only)
-    // This is useful for development/testing when you don't have full auth setup
-    const debugUserId = req.headers['x-debug-user-id'] as string | undefined;
-    if (debugUserId && process.env.NODE_ENV !== 'production') {
-      const userId = Number(debugUserId);
-      if (Number.isFinite(userId) && userId > 0) {
-        const debugUser = { id: userId, email: `debug-user-${userId}@example.com` };
-        (req as any).user = debugUser;
-        (req as any).context.user = debugUser;
-        logger.debug("[is_auth] Debug user bypass", { userId });
-        return next();
-      }
-    }
-
     const header = req.headers?.authorization || req.headers?.Authorization as any;
     const bearer = typeof header === 'string' && header.toLowerCase().startsWith('bearer ')
       ? header.slice(7).trim()
@@ -101,7 +87,7 @@ export async function is_auth(
     });
 
     return next();
-  } catch (err) {
+  } catch {
     return res.status(401).json({ error: true, message: 'Unauthorized: invalid token' });
   }
 }

@@ -1,0 +1,27 @@
+{
+  "name": "online command is accepted and streamed",
+  "clock": "2030-01-01T00:00:00Z",
+  "steps": [
+    {
+      "atMs": 0,
+      "actorRole": "executor_device",
+      "fixture": "outbound hello"
+    },
+    {
+      "atMs": 10,
+      "actorRole": "desktop_device",
+      "fixture": "desktop command post"
+    },
+    {
+      "atMs": 20,
+      "actorRole": "executor_device",
+      "fixture": "command accepted"
+    },
+    {
+      "atMs": 30,
+      "actorRole": "desktop_device",
+      "fixture": "owner SSE envelope"
+    }
+  ],
+  "expectedSequence": 41
+}

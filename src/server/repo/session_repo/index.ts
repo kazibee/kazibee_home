@@ -17,28 +17,28 @@ export interface Session {
 @Component()
 export default class SessionRepo {
   @Query()
-  createSession(params: { session_id: string; user_id: string; device_id: string; device_type: string | null; session_fence_message_id: number }): Promise<void> {
+  createSession(_params: { session_id: string; user_id: string; device_id: string; device_type: string | null; session_fence_message_id: number }): Promise<void> {
     throw new SqlStackError("Not implemented");
   }
 
   @Query()
   @Single
-  findBySessionId(params: { session_id: string }): Promise<Session | null> {
+  findBySessionId(_params: { session_id: string }): Promise<Session | null> {
     throw new SqlStackError("Not implemented");
   }
 
   @Query()
-  findActiveByDeviceId(params: { device_id: string }): Promise<Session[]> {
+  findActiveByDeviceId(_params: { device_id: string }): Promise<Session[]> {
     throw new SqlStackError("Not implemented");
   }
 
   @Query()
-  closeSession(params: { session_id: string }): Promise<void> {
+  closeSession(_params: { session_id: string }): Promise<void> {
     throw new SqlStackError("Not implemented");
   }
 
   @Query()
-  updateHeartbeat(params: { session_id: string }): Promise<void> {
+  updateHeartbeat(_params: { session_id: string }): Promise<void> {
     throw new SqlStackError("Not implemented");
   }
 }

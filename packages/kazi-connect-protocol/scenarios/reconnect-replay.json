@@ -1,0 +1,19 @@
+{
+  "name": "reconnect requests an exclusive cursor",
+  "clock": "2030-01-01T00:00:00Z",
+  "steps": [
+    {
+      "atMs": 0,
+      "actorRole": "desktop_device",
+      "fixture": "exclusive replay request"
+    },
+    {
+      "atMs": 10,
+      "actorRole": "executor_device",
+      "fixture": "replay result with high-water"
+    }
+  ],
+  "afterSequence": 40,
+  "firstReturnedSequence": 41,
+  "highWaterSequence": 41
+}

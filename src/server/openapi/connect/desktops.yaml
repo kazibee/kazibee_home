@@ -1,0 +1,421 @@
+module:
+  connectDesktops:
+    basePath: '/v1/connect/desktops'
+    paths:
+      '/claims':
+        post:
+          x-controller: connect_desktop.controller
+          x-action: createClaim
+          parameters:
+            - $ref: '#/components/parameters/ConnectDesktopBootstrapToken'
+          requestBody:
+            required: true
+            content:
+              application/json:
+                schema:
+                  $ref: '#/components/schemas/ConnectDesktopClaimCreate'
+          responses:
+            '200': { $ref: '#/components/responses/ConnectDesktopClaimChallengeResult' }
+            '201': { $ref: '#/components/responses/ConnectDesktopClaimChallengeResult' }
+            '400': { $ref: '#/components/responses/ConnectDesktopErrorResult' }
+            '401': { $ref: '#/components/responses/ConnectDesktopErrorResult' }
+            '409': { $ref: '#/components/responses/ConnectDesktopErrorResult' }
+            '500': { $ref: '#/components/responses/ConnectDesktopErrorResult' }
+      '/claims/{claimId}/status':
+        get:
+          x-controller: connect_desktop.controller
+          x-action: claimStatus
+          parameters:
+            - $ref: '#/components/parameters/ConnectDesktopClaimPath'
+            - $ref: '#/components/parameters/ConnectDesktopBootstrapToken'
+            - $ref: '#/components/parameters/ConnectDesktopCorrelationQuery'
+          responses:
+            '200':
+              description: Authenticated claim status
+              content:
+                application/json:
+                  schema: { $ref: '#/components/schemas/ConnectDesktopClaimStatus' }
+            '400': { $ref: '#/components/responses/ConnectDesktopErrorResult' }
+            '401': { $ref: '#/components/responses/ConnectDesktopErrorResult' }
+            '404': { $ref: '#/components/responses/ConnectDesktopErrorResult' }
+            '500': { $ref: '#/components/responses/ConnectDesktopErrorResult' }
+      '/claims/review/{lookup}':
+        get:
+          x-controller: connect_desktop.controller
+          x-action: reviewClaim
+          parameters:
+            - in: path
+              name: lookup
+              required: true
+              schema:
+                type: string
+                pattern: '^(?:clm_[A-Za-z0-9]{8,64}|[A-Z]{4}-[A-Z]{4})$'
+            - $ref: '#/components/parameters/ConnectDesktopOwnerSessionQuery'
+            - $ref: '#/components/parameters/ConnectDesktopCorrelationQuery'
+            - $ref: '#/components/parameters/ConnectDesktopSessionCookie'
+          responses:
+            '200':
+              description: Safe claim review
+              content:
+                application/json:
+                  schema: { $ref: '#/components/schemas/ConnectDesktopClaimReview' }
+            '400': { $ref: '#/components/responses/ConnectDesktopErrorResult' }
+            '401': { $ref: '#/components/responses/ConnectDesktopErrorResult' }
+            '404': { $ref: '#/components/responses/ConnectDesktopErrorResult' }
+            '500': { $ref: '#/components/responses/ConnectDesktopErrorResult' }
+      '/claims/{claimId}/decision':
+        post:
+          x-controller: connect_desktop.controller
+          x-action: decideClaim
+          parameters:
+            - $ref: '#/components/parameters/ConnectDesktopClaimPath'
+            - $ref: '#/components/parameters/ConnectDesktopSessionCookie'
+            - $ref: '#/components/parameters/ConnectDesktopCsrfCookie'
+            - $ref: '#/components/parameters/ConnectDesktopCsrfHeader'
+          requestBody:
+            required: true
+            content:
+              application/json:
+                schema: { $ref: '#/components/schemas/ConnectDesktopClaimDecision' }
+          responses:
+            '200':
+              description: Claim decision
+              content:
+                application/json:
+                  schema: { $ref: '#/components/schemas/ConnectDesktopClaimDecisionResult' }
+            '400': { $ref: '#/components/responses/ConnectDesktopErrorResult' }
+            '401': { $ref: '#/components/responses/ConnectDesktopErrorResult' }
+            '403': { $ref: '#/components/responses/ConnectDesktopErrorResult' }
+            '404': { $ref: '#/components/responses/ConnectDesktopErrorResult' }
+            '409': { $ref: '#/components/responses/ConnectDesktopErrorResult' }
+            '500': { $ref: '#/components/responses/ConnectDesktopErrorResult' }
+      '/':
+        get:
+          x-controller: connect_desktop.controller
+          x-action: list
+          parameters:
+            - $ref: '#/components/parameters/ConnectDesktopOwnerSessionQuery'
+            - $ref: '#/components/parameters/ConnectDesktopCorrelationQuery'
+            - $ref: '#/components/parameters/ConnectDesktopSessionCookie'
+          responses:
+            '200':
+              description: Owner device list
+              content:
+                application/json:
+                  schema: { $ref: '#/components/schemas/ConnectDesktopList' }
+            '400': { $ref: '#/components/responses/ConnectDesktopErrorResult' }
+            '401': { $ref: '#/components/responses/ConnectDesktopErrorResult' }
+            '500': { $ref: '#/components/responses/ConnectDesktopErrorResult' }
+      '/{deviceId}':
+        get:
+          x-controller: connect_desktop.controller
+          x-action: detail
+          parameters:
+            - $ref: '#/components/parameters/ConnectDesktopPath'
+            - $ref: '#/components/parameters/ConnectDesktopOwnerSessionQuery'
+            - $ref: '#/components/parameters/ConnectDesktopCorrelationQuery'
+            - $ref: '#/components/parameters/ConnectDesktopSessionCookie'
+          responses:
+            '200':
+              description: Owner device detail
+              content:
+                application/json:
+                  schema: { $ref: '#/components/schemas/ConnectDesktopDetail' }
+            '400': { $ref: '#/components/responses/ConnectDesktopErrorResult' }
+            '401': { $ref: '#/components/responses/ConnectDesktopErrorResult' }
+            '404': { $ref: '#/components/responses/ConnectDesktopErrorResult' }
+            '500': { $ref: '#/components/responses/ConnectDesktopErrorResult' }
+      '/{deviceId}/rename':
+        post:
+          x-controller: connect_desktop.controller
+          x-action: rename
+          parameters:
+            - $ref: '#/components/parameters/ConnectDesktopPath'
+            - $ref: '#/components/parameters/ConnectDesktopOwnerSessionQuery'
+            - $ref: '#/components/parameters/ConnectDesktopCorrelationQuery'
+            - $ref: '#/components/parameters/ConnectDesktopSessionCookie'
+            - $ref: '#/components/parameters/ConnectDesktopCsrfCookie'
+            - $ref: '#/components/parameters/ConnectDesktopCsrfHeader'
+          requestBody:
+            required: true
+            content:
+              application/json:
+                schema: { $ref: '#/components/schemas/ConnectDesktopRename' }
+          responses:
+            '200':
+              description: Renamed device detail
+              content:
+                application/json:
+                  schema: { $ref: '#/components/schemas/ConnectDesktopDetail' }
+            '400': { $ref: '#/components/responses/ConnectDesktopErrorResult' }
+            '401': { $ref: '#/components/responses/ConnectDesktopErrorResult' }
+            '403': { $ref: '#/components/responses/ConnectDesktopErrorResult' }
+            '404': { $ref: '#/components/responses/ConnectDesktopErrorResult' }
+            '500': { $ref: '#/components/responses/ConnectDesktopErrorResult' }
+      '/{deviceId}/revoke':
+        post:
+          x-controller: connect_desktop.controller
+          x-action: revoke
+          parameters:
+            - $ref: '#/components/parameters/ConnectDesktopPath'
+            - $ref: '#/components/parameters/ConnectDesktopOwnerSessionQuery'
+            - $ref: '#/components/parameters/ConnectDesktopCorrelationQuery'
+            - $ref: '#/components/parameters/ConnectDesktopSessionCookie'
+            - $ref: '#/components/parameters/ConnectDesktopCsrfCookie'
+            - $ref: '#/components/parameters/ConnectDesktopCsrfHeader'
+          requestBody:
+            required: true
+            content:
+              application/json:
+                schema: { $ref: '#/components/schemas/ConnectDesktopRevoke' }
+          responses:
+            '200':
+              description: Revoked device
+              content:
+                application/json:
+                  schema: { $ref: '#/components/schemas/ConnectDesktopActionResult' }
+            '400': { $ref: '#/components/responses/ConnectDesktopErrorResult' }
+            '401': { $ref: '#/components/responses/ConnectDesktopErrorResult' }
+            '403': { $ref: '#/components/responses/ConnectDesktopErrorResult' }
+            '404': { $ref: '#/components/responses/ConnectDesktopErrorResult' }
+            '500': { $ref: '#/components/responses/ConnectDesktopErrorResult' }
+    components: &deviceComponents
+      parameters:
+        ConnectDesktopBootstrapToken:
+          in: header
+          name: x-kazi-bootstrap-token
+          required: true
+          schema: { type: string, pattern: '^[A-Za-z0-9_-]{43}$' }
+        ConnectDesktopSessionCookie:
+          in: cookie
+          name: kazi_connect_session
+          required: true
+          schema: { type: string, pattern: '^[A-Za-z0-9_-]{43}$' }
+        ConnectDesktopCsrfCookie:
+          in: cookie
+          name: kazi_connect_csrf
+          required: true
+          schema: { type: string, pattern: '^[A-Za-z0-9_-]{43}$' }
+        ConnectDesktopCsrfHeader:
+          in: header
+          name: x-csrf-token
+          required: true
+          schema: { type: string, pattern: '^[A-Za-z0-9_-]{43}$' }
+        ConnectDesktopClaimPath:
+          in: path
+          name: claimId
+          required: true
+          schema: { $ref: '#/components/schemas/DesktopClaimId' }
+        ConnectDesktopPath:
+          in: path
+          name: deviceId
+          required: true
+          schema: { $ref: '#/components/schemas/DesktopId' }
+        ConnectDesktopOwnerSessionQuery:
+          in: query
+          name: sessionId
+          required: true
+          schema: { $ref: '#/components/schemas/DesktopSessionId' }
+        ConnectDesktopCorrelationQuery:
+          in: query
+          name: correlationId
+          required: true
+          schema: { $ref: '#/components/schemas/DesktopCorrelationId' }
+      schemas:
+        DesktopClaimId: { type: string, pattern: '^clm_[A-Za-z0-9]{8,64}$', maxLength: 68 }
+        DesktopId: { type: string, pattern: '^dev_[A-Za-z0-9]{8,64}$', maxLength: 68 }
+        DesktopSessionId: { type: string, pattern: '^ses_[A-Za-z0-9]{8,64}$', maxLength: 68 }
+        DesktopCorrelationId: { type: string, pattern: '^cor_[A-Za-z0-9]{8,64}$', maxLength: 68 }
+        DesktopIdempotencyKey: { type: string, pattern: '^idem_[A-Za-z0-9_-]{16,80}$', maxLength: 85 }
+        DesktopDisplayName: { type: string, pattern: '^[A-Za-z0-9][A-Za-z0-9 ._()-]{0,79}$', maxLength: 80 }
+        ConnectDesktopClaimCreate:
+          type: object
+          additionalProperties: false
+          required: [kind, protocolVersion, claimId, deviceId, actorRole, displayName, platform, architecture, desktopVersion, keyFingerprint, idempotencyKey, correlationId]
+          properties:
+            kind: { type: string, enum: [desktop.claim.create.request] }
+            protocolVersion: { type: string, enum: ['1.0'] }
+            claimId: { $ref: '#/components/schemas/DesktopClaimId' }
+            deviceId: { $ref: '#/components/schemas/DesktopId' }
+            actorRole: { type: string, enum: [desktop_device] }
+            displayName: { $ref: '#/components/schemas/DesktopDisplayName' }
+            platform: { type: string, enum: [macos, linux, windows] }
+            architecture: { type: string, enum: [x64, arm64] }
+            desktopVersion: { type: string, pattern: '^[0-9]+\.[0-9]+\.[0-9]+(?:[-+][A-Za-z0-9.-]{1,32})?$', maxLength: 64 }
+            keyFingerprint: { type: string, pattern: '^[a-f0-9]{64}$' }
+            idempotencyKey: { $ref: '#/components/schemas/DesktopIdempotencyKey' }
+            correlationId: { $ref: '#/components/schemas/DesktopCorrelationId' }
+        ConnectDesktopClaimChallenge:
+          type: object
+          additionalProperties: false
+          required: [kind, protocolVersion, claimId, actorRole, claimUrl, shortCode, deviceId, displayName, platform, architecture, desktopVersion, keyFingerprint, expiresAt, correlationId]
+          properties:
+            kind: { type: string, enum: [desktop.claim.challenge] }
+            protocolVersion: { type: string, enum: ['1.0'] }
+            claimId: { $ref: '#/components/schemas/DesktopClaimId' }
+            actorRole: { type: string, enum: [claim_challenge] }
+            claimUrl: { type: string, pattern: '^https://', maxLength: 512 }
+            shortCode: { type: string, pattern: '^[A-Z]{4}-[A-Z]{4}$' }
+            deviceId: { $ref: '#/components/schemas/DesktopId' }
+            displayName: { $ref: '#/components/schemas/DesktopDisplayName' }
+            platform: { type: string, enum: [macos, linux, windows] }
+            architecture: { type: string, enum: [x64, arm64] }
+            desktopVersion: { type: string, maxLength: 64 }
+            keyFingerprint: { type: string, pattern: '^[a-f0-9]{64}$' }
+            expiresAt: { type: string, format: date-time }
+            correlationId: { $ref: '#/components/schemas/DesktopCorrelationId' }
+        ConnectDesktopClaimStatus:
+          type: object
+          additionalProperties: false
+          required: [kind, protocolVersion, claimId, status, correlationId]
+          properties:
+            kind: { type: string, enum: [desktop.claim.status.response] }
+            protocolVersion: { type: string, enum: ['1.0'] }
+            claimId: { $ref: '#/components/schemas/DesktopClaimId' }
+            status: { type: string, enum: [pending, accepted, denied, expired] }
+            deviceId: { $ref: '#/components/schemas/DesktopId' }
+            actorRole: { type: string, enum: [desktop_device] }
+            credentialAudience: { type: string, enum: [desktop-relay] }
+            credentialGeneration: { type: integer, enum: [1] }
+            credentialExpiresAt: { type: string, format: date-time }
+            websiteAccountId: { type: string, pattern: '^usr_[A-Za-z0-9]{8,64}$' }
+            websiteDeploymentId:
+              type: string
+              pattern: '^wdp_[A-Za-z0-9]{32}$'
+              description: Required exactly when status is accepted.
+            correlationId: { $ref: '#/components/schemas/DesktopCorrelationId' }
+        ConnectDesktopClaimReview:
+          type: object
+          additionalProperties: false
+          required: [kind, protocolVersion, claimId, status, displayName, platform, architecture, desktopVersion, keyFingerprint, expiresAt, correlationId]
+          properties:
+            kind: { type: string, enum: [desktop.claim.review.response] }
+            protocolVersion: { type: string, enum: ['1.0'] }
+            claimId: { $ref: '#/components/schemas/DesktopClaimId' }
+            status: { type: string, enum: [pending, accepted, denied, expired] }
+            displayName: { $ref: '#/components/schemas/DesktopDisplayName' }
+            platform: { type: string, enum: [macos, linux, windows] }
+            architecture: { type: string, enum: [x64, arm64] }
+            desktopVersion: { type: string, maxLength: 64 }
+            keyFingerprint: { type: string, pattern: '^[a-f0-9]{64}$' }
+            expiresAt: { type: string, format: date-time }
+            correlationId: { $ref: '#/components/schemas/DesktopCorrelationId' }
+        ConnectDesktopClaimDecision:
+          type: object
+          additionalProperties: false
+          required: [kind, protocolVersion, claimId, sessionId, actorRole, decision, idempotencyKey, correlationId]
+          properties:
+            kind: { type: string, enum: [desktop.claim.decision.request] }
+            protocolVersion: { type: string, enum: ['1.0'] }
+            claimId: { $ref: '#/components/schemas/DesktopClaimId' }
+            sessionId: { $ref: '#/components/schemas/DesktopSessionId' }
+            actorRole: { type: string, enum: [browser_session] }
+            decision: { type: string, enum: [accept, deny] }
+            idempotencyKey: { $ref: '#/components/schemas/DesktopIdempotencyKey' }
+            correlationId: { $ref: '#/components/schemas/DesktopCorrelationId' }
+        ConnectDesktopClaimDecisionResult:
+          type: object
+          additionalProperties: false
+          required: [kind, protocolVersion, claimId, status, correlationId]
+          properties:
+            kind: { type: string, enum: [desktop.claim.decision.response] }
+            protocolVersion: { type: string, enum: ['1.0'] }
+            claimId: { $ref: '#/components/schemas/DesktopClaimId' }
+            status: { type: string, enum: [accepted, denied] }
+            deviceId: { $ref: '#/components/schemas/DesktopId' }
+            actorRole: { type: string, enum: [desktop_device] }
+            credentialAudience: { type: string, enum: [desktop-relay] }
+            credentialGeneration: { type: integer, enum: [1] }
+            credentialExpiresAt: { type: string, format: date-time }
+            websiteAccountId: { type: string, pattern: '^usr_[A-Za-z0-9]{8,64}$' }
+            websiteDeploymentId:
+              type: string
+              pattern: '^wdp_[A-Za-z0-9]{32}$'
+              description: Required exactly when status is accepted.
+            correlationId: { $ref: '#/components/schemas/DesktopCorrelationId' }
+        DesktopSummary:
+          type: object
+          additionalProperties: false
+          required: [deviceId, displayName, state, protocolVersion]
+          properties:
+            deviceId: { $ref: '#/components/schemas/DesktopId' }
+            displayName: { type: string, minLength: 1, maxLength: 80 }
+            state: { type: string, enum: [active, revoked, archived] }
+            protocolVersion: { type: string, enum: ['1.0'] }
+        ConnectDesktopList:
+          type: object
+          additionalProperties: false
+          required: [kind, protocolVersion, devices, correlationId]
+          properties:
+            kind: { type: string, enum: [desktop.list.response] }
+            protocolVersion: { type: string, enum: ['1.0'] }
+            devices: { type: array, maxItems: 100, items: { $ref: '#/components/schemas/DesktopSummary' } }
+            correlationId: { $ref: '#/components/schemas/DesktopCorrelationId' }
+        ConnectDesktopDetail:
+          type: object
+          additionalProperties: false
+          required: [kind, protocolVersion, device, deviceId, actorRole, lastSeenAt, correlationId]
+          properties:
+            kind: { type: string, enum: [desktop.detail.response] }
+            protocolVersion: { type: string, enum: ['1.0'] }
+            device: { $ref: '#/components/schemas/DesktopSummary' }
+            deviceId: { $ref: '#/components/schemas/DesktopId' }
+            actorRole: { type: string, enum: [desktop_device] }
+            lastSeenAt: { type: string, format: date-time }
+            correlationId: { $ref: '#/components/schemas/DesktopCorrelationId' }
+        ConnectDesktopRename:
+          type: object
+          additionalProperties: false
+          required: [kind, protocolVersion, deviceId, displayName, idempotencyKey, correlationId]
+          properties:
+            kind: { type: string, enum: [desktop.rename.request] }
+            protocolVersion: { type: string, enum: ['1.0'] }
+            deviceId: { $ref: '#/components/schemas/DesktopId' }
+            displayName: { $ref: '#/components/schemas/DesktopDisplayName' }
+            idempotencyKey: { $ref: '#/components/schemas/DesktopIdempotencyKey' }
+            correlationId: { $ref: '#/components/schemas/DesktopCorrelationId' }
+        ConnectDesktopRevoke:
+          type: object
+          additionalProperties: false
+          required: [kind, protocolVersion, deviceId, action, idempotencyKey, correlationId]
+          properties:
+            kind: { type: string, enum: [desktop.action.request] }
+            protocolVersion: { type: string, enum: ['1.0'] }
+            deviceId: { $ref: '#/components/schemas/DesktopId' }
+            action: { type: string, enum: [revoke] }
+            idempotencyKey: { $ref: '#/components/schemas/DesktopIdempotencyKey' }
+            correlationId: { $ref: '#/components/schemas/DesktopCorrelationId' }
+        ConnectDesktopActionResult:
+          type: object
+          additionalProperties: false
+          required: [kind, protocolVersion, deviceId, state, correlationId]
+          properties:
+            kind: { type: string, enum: [desktop.action.response] }
+            protocolVersion: { type: string, enum: ['1.0'] }
+            deviceId: { $ref: '#/components/schemas/DesktopId' }
+            state: { type: string, enum: [revoked] }
+            correlationId: { $ref: '#/components/schemas/DesktopCorrelationId' }
+        ConnectDesktopError:
+          type: object
+          additionalProperties: false
+          required: [kind, protocolVersion, code, message, retryable, correlationId]
+          properties:
+            kind: { type: string, enum: [error] }
+            protocolVersion: { type: string, enum: ['1.0'] }
+            code: { type: string, enum: [invalid-envelope, protocol-version-mismatch, idempotency-conflict, revoked] }
+            message: { type: string, minLength: 1, maxLength: 240 }
+            retryable: { type: boolean }
+            correlationId: { $ref: '#/components/schemas/DesktopCorrelationId' }
+      responses:
+        ConnectDesktopClaimChallengeResult:
+          description: Single-use claim challenge
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ConnectDesktopClaimChallenge' }
+        ConnectDesktopErrorResult:
+          description: Safe Connect error
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ConnectDesktopError' }
+components:
+  <<: *deviceComponents

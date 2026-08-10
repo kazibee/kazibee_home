@@ -1,8 +1,8 @@
-import { Component, LoadAs } from "@noego/ioc";
+import { Component, Inject, LoadAs } from "@noego/ioc";
 import { getLogger } from "@noego/logger";
-import { getTrace } from "@noego/trace";
 import type { Response } from "express";
 import type { Message } from "../repo/message_repo";
+import TraceAdapter, { type TracePort } from "../observability/trace_adapter";
 
 const logger = getLogger("kazibee:sse-connection-manager");
 
@@ -21,7 +21,11 @@ export default class SSEConnectionManager {
   private sessionsById = new Map<string, Connection>();
   private sessionByDeviceId = new Map<string, string>();
   private sessionsByUserId = new Map<string, Set<string>>();
-  private trace = getTrace('SSEConnectionManager');
+  private readonly trace: TracePort;
+
+  constructor(@Inject(TraceAdapter) traces: TraceAdapter) {
+    this.trace = traces.forSource("SSEConnectionManager");
+  }
 
   attach(sessionId: string, userId: string, deviceId: string, res: Response): void {
     // Device takeover: close old session for same device

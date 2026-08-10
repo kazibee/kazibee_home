@@ -1,0 +1,17 @@
+{
+  "name": "@kazibee/connect-protocol",
+  "version": "1.0.8",
+  "description": "Language-neutral Kazi Connect V1 contract artifacts",
+  "license": "MIT",
+  "private": true,
+  "types": "types-by-schema.d.ts",
+  "files": [
+    "schemas",
+    "fixtures",
+    "scenarios",
+    "manifest.json",
+    "README.md",
+    "COMPATIBILITY.md",
+    "types-by-schema.d.ts"
+  ]
+}

@@ -1,0 +1,36 @@
+{
+  "name": "desktop device browser handoff and credential promotion",
+  "clock": "2030-01-01T00:00:00Z",
+  "steps": [
+    {
+      "atMs": 0,
+      "fixture": "desktop claim create"
+    },
+    {
+      "atMs": 10,
+      "fixture": "desktop claim challenge with browser link and short code"
+    },
+    {
+      "atMs": 20,
+      "fixture": "desktop claim pending status"
+    },
+    {
+      "atMs": 30,
+      "fixture": "desktop claim accept decision"
+    },
+    {
+      "atMs": 40,
+      "fixture": "desktop claim accepted decision result"
+    },
+    {
+      "atMs": 50,
+      "fixture": "desktop claim accepted status with generation one"
+    },
+    {
+      "atMs": 60,
+      "fixture": "active desktop relay auth context"
+    }
+  ],
+  "expectedCredentialGeneration": 1,
+  "expectedAudience": "desktop-relay"
+}

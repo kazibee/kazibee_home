@@ -14,7 +14,7 @@ export default class PairingLogic {
   }
 
   async claimPairing(pairingCode: string, deviceName: string | null, deviceType: string | null) {
-    logger.info("claimPairing called", { pairingCode });
+    logger.info("claimPairing called");
     return this.pairingService.claimPairing(pairingCode, deviceName, deviceType);
   }
 

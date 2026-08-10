@@ -19,7 +19,7 @@ export interface Message {
 @Component()
 export default class MessageRepo {
   @Query()
-  createMessage(params: {
+  createMessage(_params: {
     from_user_id: string | null;
     from_device_id: string | null;
     target_kind: string;
@@ -40,7 +40,7 @@ export default class MessageRepo {
   }
 
   @Query()
-  findVisibleSince(params: {
+  findVisibleSince(_params: {
     device_id: string;
     user_id: string;
     since_message_id: number;
@@ -56,7 +56,7 @@ export default class MessageRepo {
 
   @Query()
   @Single
-  findByRequestId(params: {
+  findByRequestId(_params: {
     from_device_id: string;
     request_id: string;
   }): Promise<Message | null> {
@@ -65,7 +65,7 @@ export default class MessageRepo {
 
   @Query()
   @Single
-  findByMessageId(params: { message_id: number }): Promise<Message | null> {
+  findByMessageId(_params: { message_id: number }): Promise<Message | null> {
     throw new SqlStackError("Not implemented");
   }
 }

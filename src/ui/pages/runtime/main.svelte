@@ -283,16 +283,16 @@
           <span class="text-neutral-200">Inject <span class="text-white font-semibold">"GMAIL_CLIENT_ID"</span> from:</span>
         </TerminalLine>
         <TerminalLine showPrompt={false}>
-          <span class="text-neutral-400">{'  '}1)</span> <span class="text-neutral-300">Deny</span>
+          <span class="text-neutral-400">{'\x20\x20'}1)</span> <span class="text-neutral-300">Deny</span>
         </TerminalLine>
         <TerminalLine showPrompt={false}>
-          <span class="text-neutral-400">{'  '}2)</span> <span class="text-neutral-300">LOCAL:GMAIL_CLIENT_ID</span>
+          <span class="text-neutral-400">{'\x20\x20'}2)</span> <span class="text-neutral-300">LOCAL:GMAIL_CLIENT_ID</span>
         </TerminalLine>
         <TerminalLine showPrompt={false}>
-          <span class="text-neutral-400">{'  '}3)</span> <span class="text-neutral-300">GLOBAL:GMAIL_CLIENT_ID</span>
+          <span class="text-neutral-400">{'\x20\x20'}3)</span> <span class="text-neutral-300">GLOBAL:GMAIL_CLIENT_ID</span>
         </TerminalLine>
         <TerminalLine showPrompt={false}>
-          <span class="text-neutral-400">{'  '}4)</span> <span class="text-neutral-300">SYSTEM:GMAIL_CLIENT_ID</span>
+          <span class="text-neutral-400">{'\x20\x20'}4)</span> <span class="text-neutral-300">SYSTEM:GMAIL_CLIENT_ID</span>
         </TerminalLine>
         <TerminalLine showPrompt={false}>
           <span class="text-honey-400">Choose [1-4]:</span> <span class="text-green-400">2</span>
@@ -301,13 +301,13 @@
           <span class="text-neutral-200">Inject <span class="text-white font-semibold">"GMAIL_REFRESH_TOKEN"</span> from:</span>
         </TerminalLine>
         <TerminalLine showPrompt={false}>
-          <span class="text-neutral-400">{'  '}1)</span> <span class="text-neutral-300">Deny</span>
+          <span class="text-neutral-400">{'\x20\x20'}1)</span> <span class="text-neutral-300">Deny</span>
         </TerminalLine>
         <TerminalLine showPrompt={false}>
-          <span class="text-neutral-400">{'  '}2)</span> <span class="text-neutral-300">LOCAL:GMAIL_REFRESH_TOKEN</span>
+          <span class="text-neutral-400">{'\x20\x20'}2)</span> <span class="text-neutral-300">LOCAL:GMAIL_REFRESH_TOKEN</span>
         </TerminalLine>
         <TerminalLine showPrompt={false}>
-          <span class="text-neutral-400">{'  '}3)</span> <span class="text-neutral-300">GLOBAL:GMAIL_REFRESH_TOKEN</span>
+          <span class="text-neutral-400">{'\x20\x20'}3)</span> <span class="text-neutral-300">GLOBAL:GMAIL_REFRESH_TOKEN</span>
         </TerminalLine>
         <TerminalLine showPrompt={false}>
           <span class="text-honey-400">Choose [1-3]:</span> <span class="text-red-400">1</span>
@@ -392,22 +392,22 @@
           Tools for ~/projects/my-app:
         </TerminalLine>
         <TerminalLine showPrompt={false} class="pt-1">
-          {'  '}<span class="text-white font-semibold">gmail</span> <span class="text-neutral-400">&mdash;</span> <span class="text-neutral-200">Read and manage Gmail messages</span>
+          {'\x20\x20'}<span class="text-white font-semibold">gmail</span> <span class="text-neutral-400">&mdash;</span> <span class="text-neutral-200">Read and manage Gmail messages</span>
         </TerminalLine>
         <TerminalLine showPrompt={false}>
-          {'    '}<span class="text-neutral-500">Source:</span> <span class="text-neutral-400">github:kazibee/gmail#a1b2c3d4</span> <span class="text-neutral-500">(from ~/projects/my-app)</span>
+          {'\x20\x20\x20\x20'}<span class="text-neutral-500">Source:</span> <span class="text-neutral-400">github:kazibee/gmail#a1b2c3d4</span> <span class="text-neutral-500">(from ~/projects/my-app)</span>
         </TerminalLine>
         <TerminalLine showPrompt={false} class="pt-1">
-          {'  '}<span class="text-white font-semibold">google-sheets</span> <span class="text-neutral-400">&mdash;</span> <span class="text-neutral-200">Read and write Google Sheets data</span>
+          {'\x20\x20'}<span class="text-white font-semibold">google-sheets</span> <span class="text-neutral-400">&mdash;</span> <span class="text-neutral-200">Read and write Google Sheets data</span>
         </TerminalLine>
         <TerminalLine showPrompt={false}>
-          {'    '}<span class="text-neutral-500">Source:</span> <span class="text-neutral-400">github:kazibee/google-sheets#e4f5g6h7</span> <span class="text-neutral-500">(from ~/projects/my-app)</span>
+          {'\x20\x20\x20\x20'}<span class="text-neutral-500">Source:</span> <span class="text-neutral-400">github:kazibee/google-sheets#e4f5g6h7</span> <span class="text-neutral-500">(from ~/projects/my-app)</span>
         </TerminalLine>
         <TerminalLine showPrompt={false} class="pt-1">
-          {'  '}<span class="text-white font-semibold">image-gen</span> <span class="text-neutral-400">&mdash;</span> <span class="text-neutral-200">Generate images with AI</span>
+          {'\x20\x20'}<span class="text-white font-semibold">image-gen</span> <span class="text-neutral-400">&mdash;</span> <span class="text-neutral-200">Generate images with AI</span>
         </TerminalLine>
         <TerminalLine showPrompt={false}>
-          {'    '}<span class="text-neutral-500">Source:</span> <span class="text-neutral-400">github:kazibee/image-gen#i7j8k9l0</span> <span class="text-neutral-500">(from /)</span>
+          {'\x20\x20\x20\x20'}<span class="text-neutral-500">Source:</span> <span class="text-neutral-400">github:kazibee/image-gen#i7j8k9l0</span> <span class="text-neutral-500">(from /)</span>
         </TerminalLine>
       </TerminalFrame>
     </div>
@@ -463,19 +463,19 @@
           <span class="text-purple-400">interface</span> <span class="text-blue-300">ToolInterface</span> <span class="text-neutral-400">&#123;</span>
         </TerminalLine>
         <TerminalLine showPrompt={false}>
-          {'  '}<span class="text-green-300">'gmail'</span><span class="text-neutral-400">: &#123;</span>
+          {'\x20\x20'}<span class="text-green-300">'gmail'</span><span class="text-neutral-400">: &#123;</span>
         </TerminalLine>
         <TerminalLine showPrompt={false}>
-          {'    '}<span class="text-blue-300">getUnread</span><span class="text-neutral-400">(</span><span class="text-amber-300">options</span><span class="text-neutral-400">?: &#123;</span> <span class="text-blue-300">limit</span><span class="text-neutral-400">?:</span> <span class="text-purple-400">number</span> <span class="text-neutral-400">&#125;):</span> <span class="text-purple-400">Promise</span><span class="text-neutral-400">&lt;</span><span class="text-blue-300">Email</span><span class="text-neutral-400">[]&gt;</span>
+          {'\x20\x20\x20\x20'}<span class="text-blue-300">getUnread</span><span class="text-neutral-400">(</span><span class="text-amber-300">options</span><span class="text-neutral-400">?: &#123;</span> <span class="text-blue-300">limit</span><span class="text-neutral-400">?:</span> <span class="text-purple-400">number</span> <span class="text-neutral-400">&#125;):</span> <span class="text-purple-400">Promise</span><span class="text-neutral-400">&lt;</span><span class="text-blue-300">Email</span><span class="text-neutral-400">[]&gt;</span>
         </TerminalLine>
         <TerminalLine showPrompt={false}>
-          {'    '}<span class="text-blue-300">send</span><span class="text-neutral-400">(</span><span class="text-amber-300">to</span><span class="text-neutral-400">:</span> <span class="text-purple-400">string</span><span class="text-neutral-400">,</span> <span class="text-amber-300">subject</span><span class="text-neutral-400">:</span> <span class="text-purple-400">string</span><span class="text-neutral-400">,</span> <span class="text-amber-300">body</span><span class="text-neutral-400">:</span> <span class="text-purple-400">string</span><span class="text-neutral-400">):</span> <span class="text-purple-400">Promise</span><span class="text-neutral-400">&lt;</span><span class="text-purple-400">void</span><span class="text-neutral-400">&gt;</span>
+          {'\x20\x20\x20\x20'}<span class="text-blue-300">send</span><span class="text-neutral-400">(</span><span class="text-amber-300">to</span><span class="text-neutral-400">:</span> <span class="text-purple-400">string</span><span class="text-neutral-400">,</span> <span class="text-amber-300">subject</span><span class="text-neutral-400">:</span> <span class="text-purple-400">string</span><span class="text-neutral-400">,</span> <span class="text-amber-300">body</span><span class="text-neutral-400">:</span> <span class="text-purple-400">string</span><span class="text-neutral-400">):</span> <span class="text-purple-400">Promise</span><span class="text-neutral-400">&lt;</span><span class="text-purple-400">void</span><span class="text-neutral-400">&gt;</span>
         </TerminalLine>
         <TerminalLine showPrompt={false}>
-          {'    '}<span class="text-blue-300">search</span><span class="text-neutral-400">(</span><span class="text-amber-300">query</span><span class="text-neutral-400">:</span> <span class="text-purple-400">string</span><span class="text-neutral-400">):</span> <span class="text-purple-400">Promise</span><span class="text-neutral-400">&lt;</span><span class="text-blue-300">Email</span><span class="text-neutral-400">[]&gt;</span>
+          {'\x20\x20\x20\x20'}<span class="text-blue-300">search</span><span class="text-neutral-400">(</span><span class="text-amber-300">query</span><span class="text-neutral-400">:</span> <span class="text-purple-400">string</span><span class="text-neutral-400">):</span> <span class="text-purple-400">Promise</span><span class="text-neutral-400">&lt;</span><span class="text-blue-300">Email</span><span class="text-neutral-400">[]&gt;</span>
         </TerminalLine>
         <TerminalLine showPrompt={false}>
-          {'  '}<span class="text-neutral-400">&#125;</span>
+          {'\x20\x20'}<span class="text-neutral-400">&#125;</span>
         </TerminalLine>
         <TerminalLine showPrompt={false}>
           <span class="text-neutral-400">&#125;</span>

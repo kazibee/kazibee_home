@@ -15,7 +15,7 @@ export interface MobileSession {
 export default class MobileSessionRepo {
   @Query()
   @Single
-  findByToken(params: { session_token: string }): Promise<MobileSession | null> {
+  findByToken(_params: { session_token: string }): Promise<MobileSession | null> {
     throw new SqlStackError("Not implemented");
   }
 }

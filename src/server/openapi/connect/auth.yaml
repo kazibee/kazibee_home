@@ -1,0 +1,397 @@
+module:
+  connectAuth:
+    basePath: '/v1/connect/auth'
+    paths:
+      '/signup':
+        post:
+          x-controller: connect_auth.controller
+          x-action: signup
+          summary: Create an individual Connect account without creating a session
+          requestBody:
+            required: true
+            content:
+              application/json:
+                schema:
+                  $ref: '#/components/schemas/ConnectSignupRequest'
+          responses:
+            '201':
+              description: Account created
+              content:
+                application/json:
+                  schema:
+                    $ref: '#/components/schemas/ConnectSignupResponse'
+            '400':
+              $ref: '#/components/responses/ConnectInvalidEnvelope'
+            '409':
+              $ref: '#/components/responses/ConnectConflict'
+            '500':
+              $ref: '#/components/responses/ConnectInternalError'
+      '/login':
+        post:
+          x-controller: connect_auth.controller
+          x-action: login
+          summary: Authenticate and rotate into a new persisted browser session
+          description: Sets kazi_connect_session (HttpOnly) and kazi_connect_csrf cookies with SameSite=Strict and Path=/.
+          requestBody:
+            required: true
+            content:
+              application/json:
+                schema:
+                  $ref: '#/components/schemas/ConnectLoginRequest'
+          responses:
+            '200':
+              description: Authenticated; browser cookies are set
+              headers:
+                Set-Cookie:
+                  description: Session and double-submit CSRF cookies
+                  schema:
+                    type: string
+              content:
+                application/json:
+                  schema:
+                    $ref: '#/components/schemas/ConnectLoginResponse'
+            '400':
+              $ref: '#/components/responses/ConnectInvalidEnvelope'
+            '401':
+              $ref: '#/components/responses/ConnectUnauthorized'
+            '409':
+              $ref: '#/components/responses/ConnectConflict'
+            '500':
+              $ref: '#/components/responses/ConnectInternalError'
+      '/session':
+        get:
+          x-controller: connect_auth.controller
+          x-action: session
+          summary: Verify the persisted account and browser session
+          description: Requires the opaque kazi_connect_session cookie. Canonical envelope fields are query parameters.
+          parameters:
+            - $ref: '#/components/parameters/ConnectSessionCookie'
+            - in: query
+              name: kind
+              required: true
+              schema:
+                type: string
+                enum: [auth.session.request]
+            - in: query
+              name: protocolVersion
+              required: true
+              schema:
+                type: string
+                enum: ['1.0']
+            - in: query
+              name: sessionId
+              required: true
+              schema:
+                $ref: '#/components/schemas/ConnectSessionId'
+            - in: query
+              name: actorRole
+              required: true
+              schema:
+                type: string
+                enum: [browser_session]
+            - in: query
+              name: correlationId
+              required: true
+              schema:
+                $ref: '#/components/schemas/ConnectCorrelationId'
+          responses:
+            '200':
+              description: Active persisted session
+              content:
+                application/json:
+                  schema:
+                    $ref: '#/components/schemas/ConnectSessionResponse'
+            '400':
+              $ref: '#/components/responses/ConnectInvalidEnvelope'
+            '401':
+              $ref: '#/components/responses/ConnectUnauthorized'
+            '409':
+              $ref: '#/components/responses/ConnectConflict'
+            '500':
+              $ref: '#/components/responses/ConnectInternalError'
+      '/logout':
+        post:
+          x-controller: connect_auth.controller
+          x-action: logout
+          summary: Revoke one browser session idempotently
+          description: Requires matching kazi_connect_csrf cookie and x-csrf-token header, verified against the persisted hash.
+          parameters:
+            - $ref: '#/components/parameters/ConnectSessionCookie'
+            - $ref: '#/components/parameters/ConnectCsrfCookie'
+            - in: header
+              name: x-csrf-token
+              required: true
+              schema:
+                type: string
+                minLength: 43
+                maxLength: 43
+          requestBody:
+            required: true
+            content:
+              application/json:
+                schema:
+                  $ref: '#/components/schemas/ConnectLogoutRequest'
+          responses:
+            '200':
+              description: Session revoked and cookies cleared
+              headers:
+                Set-Cookie:
+                  description: Expired session and CSRF cookies
+                  schema:
+                    type: string
+              content:
+                application/json:
+                  schema:
+                    $ref: '#/components/schemas/ConnectLogoutResponse'
+            '400':
+              $ref: '#/components/responses/ConnectInvalidEnvelope'
+            '401':
+              $ref: '#/components/responses/ConnectUnauthorized'
+            '403':
+              $ref: '#/components/responses/ConnectForbidden'
+            '409':
+              $ref: '#/components/responses/ConnectConflict'
+            '500':
+              $ref: '#/components/responses/ConnectInternalError'
+    components: &connectComponents
+      schemas:
+        ConnectProtocolVersion:
+          type: string
+          enum: ['1.0']
+        ConnectRawUsername:
+          type: string
+          description: Raw account input. Leading and trailing whitespace is trimmed and ASCII letters are lowercased before validation and storage.
+          pattern: '^\s*[A-Za-z0-9][A-Za-z0-9._-]{2,63}\s*$'
+          minLength: 3
+          maxLength: 128
+        ConnectUsername:
+          type: string
+          description: Canonical normalized account username returned by the Website and stored in SQLite.
+          pattern: '^[a-z0-9][a-z0-9._-]{2,63}$'
+          minLength: 3
+          maxLength: 64
+        ConnectPassword:
+          type: string
+          minLength: 12
+          maxLength: 128
+          format: password
+          writeOnly: true
+        ConnectUserId:
+          type: string
+          pattern: '^usr_[A-Za-z0-9]{8,64}$'
+          maxLength: 68
+        ConnectSessionId:
+          type: string
+          pattern: '^ses_[A-Za-z0-9]{8,64}$'
+          maxLength: 68
+        ConnectCorrelationId:
+          type: string
+          pattern: '^cor_[A-Za-z0-9]{8,64}$'
+          maxLength: 68
+        ConnectIdempotencyKey:
+          type: string
+          pattern: '^idem_[A-Za-z0-9_-]{16,80}$'
+          maxLength: 85
+        ConnectSignupRequest:
+          type: object
+          additionalProperties: false
+          required: [kind, protocolVersion, username, password, idempotencyKey, correlationId]
+          properties:
+            kind:
+              type: string
+              enum: [auth.signup.request]
+            protocolVersion:
+              $ref: '#/components/schemas/ConnectProtocolVersion'
+            username:
+              $ref: '#/components/schemas/ConnectRawUsername'
+            password:
+              $ref: '#/components/schemas/ConnectPassword'
+            idempotencyKey:
+              $ref: '#/components/schemas/ConnectIdempotencyKey'
+            correlationId:
+              $ref: '#/components/schemas/ConnectCorrelationId'
+        ConnectSignupResponse:
+          type: object
+          additionalProperties: false
+          required: [kind, protocolVersion, userId, username, correlationId]
+          properties:
+            kind:
+              type: string
+              enum: [auth.signup.response]
+            protocolVersion:
+              $ref: '#/components/schemas/ConnectProtocolVersion'
+            userId:
+              $ref: '#/components/schemas/ConnectUserId'
+            username:
+              $ref: '#/components/schemas/ConnectUsername'
+            correlationId:
+              $ref: '#/components/schemas/ConnectCorrelationId'
+        ConnectLoginRequest:
+          type: object
+          additionalProperties: false
+          required: [kind, protocolVersion, username, password, idempotencyKey, correlationId]
+          properties:
+            kind:
+              type: string
+              enum: [auth.login.request]
+            protocolVersion:
+              $ref: '#/components/schemas/ConnectProtocolVersion'
+            username:
+              $ref: '#/components/schemas/ConnectRawUsername'
+            password:
+              $ref: '#/components/schemas/ConnectPassword'
+            idempotencyKey:
+              $ref: '#/components/schemas/ConnectIdempotencyKey'
+            correlationId:
+              $ref: '#/components/schemas/ConnectCorrelationId'
+        ConnectLoginResponse:
+          type: object
+          additionalProperties: false
+          required: [kind, protocolVersion, userId, sessionId, actorRole, expiresAt, correlationId]
+          properties:
+            kind:
+              type: string
+              enum: [auth.login.response]
+            protocolVersion:
+              $ref: '#/components/schemas/ConnectProtocolVersion'
+            userId:
+              $ref: '#/components/schemas/ConnectUserId'
+            sessionId:
+              $ref: '#/components/schemas/ConnectSessionId'
+            actorRole:
+              type: string
+              enum: [browser_session]
+            expiresAt:
+              type: string
+              format: date-time
+            correlationId:
+              $ref: '#/components/schemas/ConnectCorrelationId'
+        ConnectSessionResponse:
+          type: object
+          additionalProperties: false
+          required: [kind, protocolVersion, userId, sessionId, actorRole, expiresAt, correlationId]
+          properties:
+            kind:
+              type: string
+              enum: [auth.session.response]
+            protocolVersion:
+              $ref: '#/components/schemas/ConnectProtocolVersion'
+            userId:
+              $ref: '#/components/schemas/ConnectUserId'
+            sessionId:
+              $ref: '#/components/schemas/ConnectSessionId'
+            actorRole:
+              type: string
+              enum: [browser_session]
+            expiresAt:
+              type: string
+              format: date-time
+            correlationId:
+              $ref: '#/components/schemas/ConnectCorrelationId'
+        ConnectLogoutRequest:
+          type: object
+          additionalProperties: false
+          required: [kind, protocolVersion, sessionId, actorRole, idempotencyKey, correlationId]
+          properties:
+            kind:
+              type: string
+              enum: [auth.logout.request]
+            protocolVersion:
+              $ref: '#/components/schemas/ConnectProtocolVersion'
+            sessionId:
+              $ref: '#/components/schemas/ConnectSessionId'
+            actorRole:
+              type: string
+              enum: [browser_session]
+            idempotencyKey:
+              $ref: '#/components/schemas/ConnectIdempotencyKey'
+            correlationId:
+              $ref: '#/components/schemas/ConnectCorrelationId'
+        ConnectLogoutResponse:
+          type: object
+          additionalProperties: false
+          required: [kind, protocolVersion, sessionId, ended, correlationId]
+          properties:
+            kind:
+              type: string
+              enum: [auth.logout.response]
+            protocolVersion:
+              $ref: '#/components/schemas/ConnectProtocolVersion'
+            sessionId:
+              $ref: '#/components/schemas/ConnectSessionId'
+            ended:
+              type: boolean
+              enum: [true]
+            correlationId:
+              $ref: '#/components/schemas/ConnectCorrelationId'
+        ConnectError:
+          type: object
+          additionalProperties: false
+          required: [kind, protocolVersion, code, message, retryable, correlationId]
+          properties:
+            kind:
+              type: string
+              enum: [error]
+            protocolVersion:
+              $ref: '#/components/schemas/ConnectProtocolVersion'
+            code:
+              type: string
+              enum: [invalid-envelope, protocol-version-mismatch, revoked]
+            message:
+              type: string
+              minLength: 1
+              maxLength: 240
+            retryable:
+              type: boolean
+            correlationId:
+              $ref: '#/components/schemas/ConnectCorrelationId'
+      parameters:
+        ConnectSessionCookie:
+          in: cookie
+          name: kazi_connect_session
+          required: true
+          schema:
+            type: string
+            minLength: 43
+            maxLength: 43
+        ConnectCsrfCookie:
+          in: cookie
+          name: kazi_connect_csrf
+          required: true
+          schema:
+            type: string
+            minLength: 43
+            maxLength: 43
+      responses:
+        ConnectInvalidEnvelope:
+          description: Invalid request envelope
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ConnectError'
+        ConnectUnauthorized:
+          description: Invalid credentials or inactive session
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ConnectError'
+        ConnectForbidden:
+          description: CSRF validation failed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ConnectError'
+        ConnectConflict:
+          description: Protocol mismatch or conflicting account
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ConnectError'
+        ConnectInternalError:
+          description: Internal error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ConnectError'
+components:
+  <<: *connectComponents

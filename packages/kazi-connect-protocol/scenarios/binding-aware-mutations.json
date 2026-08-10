@@ -1,0 +1,17 @@
+{
+  "clock": "2030-01-01T00:00:00Z",
+  "steps": [
+    {
+      "atMs": 0,
+      "fixture": "existing thread send with Codex model"
+    },
+    {
+      "atMs": 1,
+      "fixture": "canonical thread retry payload"
+    },
+    {
+      "atMs": 2,
+      "fixture": "canonical thread cancel payload"
+    }
+  ]
+}

@@ -1,0 +1,243 @@
+module:
+  connectRelay:
+    basePath: '/v1/connect/relay'
+    paths:
+      '/':
+        post:
+          x-controller: connect_relay.controller
+          x-action: post
+          parameters: &relayHeaders
+            - { $ref: '#/components/parameters/RelayAuthorization' }
+            - { $ref: '#/components/parameters/RelayExecutorId' }
+            - { $ref: '#/components/parameters/RelayDeviceId' }
+            - { $ref: '#/components/parameters/RelayGeneration' }
+            - { $ref: '#/components/parameters/RelayAudience' }
+            - { $ref: '#/components/parameters/RelayProtocol' }
+          requestBody:
+            required: true
+            content:
+              application/json:
+                schema: { $ref: '#/components/schemas/ExecutorOutboundFrame' }
+          responses:
+            '200':
+              description: Canonical channel acknowledgement
+              headers:
+                x-kazi-protocol-version: { schema: { type: string, enum: ['1.0'] } }
+              content:
+                application/json:
+                  schema: { $ref: '#/components/schemas/RelayChannelAck' }
+            '204':
+              description: Transient executor frame accepted without persistence
+              headers:
+                x-kazi-protocol-version: { schema: { type: string, enum: ['1.0'] } }
+            '400': { $ref: '#/components/responses/RelayErrorResult' }
+            '401': { $ref: '#/components/responses/RelayErrorResult' }
+            '409': { $ref: '#/components/responses/RelayErrorResult' }
+            '413': { $ref: '#/components/responses/RelayErrorResult' }
+      '/events':
+        get:
+          x-controller: connect_relay.controller
+          x-action: events
+          parameters: *relayHeaders
+          responses:
+            '200':
+              description: Live executor command/control stream; no replay or offline queue
+              headers:
+                x-kazi-protocol-version: { schema: { type: string, enum: ['1.0'] } }
+              content:
+                text/event-stream:
+                  schema:
+                    type: string
+            '401': { $ref: '#/components/responses/RelayErrorResult' }
+            '409': { $ref: '#/components/responses/RelayErrorResult' }
+    components: &relayComponents
+      parameters:
+        RelayAuthorization:
+          in: header
+          name: Authorization
+          required: true
+          schema: { type: string, minLength: 1, maxLength: 512 }
+        RelayExecutorId:
+          in: header
+          name: X-Kazi-Executor-Id
+          required: true
+          schema: { type: string, minLength: 1, maxLength: 256 }
+        RelayDeviceId:
+          in: header
+          name: X-Kazi-Device-Id
+          required: true
+          schema: { type: string, minLength: 1, maxLength: 256 }
+        RelayGeneration:
+          in: header
+          name: X-Kazi-Credential-Generation
+          required: true
+          schema: { type: string, minLength: 1, maxLength: 64 }
+        RelayAudience:
+          in: header
+          name: X-Kazi-Audience
+          required: true
+          schema: { type: string, minLength: 1, maxLength: 128 }
+        RelayProtocol:
+          in: header
+          name: X-Kazi-Protocol-Version
+          required: true
+          schema: { type: string, minLength: 1, maxLength: 64 }
+      schemas:
+        ExecutorOutboundFrame:
+          oneOf:
+            - { $ref: '#/components/schemas/RelayChannelHello' }
+            - { $ref: '#/components/schemas/RelayChannelHeartbeat' }
+            - { $ref: '#/components/schemas/RelayCommandAccepted' }
+            - { $ref: '#/components/schemas/RelayCommandResult' }
+            - { $ref: '#/components/schemas/RelayExecutorEvent' }
+            - { $ref: '#/components/schemas/RelayReplayResult' }
+            - { $ref: '#/components/schemas/RelayReplayGap' }
+            - { $ref: '#/components/schemas/RelaySafeError' }
+        RelayBase:
+          type: object
+          additionalProperties: false
+        RelayChannelHello:
+          type: object
+          additionalProperties: false
+          required: [kind, protocolVersion, executorId, deviceId, actorRole, correlationId]
+          properties:
+            kind: { type: string, enum: [channel.hello] }
+            protocolVersion: { type: string, enum: ['1.0'] }
+            executorId: { type: string, pattern: '^exe_[A-Za-z0-9]{8,64}$' }
+            deviceId: { type: string, pattern: '^dev_[A-Za-z0-9]{8,64}$' }
+            actorRole: { type: string, enum: [executor_device] }
+            correlationId: { type: string, pattern: '^cor_[A-Za-z0-9]{8,64}$' }
+        RelayChannelHeartbeat:
+          type: object
+          additionalProperties: false
+          required: [kind, protocolVersion, executorId, deviceId, actorRole, state, sentAt, correlationId]
+          properties:
+            kind: { type: string, enum: [channel.heartbeat] }
+            protocolVersion: { type: string, enum: ['1.0'] }
+            executorId: { type: string, pattern: '^exe_[A-Za-z0-9]{8,64}$' }
+            deviceId: { type: string, pattern: '^dev_[A-Za-z0-9]{8,64}$' }
+            actorRole: { type: string, enum: [executor_device] }
+            state: { type: string, enum: [idle, busy] }
+            sentAt: { type: string, format: date-time, maxLength: 30 }
+            correlationId: { type: string, pattern: '^cor_[A-Za-z0-9]{8,64}$' }
+        RelayCommandAccepted:
+          type: object
+          additionalProperties: false
+          required: [kind, protocolVersion, commandId, correlationId, idempotencyKey, executorId, accepted]
+          properties:
+            kind: { type: string, enum: [command.accepted] }
+            protocolVersion: { type: string, enum: ['1.0'] }
+            commandId: { type: string, pattern: '^cmd_[A-Za-z0-9]{8,64}$' }
+            correlationId: { type: string, pattern: '^cor_[A-Za-z0-9]{8,64}$' }
+            idempotencyKey: { type: string, pattern: '^idem_[A-Za-z0-9_-]{16,80}$' }
+            executorId: { type: string, pattern: '^exe_[A-Za-z0-9]{8,64}$' }
+            accepted: { type: boolean, enum: [true] }
+        RelayCommandResult:
+          type: object
+          additionalProperties: false
+          required: [kind, protocolVersion, commandId, correlationId, executorId, actorRole, operation, completedAt, result]
+          properties:
+            kind: { type: string, enum: [command.result] }
+            protocolVersion: { type: string, enum: ['1.0'] }
+            commandId: { type: string, pattern: '^cmd_[A-Za-z0-9]{8,64}$' }
+            correlationId: { type: string, pattern: '^cor_[A-Za-z0-9]{8,64}$' }
+            executorId: { type: string, pattern: '^exe_[A-Za-z0-9]{8,64}$' }
+            actorRole: { type: string, enum: [executor_device] }
+            operation:
+              type: string
+              enum: [executor.status.read, workspaces.read, threads.read, thread.read, conversation.create, thread.send, thread.retry, thread.cancel]
+            completedAt: { type: string, format: date-time, maxLength: 30 }
+            result: { type: object, maxProperties: 16 }
+        RelayExecutorEvent:
+          type: object
+          additionalProperties: false
+          required: [kind, protocolVersion, eventId, correlationId, executorId, threadId, sequence, occurredAt, data]
+          properties:
+            kind: { type: string, enum: [executor.event] }
+            protocolVersion: { type: string, enum: ['1.0'] }
+            eventId: { type: string, pattern: '^evt_[A-Za-z0-9]{8,64}$' }
+            correlationId: { type: string, pattern: '^cor_[A-Za-z0-9]{8,64}$' }
+            executorId: { type: string, pattern: '^exe_[A-Za-z0-9]{8,64}$' }
+            threadId: { type: string, pattern: '^thr_[A-Za-z0-9]{8,64}$' }
+            sequence: { type: integer, minimum: 1, maximum: 9007199254740991 }
+            occurredAt: { type: string, format: date-time, maxLength: 30 }
+            data:
+              type: object
+              additionalProperties: false
+              required: [eventType, text]
+              properties:
+                eventType: { type: string, enum: [thread.message, thread.status, command.completed, command.failed] }
+                text: { type: string, maxLength: 20000 }
+        RelaySafeError:
+          type: object
+          additionalProperties: false
+          required: [kind, protocolVersion, code, message, retryable, correlationId]
+          properties:
+            kind: { type: string, enum: [error] }
+            protocolVersion: { type: string, enum: ['1.0'] }
+            code: { type: string, enum: [executor-offline, protocol-version-mismatch, unknown-operation, invalid-envelope, idempotency-conflict, replay-gap, revoked] }
+            message: { type: string, minLength: 1, maxLength: 240 }
+            retryable: { type: boolean }
+            correlationId: { type: string, pattern: '^cor_[A-Za-z0-9]{8,64}$' }
+        RelayReplayResult:
+          type: object
+          additionalProperties: false
+          required: [kind, protocolVersion, executorId, threadId, afterSequence, highWaterSequence, events, hasMore, correlationId]
+          properties:
+            kind: { type: string, enum: [events.replay.result] }
+            protocolVersion: { type: string, enum: ['1.0'] }
+            executorId: { type: string, pattern: '^exe_[A-Za-z0-9]{8,64}$' }
+            threadId: { type: string, pattern: '^thr_[A-Za-z0-9]{8,64}$' }
+            afterSequence: { type: integer, minimum: 0, maximum: 9007199254740990 }
+            highWaterSequence: { type: integer, minimum: 0, maximum: 9007199254740991 }
+            events:
+              type: array
+              maxItems: 200
+              items: { $ref: '#/components/schemas/RelayExecutorEvent' }
+            hasMore: { type: boolean }
+            correlationId: { type: string, pattern: '^cor_[A-Za-z0-9]{8,64}$' }
+        RelayReplayGap:
+          type: object
+          additionalProperties: false
+          required: [kind, protocolVersion, executorId, threadId, afterSequence, earliestAvailableSequence, highWaterSequence, code, correlationId]
+          properties:
+            kind: { type: string, enum: [events.replay.gap] }
+            protocolVersion: { type: string, enum: ['1.0'] }
+            executorId: { type: string, pattern: '^exe_[A-Za-z0-9]{8,64}$' }
+            threadId: { type: string, pattern: '^thr_[A-Za-z0-9]{8,64}$' }
+            afterSequence: { type: integer, minimum: 0, maximum: 9007199254740990 }
+            earliestAvailableSequence: { type: integer, minimum: 1, maximum: 9007199254740991 }
+            highWaterSequence: { type: integer, minimum: 1, maximum: 9007199254740991 }
+            code: { type: string, enum: [replay-gap] }
+            correlationId: { type: string, pattern: '^cor_[A-Za-z0-9]{8,64}$' }
+        RelayChannelAck:
+          type: object
+          additionalProperties: false
+          required: [kind, protocolVersion, executorId, acknowledgedKind, correlationId]
+          properties:
+            kind: { type: string, enum: [channel.ack] }
+            protocolVersion: { type: string, enum: ['1.0'] }
+            executorId: { type: string, pattern: '^exe_[A-Za-z0-9]{8,64}$' }
+            acknowledgedKind: { type: string, enum: [channel.hello, channel.heartbeat] }
+            correlationId: { type: string, pattern: '^cor_[A-Za-z0-9]{8,64}$' }
+        RelayError:
+          type: object
+          additionalProperties: false
+          required: [kind, protocolVersion, code, message, retryable, correlationId]
+          properties:
+            kind: { type: string, enum: [error] }
+            protocolVersion: { type: string, enum: ['1.0'] }
+            code: { type: string, enum: [invalid-envelope, protocol-version-mismatch, revoked] }
+            message: { type: string, minLength: 1, maxLength: 240 }
+            retryable: { type: boolean }
+            correlationId: { type: string, pattern: '^cor_[A-Za-z0-9]{8,64}$' }
+      responses:
+        RelayErrorResult:
+          description: Safe relay error
+          headers:
+            x-kazi-protocol-version: { schema: { type: string, enum: ['1.0'] } }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/RelayError' }
+components:
+  <<: *relayComponents

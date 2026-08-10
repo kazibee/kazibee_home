@@ -57,7 +57,7 @@
   let seoTitle = $derived(pageData.kind === "app" ? "Download Kazibee App" : "Download Kazibee CLI");
   let seoPath = $derived(pageData.kind === "app" ? "/downloads/app" : "/downloads/cli");
   let seoDescription = $derived(pageData.kind === "app"
-    ? "Download the Kazibee desktop app for managing local AI sessions, paired devices, and relay workflows."
+    ? "Download the Kazibee desktop app for your local AI work and secure Connect access."
     : "Download the Kazibee CLI for scripting, headless workflows, and command-line access to Kazibee plugins.");
   let selectedGroup = $derived(pageData.versions.find((v) => v.version === pageData.selectedVersion) ?? null);
   let otherVersions = $derived(pageData.versions.filter((v) => v.version !== pageData.selectedVersion));

@@ -1,5 +1,5 @@
 import path from 'path';
-import express from 'express';
+import express, { type NextFunction, type Request, type Response } from 'express';
 import { assets } from '@noego/dinner/assets';
 import { boot as bootBackend } from '@noego/app/client';
 import { configureLogging } from '../index';
@@ -7,6 +7,9 @@ import { getLogger } from '@noego/logger';
 const baseLogger = getLogger('kazibee');
 import { initDatabase } from "./repo/boot";
 import cookiePaser from '../middleware/auth/cookie';
+import TraceAdapter from './observability/trace_adapter';
+import container from './container';
+import ConnectValidationErrorMapper from './middleware/connect_validation_error_mapper';
 
 // Export constants (for backward compatibility)
 const SERVER_ROOT = path.resolve(process.cwd(), 'server');
@@ -16,11 +19,33 @@ export const STITCH_PATH = path.join(SERVER_ROOT, 'stitch.yaml');
 export default async function boot(app: express.Express, config: any) {
   // Configure logging
   await configureLogging();
+  TraceAdapter.configureWebsiteProcess();
   await initDatabase(config.database);
 
   // Configure Express middleware
   app.use(express.json({ limit: '50mb' }));
+  app.use((error: unknown, req: Request, res: Response, next: NextFunction) => {
+    const errorType = typeof error === "object" && error !== null && "type" in error
+      ? error.type : null;
+    const parseFailure = error instanceof SyntaxError && errorType === "entity.parse.failed";
+    const oversized = errorType === "entity.too.large";
+    if ((!parseFailure && !oversized) || !req.path.startsWith("/v1/connect/")) {
+      next(error);
+      return;
+    }
+    res.setHeader("x-kazi-protocol-version", "1.0");
+    res.status(oversized ? 413 : 400).json({
+      kind: "error",
+      protocolVersion: "1.0",
+      code: "invalid-envelope",
+      message: "Invalid request envelope",
+      retryable: false,
+      correlationId: "cor_invalid000",
+    });
+  });
   app.use(cookiePaser);
+  const connectValidationErrors = await container.instance(ConnectValidationErrorMapper);
+  app.use((req, res, next) => connectValidationErrors.capture(req, res, next));
 
   const isTest = process.env.NODE_ENV === 'test' || !!process.env.VITEST;
 
@@ -77,12 +102,13 @@ export default async function boot(app: express.Express, config: any) {
     }
   };
 
-  // Handle process termination signals
-  process.on('SIGTERM', () => gracefulShutdown('SIGTERM', 0));
-  process.on('SIGINT', () => gracefulShutdown('SIGINT', 0));
-
-  // Handle uncaught exceptions and unhandled rejections (skip in test to avoid vitest conflicts)
+  // Process-level handlers belong to the production server lifecycle. Test apps are
+  // booted repeatedly in one Vitest process, so registering them there would leak
+  // listeners across otherwise isolated app instances.
   if (!isTest) {
+    process.on('SIGTERM', () => gracefulShutdown('SIGTERM', 0));
+    process.on('SIGINT', () => gracefulShutdown('SIGINT', 0));
+
     process.on('uncaughtException', (error) => {
       baseLogger.fatal('Uncaught Exception:', error);
       gracefulShutdown('uncaughtException', 1);

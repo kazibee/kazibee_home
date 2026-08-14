@@ -25,6 +25,34 @@ export default class UpdateController {
     }
   }
 
+  async windowsReleases({ req, res }: { req: Request; res: Response }) {
+    try {
+      const { arch } = req.params as { arch?: string };
+      const normalizedArch = normalizeUpdateArch(arch);
+      if (!normalizedArch) {
+        throw new ValidationError("Invalid update arch");
+      }
+      const manifest = await this.updateLogic.createWindowsReleases(normalizedArch);
+      return res.type("text/plain").send(manifest);
+    } catch (error) {
+      return this.handleError(error, res);
+    }
+  }
+
+  async windowsPackage({ req, res }: { req: Request; res: Response }) {
+    try {
+      const { arch, file } = req.params as { arch?: string; file?: string };
+      const normalizedArch = normalizeUpdateArch(arch);
+      if (!normalizedArch) {
+        throw new ValidationError("Invalid update arch");
+      }
+      const url = await this.updateLogic.createWindowsPackageDownload(normalizedArch, file ?? "");
+      return res.redirect(302, url);
+    } catch (error) {
+      return this.handleError(error, res);
+    }
+  }
+
   private handleError(error: unknown, res: Response): Response {
     if (error instanceof ValidationError) {
       return res.status(400).json({ error: true, message: error.message });

@@ -114,3 +114,59 @@ describe("normalizeUpdateArch", () => {
     expect(normalizeUpdateArch("")).toBeNull();
   });
 });
+
+describe("UpdateFeedService (win32)", () => {
+  function windowsVersions() {
+    return {
+      versions: [
+        {
+          version: "v0.8.7",
+          downloads: [
+            { name: "RELEASES", href: "#", size: 1, lastModified: null },
+            { name: "Kazibee-0.8.7-full.nupkg", href: "#", size: 100, lastModified: null },
+            { name: "Kazibee-0.8.7-win-x64-Setup.exe", href: "#", size: 100, lastModified: null },
+          ],
+        },
+      ],
+    };
+  }
+
+  function stubWindowsDownloadService(versions = windowsVersions()) {
+    const createDownload = vi.fn(async () => ({ key: "k", url: "https://signed.example/pkg.nupkg" }));
+    const listVersions = vi.fn(async () => versions);
+    const readItemText = vi.fn(async () => "HASH Kazibee-0.8.7-full.nupkg 100\n");
+    return {
+      service: { createDownload, listVersions, readItemText } as unknown as DownloadService,
+      createDownload,
+      readItemText,
+    };
+  }
+
+  it("serves the newest release's RELEASES manifest verbatim", async () => {
+    const { service, readItemText } = stubWindowsDownloadService();
+    const text = await new UpdateFeedService(service).createWindowsReleases("x64");
+    expect(text).toBe("HASH Kazibee-0.8.7-full.nupkg 100\n");
+    expect(readItemText).toHaveBeenCalledWith("app", "v0.8.7", "RELEASES");
+  });
+
+  it("404s when the newest release has no RELEASES manifest", async () => {
+    const { service } = stubWindowsDownloadService({
+      versions: [{ version: "v0.8.7", downloads: [{ name: "Kazibee-mac-arm64.zip", href: "#", size: 1, lastModified: null }] }],
+    });
+    await expect(new UpdateFeedService(service).createWindowsReleases("x64")).rejects.toBeInstanceOf(NotFoundError);
+  });
+
+  it("presigns a nupkg from the version that contains it", async () => {
+    const { service, createDownload } = stubWindowsDownloadService();
+    const url = await new UpdateFeedService(service).createWindowsPackageDownload("x64", "Kazibee-0.8.7-full.nupkg");
+    expect(url).toBe("https://signed.example/pkg.nupkg");
+    expect(createDownload).toHaveBeenCalledWith("app", "v0.8.7", "Kazibee-0.8.7-full.nupkg", { expiresIn: 3600 });
+  });
+
+  it("rejects non-nupkg package names and unknown packages", async () => {
+    const { service } = stubWindowsDownloadService();
+    const feed = new UpdateFeedService(service);
+    await expect(feed.createWindowsPackageDownload("x64", "evil.exe")).rejects.toThrow("Invalid update package name");
+    await expect(feed.createWindowsPackageDownload("x64", "missing-full.nupkg")).rejects.toBeInstanceOf(NotFoundError);
+  });
+});

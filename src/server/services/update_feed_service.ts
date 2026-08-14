@@ -1,7 +1,7 @@
 import { Component, Inject } from "@noego/ioc";
 import { getLogger } from "@noego/logger";
-import { NotFoundError } from "../errors/domain_errors";
-import DownloadService, { type DownloadItem } from "./download_service";
+import { NotFoundError, ValidationError } from "../errors/domain_errors";
+import DownloadService, { type DownloadItem, type VersionDownloads } from "./download_service";
 
 const logger = getLogger("kazibee:update-feed-service");
 
@@ -31,16 +31,11 @@ export default class UpdateFeedService {
 
   constructor(@Inject(DownloadService) private downloadService: DownloadService) {}
 
+  /** Squirrel.Mac JSON feed: newest published macOS release for the arch. */
   async createFeed(arch: UpdateArch): Promise<UpdateFeed> {
-    logger.info("Building update feed", { arch, expiresIn: this.expiresIn });
+    logger.info("Building update feed", { arch, expiresIn: this.expiresIn, platform: "darwin" });
 
-    const { versions } = await this.downloadService.listVersions("app");
-    const release = versions.find(({ version }) => version !== "latest");
-    if (!release) {
-      logger.info("No app releases available for update feed", { arch });
-      throw new NotFoundError("No app releases available");
-    }
-
+    const release = await this.newestRelease();
     const archive = this.findMacArchive(release.downloads, arch);
     if (!archive) {
       logger.info("No macOS archive for update feed", {
@@ -60,6 +55,7 @@ export default class UpdateFeedService {
       arch,
       expiresIn: this.expiresIn,
       item: archive.name,
+      platform: "darwin",
       version,
     });
 
@@ -78,6 +74,71 @@ export default class UpdateFeedService {
         },
       ],
     };
+  }
+
+  /** Squirrel.Windows RELEASES manifest of the newest published release,
+   *  served verbatim — the client resolves the listed nupkg filenames
+   *  relative to the same feed base URL. */
+  async createWindowsReleases(arch: UpdateArch): Promise<string> {
+    logger.info("Building Windows RELEASES manifest", { arch, platform: "win32" });
+
+    const release = await this.newestRelease();
+    const hasManifest = release.downloads.some(({ name }) => name === "RELEASES");
+    if (!hasManifest) {
+      logger.info("No Windows RELEASES manifest for release", {
+        arch,
+        items: release.downloads.map(({ name }) => name),
+        version: release.version,
+      });
+      throw new NotFoundError(`No Windows RELEASES manifest for ${release.version}`);
+    }
+
+    const text = await this.downloadService.readItemText("app", release.version, "RELEASES");
+    logger.info("Built Windows RELEASES manifest", {
+      arch,
+      length: text.length,
+      platform: "win32",
+      version: release.version,
+    });
+    return text;
+  }
+
+  /** Presigned URL for a Squirrel.Windows package referenced by RELEASES. */
+  async createWindowsPackageDownload(arch: UpdateArch, file: string): Promise<string> {
+    if (!file.toLowerCase().endsWith(".nupkg")) {
+      throw new ValidationError("Invalid update package name");
+    }
+
+    const { versions } = await this.downloadService.listVersions("app");
+    const release = versions.find(
+      ({ version, downloads }) => version !== "latest" && downloads.some(({ name }) => name === file),
+    );
+    if (!release) {
+      logger.info("Windows update package not found", { arch, file, platform: "win32" });
+      throw new NotFoundError("Update package not found");
+    }
+
+    const { url } = await this.downloadService.createDownload("app", release.version, file, {
+      expiresIn: this.expiresIn,
+    });
+    logger.info("Created Windows update package URL", {
+      arch,
+      expiresIn: this.expiresIn,
+      file,
+      platform: "win32",
+      version: release.version,
+    });
+    return url;
+  }
+
+  private async newestRelease(): Promise<VersionDownloads> {
+    const { versions } = await this.downloadService.listVersions("app");
+    const release = versions.find(({ version }) => version !== "latest");
+    if (!release) {
+      logger.info("No app releases available for update feed", {});
+      throw new NotFoundError("No app releases available");
+    }
+    return release;
   }
 
   private findMacArchive(downloads: DownloadItem[], arch: UpdateArch): DownloadItem | null {

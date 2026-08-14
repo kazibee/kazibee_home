@@ -8,4 +8,12 @@ export default class UpdateLogic {
   async createFeed(arch: UpdateArch) {
     return this.updateFeedService.createFeed(arch);
   }
+
+  async createWindowsReleases(arch: UpdateArch) {
+    return this.updateFeedService.createWindowsReleases(arch);
+  }
+
+  async createWindowsPackageDownload(arch: UpdateArch, file: string) {
+    return this.updateFeedService.createWindowsPackageDownload(arch, file);
+  }
 }

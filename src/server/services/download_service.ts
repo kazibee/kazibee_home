@@ -146,6 +146,33 @@ export default class DownloadService {
     return { key, url };
   }
 
+  /** Read a small text object (e.g. a Squirrel RELEASES manifest) verbatim. */
+  async readItemText(kind: DownloadKind, version: string, item: string): Promise<string> {
+    this.assertConfigured();
+    this.validateVersion(version);
+    this.validateItem(item);
+
+    const key = `${this.prefixes[kind]}${version}/${item}`;
+    logger.info("Reading download item text", { bucket: this.bucket, key, kind, version });
+    try {
+      const result = await this.client.send(new GetObjectCommand({
+        Bucket: this.bucket,
+        Key: key,
+      }));
+      const text = await result.Body?.transformToString();
+      if (text === undefined) {
+        throw new NotFoundError("Download item not found");
+      }
+      logger.info("Read download item text", { bucket: this.bucket, key, length: text.length });
+      return text;
+    } catch (error) {
+      if (this.isMissingObjectError(error)) {
+        throw new NotFoundError("Download item not found");
+      }
+      throw error;
+    }
+  }
+
   private assertConfigured(): void {
     if (!this.bucket) {
       logger.error("Download bucket is not configured", {

@@ -2,6 +2,53 @@ module:
   updates:
     basePath: '/updates'
     paths:
+      '/win32/:arch/RELEASES':
+        get:
+          x-controller: update.controller
+          x-action: windowsReleases
+          summary: 'Squirrel.Windows RELEASES manifest for the Kazibee desktop app'
+          parameters:
+            - name: arch
+              in: path
+              required: true
+              schema:
+                type: string
+                enum: [x64]
+          responses:
+            '200':
+              description: 'RELEASES manifest of the newest published release'
+              content:
+                text/plain:
+                  schema:
+                    type: string
+            '400':
+              description: 'Invalid update arch'
+            '404':
+              description: 'No published release with a RELEASES manifest'
+      '/win32/:arch/:file':
+        get:
+          x-controller: update.controller
+          x-action: windowsPackage
+          summary: 'Redirect to a temporary URL for a Squirrel.Windows package'
+          parameters:
+            - name: arch
+              in: path
+              required: true
+              schema:
+                type: string
+                enum: [x64]
+            - name: file
+              in: path
+              required: true
+              schema:
+                type: string
+          responses:
+            '302':
+              description: 'Redirect to temporary S3 package URL'
+            '400':
+              description: 'Invalid arch or package name'
+            '404':
+              description: 'Package not found'
       '/darwin/:arch/RELEASES.json':
         get:
           x-controller: update.controller

@@ -1,0 +1,50 @@
+module:
+  updates:
+    basePath: '/updates'
+    paths:
+      '/darwin/:arch/RELEASES.json':
+        get:
+          x-controller: update.controller
+          x-action: releasesFeed
+          summary: 'Squirrel.Mac auto-update feed for the Kazibee desktop app'
+          parameters:
+            - name: arch
+              in: path
+              required: true
+              schema:
+                type: string
+                enum: [arm64, x64]
+          responses:
+            '200':
+              description: 'Update feed for the newest published macOS release'
+              content:
+                application/json:
+                  schema:
+                    type: object
+                    properties:
+                      currentRelease:
+                        type: string
+                      releases:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            version:
+                              type: string
+                            updateTo:
+                              type: object
+                              properties:
+                                version:
+                                  type: string
+                                name:
+                                  type: string
+                                url:
+                                  type: string
+                                pub_date:
+                                  type: string
+                                notes:
+                                  type: string
+            '400':
+              description: 'Invalid update arch'
+            '404':
+              description: 'No matching release or macOS archive found'

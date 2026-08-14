@@ -103,16 +103,22 @@ export default class DownloadService {
     return response;
   }
 
-  async createDownload(kind: DownloadKind, version: string, item: string): Promise<DownloadResult> {
+  async createDownload(
+    kind: DownloadKind,
+    version: string,
+    item: string,
+    options?: { expiresIn?: number },
+  ): Promise<DownloadResult> {
     this.assertConfigured();
     this.validateVersion(version);
     this.validateItem(item);
 
     const key = `${this.prefixes[kind]}${version}/${item}`;
+    const expiresIn = options?.expiresIn ?? this.expiresIn;
 
     logger.info("Creating download URL", {
       bucket: this.bucket,
-      expiresIn: this.expiresIn,
+      expiresIn,
       item,
       key,
       kind,
@@ -126,11 +132,11 @@ export default class DownloadService {
       Key: key,
       ResponseContentDisposition: `attachment; filename="${item}"`,
     });
-    const url = await getSignedUrl(this.client, command, { expiresIn: this.expiresIn });
+    const url = await getSignedUrl(this.client, command, { expiresIn });
 
     logger.info("Created download URL", {
       bucket: this.bucket,
-      expiresIn: this.expiresIn,
+      expiresIn,
       item,
       key,
       kind,

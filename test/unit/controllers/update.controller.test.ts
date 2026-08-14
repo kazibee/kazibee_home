@@ -1,0 +1,63 @@
+import { describe, expect, it, vi } from "vitest";
+import type { Request, Response } from "express";
+import UpdateController from "../../../src/server/controller/update.controller";
+import type UpdateLogic from "../../../src/server/logic/update.logic";
+import { NotFoundError } from "../../../src/server/errors/domain_errors";
+
+function fakeResponse() {
+  const res = {
+    statusCode: 200,
+    body: undefined as unknown,
+    status(code: number) {
+      this.statusCode = code;
+      return this;
+    },
+    json(payload: unknown) {
+      this.body = payload;
+      return this;
+    },
+  };
+  return res as typeof res & Response;
+}
+
+function requestFor(arch: string | undefined) {
+  return { params: { arch } } as unknown as Request;
+}
+
+describe("UpdateController.releasesFeed", () => {
+  it("returns the feed for a valid arch", async () => {
+    const feed = { currentRelease: "1.4.2", releases: [] };
+    const createFeed = vi.fn(async () => feed);
+    const controller = new UpdateController({ createFeed } as unknown as UpdateLogic);
+    const res = fakeResponse();
+
+    await controller.releasesFeed({ req: requestFor("arm64"), res });
+
+    expect(createFeed).toHaveBeenCalledWith("arm64");
+    expect(res.statusCode).toBe(200);
+    expect(res.body).toBe(feed);
+  });
+
+  it("returns 400 for an invalid arch", async () => {
+    const createFeed = vi.fn();
+    const controller = new UpdateController({ createFeed } as unknown as UpdateLogic);
+    const res = fakeResponse();
+
+    await controller.releasesFeed({ req: requestFor("ia32"), res });
+
+    expect(createFeed).not.toHaveBeenCalled();
+    expect(res.statusCode).toBe(400);
+  });
+
+  it("maps NotFoundError to 404", async () => {
+    const createFeed = vi.fn(async () => {
+      throw new NotFoundError("No app releases available");
+    });
+    const controller = new UpdateController({ createFeed } as unknown as UpdateLogic);
+    const res = fakeResponse();
+
+    await controller.releasesFeed({ req: requestFor("arm64"), res });
+
+    expect(res.statusCode).toBe(404);
+  });
+});

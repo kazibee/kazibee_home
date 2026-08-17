@@ -122,3 +122,26 @@ export default async function boot(app: express.Express, config: any) {
 
   return server;
 }
+
+/**
+ * Noego v1 backend boot hook. The v1 runtime calls this once per
+ * (re)build before serving requests: initialize logging, tracing, and the
+ * database, then return class-controller hooks. Returning the container
+ * hooks explicitly keeps DI on this project's container instance.
+ */
+export async function bootBackendV1(_options: { root?: string } = {}) {
+  await configureLogging();
+  TraceAdapter.configureWebsiteProcess();
+  await initDatabase();
+
+  return {
+    contextBuilder: () => {
+      const scoped = container.extend();
+      return { container: scoped };
+    },
+    controllerBuilder: async (Controller: any, context: any) => {
+      if (context?.container) return context.container.get(Controller);
+      return container.get(Controller);
+    },
+  };
+}

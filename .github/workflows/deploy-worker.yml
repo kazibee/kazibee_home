@@ -5,14 +5,10 @@ name: Deploy Worker (Cloudflare)
 # from any ref. Dev never runs here — local dev is `noego serve` (Node)
 # or `wrangler dev` (workerd) against .dev.vars.
 #
-# RUNNER: self-hosted. Register one on the machine that hosts the
-# noego_manager checkout (repo Settings → Actions → Runners → New
-# self-hosted runner), and set NOEGO_MANAGER=/path/to/noego_manager in
-# the runner's env (.env file in the runner directory). The workspace
-# link step below then makes the file:../../noego/* framework deps
-# resolve exactly like the local layout — no npm publish required.
-# When the packages are published and package.json pins versions, the
-# link step becomes a no-op and this can move back to ubuntu-latest.
+# RUNNER: self-hosted (all noego/kazibee Actions run on the "simona"
+# machine). Framework packages (@noego/app, @noego/dinner, @noego/forge,
+# sqlstack) are pinned registry versions in package.json, so a plain
+# npm ci is enough — no workspace linking, no NOEGO_MANAGER env needed.
 #
 # Required secrets:
 #   CLOUDFLARE_API_TOKEN   — environment secret on `dev` (Workers deploy)
@@ -39,19 +35,6 @@ jobs:
     steps:
       - name: Checkout website
         uses: actions/checkout@v4
-
-      - name: Link framework workspace
-        # file:../../noego/* deps resolve two directories above the
-        # checkout — mirror the meta-repo layout with one symlink when
-        # the runner provides NOEGO_MANAGER. No-op otherwise (published
-        # packages path).
-        run: |
-          if [ -n "${NOEGO_MANAGER:-}" ] && [ -d "$NOEGO_MANAGER/noego" ]; then
-            ln -sfn "$NOEGO_MANAGER/noego" "$GITHUB_WORKSPACE/../../noego"
-            echo "Linked $GITHUB_WORKSPACE/../../noego -> $NOEGO_MANAGER/noego"
-          else
-            echo "NOEGO_MANAGER not set; expecting published framework packages."
-          fi
 
       - name: Setup Node
         uses: actions/setup-node@v4

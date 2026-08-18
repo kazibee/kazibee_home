@@ -52,8 +52,20 @@ jobs:
 
       - name: Deploy with wrangler
         uses: cloudflare/wrangler-action@v3
+        # Runtime secrets live in the Cloudflare secret store; the action
+        # uploads them (from GitHub secrets) right after the deploy:
+        #   AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY -> S3 downloads bucket
+        #   DATABASE_URL -> worker Postgres (environment secret on `dev`)
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           workingDirectory: dist/cloudflare
           command: deploy
+          secrets: |
+            AWS_ACCESS_KEY_ID
+            AWS_SECRET_ACCESS_KEY
+            DATABASE_URL

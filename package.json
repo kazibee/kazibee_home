@@ -37,7 +37,7 @@
     "jsonwebtoken": "^9.0.2",
     "reflect-metadata": "^0.2.2",
     "sqlite3": "^5.1.7",
-    "sqlstack": "^1.0.24",
+    "sqlstack": "file:../../noego/sqlstack",
     "svelte-preprocess": "^6.0.3"
   },
   "devDependencies": {
@@ -48,9 +48,9 @@
     "@types/express": "^5.0.3",
     "@types/jsonwebtoken": "^9.0.10",
     "@types/supertest": "^6.0.3",
-    "ajv": "^8.17.1",
     "@typescript-eslint/eslint-plugin": "^8.53.1",
     "@typescript-eslint/parser": "^8.53.1",
+    "ajv": "^8.17.1",
     "eslint": "^9.39.2",
     "eslint-plugin-svelte": "^3.17.1",
     "playwright": "^1.57.0",

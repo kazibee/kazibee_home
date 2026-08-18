@@ -22,9 +22,9 @@
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1042.0",
     "@aws-sdk/s3-request-presigner": "^3.1042.0",
-    "@noego/app": "^0.0.35",
-    "@noego/dinner": "^0.0.12",
-    "@noego/forge": "^0.1.33",
+    "@noego/app": "^1.0.0",
+    "@noego/dinner": "^1.0.0",
+    "@noego/forge": "^1.0.0",
     "@noego/ioc": "^0.0.11",
     "@noego/logger": "^0.0.2",
     "@noego/proper": "^0.0.9",

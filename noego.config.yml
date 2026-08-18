@@ -22,3 +22,13 @@ assets:
   - src/ui/resources/images/**
   - src/ui/resources/**
   - migrations/**/*.sql
+
+# Non-secret deploy metadata; secrets live in the Cloudflare secret
+# store (wrangler secret put) and GitHub Environments, never here.
+deploy:
+  cloudflare:
+    name: kazibee-api
+    accountId: f2d8e579cb41cb1aa6a8aaa264222eaf
+    routes:
+      - pattern: dev.kazibee.com
+        customDomain: true

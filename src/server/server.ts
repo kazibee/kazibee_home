@@ -1,7 +1,5 @@
 import path from 'path';
 import express, { type NextFunction, type Request, type Response } from 'express';
-import { assets } from '@noego/dinner/assets';
-import { boot as bootBackend } from '@noego/app/client';
 import { configureLogging } from '../index';
 import { getLogger } from '@noego/logger';
 const baseLogger = getLogger('kazibee');
@@ -10,6 +8,11 @@ import cookiePaser from '../middleware/auth/cookie';
 import TraceAdapter from './observability/trace_adapter';
 import container from './container';
 import ConnectValidationErrorMapper from './middleware/connect_validation_error_mapper';
+
+// Node-only 0.x runtime pieces (Express combined server, static asset
+// mounts) load via COMPUTED dynamic imports so the Cloudflare worker
+// graph never pulls them in — the legacy default boot is Node-only.
+const dynamicImport = (specifier: string) => import(`${specifier}`);
 
 // Export constants (for backward compatibility)
 const SERVER_ROOT = path.resolve(process.cwd(), 'server');
@@ -61,6 +64,8 @@ export default async function boot(app: express.Express, config: any) {
     res.type('text/plain').sendFile(robotsPath);
   });
 
+  const { assets } = await dynamicImport('@noego/dinner/assets');
+  const { boot: bootBackend } = await dynamicImport('@noego/app/client');
   const assetMappings = assets({
     '/images': [imagesPath],
     '/css': [cssPath],
@@ -144,4 +149,41 @@ export async function bootBackendV1(_options: { root?: string } = {}) {
       return container.get(Controller);
     },
   };
+}
+
+/**
+ * Noego v1 WORKER boot hook: called lazily by the generated Cloudflare
+ * worker entry on first fetch (env is per-request on Workers). SQLite is
+ * a Node-only native dependency, so on Workers the database is Postgres
+ * via SQL Stack: per-query pg.Client (workerd sockets are
+ * request-scoped; Hyperdrive is the production pooling story). Without
+ * env.DATABASE_URL the worker still boots — DB-backed routes fail per
+ * request until a database is bound.
+ */
+export async function bootWorkerV1({ env }: { env?: Record<string, unknown> } = {}) {
+  TraceAdapter.configureWebsiteProcess();
+  const connectionString = typeof env?.DATABASE_URL === 'string' ? env.DATABASE_URL : null;
+  if (!connectionString) {
+    baseLogger.warn('[kazibee] worker boot: no DATABASE_URL bound — DB-backed routes will fail');
+    return;
+  }
+  try {
+    const { SqlStackDB, createPgDb } = await dynamicImport('sqlstack');
+    const pg = (await dynamicImport('pg')).default;
+    const poolLike = {
+      async query(sql: string, params?: unknown[]) {
+        const client = new pg.Client({ connectionString });
+        await client.connect();
+        try {
+          return await client.query(sql, params);
+        } finally {
+          client.end().catch(() => {});
+        }
+      }
+    };
+    SqlStackDB.register('primary', createPgDb(poolLike)).setDefault('primary');
+    baseLogger.info('[kazibee] worker boot: postgres via sqlstack');
+  } catch (error) {
+    baseLogger.error('[kazibee] worker boot: postgres registration failed', error);
+  }
 }

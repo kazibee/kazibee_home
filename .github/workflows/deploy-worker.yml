@@ -1,0 +1,54 @@
+name: Deploy Worker (Cloudflare)
+
+# Same release discipline as deploy.yml (Docker/Node prod): pushing the
+# `release` branch deploys production; `workflow_dispatch` allows manual
+# staging deploys from any ref. Dev never runs here — local dev is
+# `noego serve` (Node) or `wrangler dev` (workerd) against .dev.vars.
+#
+# Required repo secrets:
+#   CLOUDFLARE_API_TOKEN   — API token with Workers deploy permission
+#                            (replaces interactive `wrangler login` in CI)
+#   CLOUDFLARE_ACCOUNT_ID  — the target Cloudflare account
+# One-time (per environment), run locally or via wrangler-action:
+#   wrangler secret put DATABASE_URL   (worker Postgres; Hyperdrive later)
+#
+# KNOWN GATE: `npm ci` requires the @noego/* + sqlstack packages to be
+# published versions. The repo currently uses file:../../noego/* links,
+# which only resolve in the local meta-repo checkout — this workflow goes
+# green when the framework packages are published and package.json pins
+# them (the "release-legit" npm-publish workstream).
+
+on:
+  push:
+    branches:
+      - release
+  workflow_dispatch:
+
+jobs:
+  deploy-worker:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout website
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build Cloudflare worker
+        # Backend-only until the frontend is ported off the legacy bridge
+        # onto the v1 SSR pipeline; then this flag drops.
+        run: npx noego build --target cloudflare --nodejs-compat --backend-only
+
+      - name: Deploy with wrangler
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          workingDirectory: dist/cloudflare
+          command: deploy

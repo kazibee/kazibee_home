@@ -13,7 +13,7 @@ server:
   openapi: src/server/stitch.yaml
 
 client:
-  main: src/ui/frontend.ts
+  main: src/ui/main.ts
   shell: src/ui/index.html
   openapi: src/ui/stitch.yaml
   components: src/ui
@@ -27,9 +27,7 @@ assets:
 # store (wrangler secret put) and GitHub Environments, never here.
 deploy:
   cloudflare:
-    # dev.kazibee.com serves the FULL site (pages + API) from the worker.
-    # Until the frontend is ported off the legacy bridge onto the v1 SSR
-    # pipeline, worker builds are --backend-only and page routes 404.
+    # dev.kazibee.com serves the FULL site (SSR pages + API) from the worker.
     name: kazibee-dev
     accountId: f2d8e579cb41cb1aa6a8aaa264222eaf
     routes:

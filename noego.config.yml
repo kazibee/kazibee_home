@@ -27,7 +27,10 @@ assets:
 # store (wrangler secret put) and GitHub Environments, never here.
 deploy:
   cloudflare:
-    name: kazibee-api
+    # dev.kazibee.com serves the FULL site (pages + API) from the worker.
+    # Until the frontend is ported off the legacy bridge onto the v1 SSR
+    # pipeline, worker builds are --backend-only and page routes 404.
+    name: kazibee-dev
     accountId: f2d8e579cb41cb1aa6a8aaa264222eaf
     routes:
       - pattern: dev.kazibee.com

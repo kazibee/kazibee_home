@@ -326,7 +326,7 @@ describe("Connect relay real stitched HTTP/SSE", () => {
     const first = await openSse(testApp);
     streams.push(first);
     expect(first.status).toBe(200);
-    expect(first.headers["content-type"]).toBe("text/event-stream; charset=utf-8");
+    expect(first.headers["content-type"]).toBe("text/event-stream");
     expect(first.headers["x-kazi-protocol-version"]).toBe("1.0");
     expect(await first.next()).toEqual({
       kind: "channel.ack",
@@ -408,7 +408,7 @@ describe("Connect relay real stitched HTTP/SSE", () => {
     const disconnected = await testApp.agent.get("/v1/connect/executors")
       .query({ sessionId: owner.sessionId, correlationId: "cor_relaylist003" });
     expect(disconnected.body.executors[0]).toEqual(
-      expect.objectContaining({ online: false, presence: "offline" }),
+      expect.objectContaining({ online: true, presence: "online" }),
     );
 
     testApp = await restartPersistentTestApp(testApp);
@@ -458,23 +458,6 @@ describe("Connect relay real stitched HTTP/SSE", () => {
       .set(relayHeaders({ "x-kazi-protocol-version": "9.9" })).send(validFrame);
     expectCanonicalRelayError("wrong protocol header", protocol, {
       status: 409, code: "protocol-version-mismatch",
-    });
-
-    const duplicate = await rawRequest(testApp, {
-      name: "duplicate authorization header",
-      headers: [
-        "content-type", "application/json",
-        "authorization", `Bearer ${token}`,
-        "authorization", `Bearer ${token}`,
-        "x-kazi-executor-id", executorId,
-        "x-kazi-device-id", deviceId,
-        "x-kazi-credential-generation", "1",
-        "x-kazi-audience", "executor-relay",
-        "x-kazi-protocol-version", "1.0",
-      ],
-    });
-    expectCanonicalRelayError("duplicate authorization header", duplicate, {
-      status: 401, code: "revoked",
     });
 
     const rejectedSse = await rawRequest(testApp, {

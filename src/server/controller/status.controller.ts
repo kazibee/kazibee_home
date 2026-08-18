@@ -1,5 +1,5 @@
 import { Component, Inject } from "@noego/ioc";
-import type { Request, Response } from "express";
+import type { CompatRequest as Request, CompatResponse as Response } from "@noego/dinner";
 import StatusLogic from "../logic/status.logic";
 import { createActor, GUEST_ACTOR, type Actor } from "../types/actor";
 import { ForbiddenError, UnauthorizedError, NotFoundError, ValidationError } from "../errors/domain_errors";

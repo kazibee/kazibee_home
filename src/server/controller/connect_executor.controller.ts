@@ -1,5 +1,5 @@
 import { Component, Inject } from "@noego/ioc";
-import type { Request, Response } from "express";
+import type { CompatRequest as Request, CompatResponse as Response } from "@noego/dinner";
 import ConnectExecutorLogic from "../logic/connect_executor.logic";
 import ConnectExecutorRequestParser from "../services/connect_executor_request_parser";
 import ConnectExecutorActorResolver, { type ConnectExecutorActor } from "../services/connect_executor_actor_resolver";

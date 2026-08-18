@@ -1,5 +1,5 @@
 import { Component, Inject, LoadAs } from "@noego/ioc";
-import type { Response } from "express";
+import type { SseSink as Response } from "./sse_stream";
 import ConnectDesktopDeviceRepo from "../repo/connect_desktop_device_repo";
 import ConnectExecutorRepo from "../repo/connect_executor_repo";
 import TraceAdapter, { type TracePort } from "../observability/trace_adapter";
@@ -282,7 +282,7 @@ export default class ConnectClientRelayService {
   }
 
   private write(connection: DesktopConnection, event: Record<string, unknown>): boolean {
-    if (connection.response.destroyed || connection.response.writableEnded) return false;
+    if (connection.response.writableEnded) return false;
     const envelope = {
       kind: "owner.sse.event", protocolVersion: PROTOCOL,
       deviceId: connection.deviceId, actorRole: "desktop_device", event,

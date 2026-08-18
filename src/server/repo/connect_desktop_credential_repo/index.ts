@@ -21,7 +21,8 @@ export default class ConnectDesktopCredentialRepo {
     throw new SqlStackError("Not implemented");
   }
 
-  @Query() @Single
+  @Single
+  @Query()
   findByTokenHash(_params: { token_hash: string }): Promise<ConnectDesktopCredential | null> {
     throw new SqlStackError("Not implemented");
   }

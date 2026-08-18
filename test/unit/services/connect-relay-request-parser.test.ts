@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { Request } from "express";
+import type { CompatRequest as Request } from "@noego/dinner";
 import ConnectRelayRequestParser from "../../../src/server/services/connect_relay_request_parser";
 
 const actor = {

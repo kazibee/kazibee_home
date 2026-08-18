@@ -1,139 +1,20 @@
-import path from 'path';
-import express, { type NextFunction, type Request, type Response } from 'express';
-import { configureLogging } from '../index';
-import { getLogger } from '@noego/logger';
-const baseLogger = getLogger('kazibee');
+import path from "node:path";
+import { configureLogging as configureNoegoLogging, getLogger } from "@noego/logger";
 import { initDatabase } from "./repo/boot";
-import cookiePaser from '../middleware/auth/cookie';
-import TraceAdapter from './observability/trace_adapter';
-import container from './container';
-import ConnectValidationErrorMapper from './middleware/connect_validation_error_mapper';
+import TraceAdapter from "./observability/trace_adapter";
+import container from "./container";
+import { connectRequestError } from "./middleware/connect_request_error";
 
-// Node-only 0.x runtime pieces (Express combined server, static asset
-// mounts) load via COMPUTED dynamic imports so the Cloudflare worker
-// graph never pulls them in — the legacy default boot is Node-only.
+const baseLogger = getLogger("kazibee");
 const dynamicImport = (specifier: string) => import(`${specifier}`);
 
-// Export constants (for backward compatibility)
-const SERVER_ROOT = path.resolve(process.cwd(), 'server');
-export const STITCH_PATH = path.join(SERVER_ROOT, 'stitch.yaml');
+const SERVER_ROOT = path.resolve(process.cwd(), "server");
+export const STITCH_PATH = path.join(SERVER_ROOT, "stitch.yaml");
 
-// Default export: (app, config) => void
-export default async function boot(app: express.Express, config: any) {
-  // Configure logging
-  await configureLogging();
-  TraceAdapter.configureWebsiteProcess();
-  await initDatabase(config.database);
-
-  // Configure Express middleware
-  app.use(express.json({ limit: '50mb' }));
-  app.use((error: unknown, req: Request, res: Response, next: NextFunction) => {
-    const errorType = typeof error === "object" && error !== null && "type" in error
-      ? error.type : null;
-    const parseFailure = error instanceof SyntaxError && errorType === "entity.parse.failed";
-    const oversized = errorType === "entity.too.large";
-    if ((!parseFailure && !oversized) || !req.path.startsWith("/v1/connect/")) {
-      next(error);
-      return;
-    }
-    res.setHeader("x-kazi-protocol-version", "1.0");
-    res.status(oversized ? 413 : 400).json({
-      kind: "error",
-      protocolVersion: "1.0",
-      code: "invalid-envelope",
-      message: "Invalid request envelope",
-      retryable: false,
-      correlationId: "cor_invalid000",
-    });
-  });
-  app.use(cookiePaser);
-  const connectValidationErrors = await container.instance(ConnectValidationErrorMapper);
-  app.use((req, res, next) => connectValidationErrors.capture(req, res, next));
-
-  const isTest = process.env.NODE_ENV === 'test' || !!process.env.VITEST;
-
-  // Build asset mappings from config.root
-  const imagesPath = path.join(config.root, 'src/ui/resources/images');
-  const cssPath = path.join(config.root, 'src/ui/resources/css');
-  const robotsPath = path.join(config.root, 'src/ui/resources/robots.txt');
-  const faviconPath = path.join(imagesPath, 'favicon.ico');
-  app.get('/favicon.ico', (_req, res) => {
-    res.sendFile(faviconPath);
-  });
-  app.get('/robots.txt', (_req, res) => {
-    res.type('text/plain').sendFile(robotsPath);
-  });
-
-  const { assets } = await dynamicImport('@noego/dinner/assets');
-  const { boot: bootBackend } = await dynamicImport('@noego/app/client');
-  const assetMappings = assets({
-    '/images': [imagesPath],
-    '/css': [cssPath],
-  });
-
-  // Boot backend - framework automatically handles IoC container integration
-  const server = await bootBackend(assetMappings);
-
-  // Graceful shutdown handler
-  const gracefulShutdown = async (signal: string, exitCode = 0) => {
-    baseLogger.info(`Received ${signal}, starting graceful shutdown...`);
-
-    try {
-      if (server?.close) {
-        await new Promise<void>((resolve, reject) => {
-          const timeout = setTimeout(() => {
-            baseLogger.warn('Server close timeout exceeded, forcing shutdown');
-            resolve();
-          }, 5000);
-
-          server.close((err: any) => {
-            clearTimeout(timeout);
-            if (err) {
-              baseLogger.error('Error closing server:', err);
-              reject(err);
-            } else {
-              baseLogger.info('Server closed successfully');
-              resolve();
-            }
-          });
-        });
-      }
-
-      baseLogger.info('Graceful shutdown complete');
-      process.exit(exitCode);
-    } catch (error) {
-      baseLogger.error('Error during graceful shutdown:', error);
-      process.exit(1);
-    }
-  };
-
-  // Process-level handlers belong to the production server lifecycle. Test apps are
-  // booted repeatedly in one Vitest process, so registering them there would leak
-  // listeners across otherwise isolated app instances.
-  if (!isTest) {
-    process.on('SIGTERM', () => gracefulShutdown('SIGTERM', 0));
-    process.on('SIGINT', () => gracefulShutdown('SIGINT', 0));
-
-    process.on('uncaughtException', (error) => {
-      baseLogger.fatal('Uncaught Exception:', error);
-      gracefulShutdown('uncaughtException', 1);
-    });
-
-    process.on('unhandledRejection', (reason, promise) => {
-      baseLogger.fatal('Unhandled Rejection at:', promise, 'reason:', reason);
-      gracefulShutdown('unhandledRejection', 1);
-    });
-  }
-
-  return server;
+export async function configureLogging(): Promise<void> {
+  configureNoegoLogging({});
 }
 
-/**
- * Noego v1 backend boot hook. The v1 runtime calls this once per
- * (re)build before serving requests: initialize logging, tracing, and the
- * database, then return class-controller hooks. Returning the container
- * hooks explicitly keeps DI on this project's container instance.
- */
 export async function bootBackendV1(_options: { root?: string } = {}) {
   await configureLogging();
   TraceAdapter.configureWebsiteProcess();
@@ -148,28 +29,21 @@ export async function bootBackendV1(_options: { root?: string } = {}) {
       if (context?.container) return context.container.get(Controller);
       return container.get(Controller);
     },
+    onRequestError: connectRequestError,
   };
 }
 
-/**
- * Noego v1 WORKER boot hook: called lazily by the generated Cloudflare
- * worker entry on first fetch (env is per-request on Workers). SQLite is
- * a Node-only native dependency, so on Workers the database is Postgres
- * via SQL Stack: per-query pg.Client (workerd sockets are
- * request-scoped; Hyperdrive is the production pooling story). Without
- * env.DATABASE_URL the worker still boots — DB-backed routes fail per
- * request until a database is bound.
- */
 export async function bootWorkerV1({ env }: { env?: Record<string, unknown> } = {}) {
   TraceAdapter.configureWebsiteProcess();
-  const connectionString = typeof env?.DATABASE_URL === 'string' ? env.DATABASE_URL : null;
+  const hooks = { onRequestError: connectRequestError };
+  const connectionString = typeof env?.DATABASE_URL === "string" ? env.DATABASE_URL : null;
   if (!connectionString) {
-    baseLogger.warn('[kazibee] worker boot: no DATABASE_URL bound — DB-backed routes will fail');
-    return;
+    baseLogger.warn("[kazibee] worker boot: no DATABASE_URL bound — DB-backed routes will fail");
+    return hooks;
   }
   try {
-    const { SqlStackDB, createPgDb } = await dynamicImport('sqlstack');
-    const pg = (await dynamicImport('pg')).default;
+    const { SqlStackDB, createPgDb } = await dynamicImport("sqlstack");
+    const pg = (await dynamicImport("pg")).default;
     const poolLike = {
       async query(sql: string, params?: unknown[]) {
         const client = new pg.Client({ connectionString });
@@ -179,11 +53,12 @@ export async function bootWorkerV1({ env }: { env?: Record<string, unknown> } = 
         } finally {
           client.end().catch(() => {});
         }
-      }
+      },
     };
-    SqlStackDB.register('primary', createPgDb(poolLike)).setDefault('primary');
-    baseLogger.info('[kazibee] worker boot: postgres via sqlstack');
+    SqlStackDB.register("primary", createPgDb(poolLike)).setDefault("primary");
+    baseLogger.info("[kazibee] worker boot: postgres via sqlstack");
   } catch (error) {
-    baseLogger.error('[kazibee] worker boot: postgres registration failed', error);
+    baseLogger.error("[kazibee] worker boot: postgres registration failed", error);
   }
+  return hooks;
 }

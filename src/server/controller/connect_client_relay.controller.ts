@@ -1,9 +1,10 @@
 import { Component, Inject } from "@noego/ioc";
-import type { Request, Response } from "express";
+import type { CompatRequest as Request, CompatResponse as Response } from "@noego/dinner";
 import ConnectClientRelayLogic from "../logic/connect_client_relay.logic";
 import {
   ConnectDesktopRelayActorResolver,
 } from "../services/connect_desktop_actor_resolver";
+import { createSseStream } from "../services/sse_stream";
 import ConnectClientRelayRequestParser, {
   type ClientRelayFailure,
 } from "../services/connect_client_relay_request_parser";
@@ -54,22 +55,16 @@ export default class ConnectClientRelayController {
   }
 
   async events({ req, res }: Context) {
-    res.setHeader("x-kazi-protocol-version", PROTOCOL);
     const resolved = await this.actors.resolve(req);
-    if (!resolved.ok) return this.failure(res, "unauthorized", "cor_invalid000");
-    res.status(200);
-    res.setHeader("content-type", "text/event-stream; charset=utf-8");
-    res.setHeader("cache-control", "no-cache, no-transform");
-    res.setHeader("connection", "keep-alive");
-    res.flushHeaders();
-    const fence = this.logic.open(resolved.actor, res);
-    const close = () => {
-      res.off("close", close);
-      res.off("error", close);
-      this.logic.close(resolved.actor.deviceId, fence);
-    };
-    res.once("close", close);
-    res.once("error", close);
+    if (!resolved.ok) {
+      res.setHeader("x-kazi-protocol-version", PROTOCOL);
+      return this.failure(res, "unauthorized", "cor_invalid000");
+    }
+    const { response, sink } = createSseStream();
+    response.headers.set("x-kazi-protocol-version", PROTOCOL);
+    const fence = this.logic.open(resolved.actor, sink);
+    sink.onClose(() => this.logic.close(resolved.actor.deviceId, fence));
+    return response;
   }
 
   private failure(res: Response, reason: ClientRelayFailure, correlationId: string) {

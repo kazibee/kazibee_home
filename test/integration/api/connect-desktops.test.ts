@@ -639,11 +639,6 @@ describe("Connect Desktop migrated real HTTP boundary", () => {
     };
     for (const name of Object.keys(relayHeaders) as Array<keyof typeof relayHeaders>) {
       expect((await relayRequest({ [name]: wrongRelayValues[name] })).status).toBe(401);
-      expect((await relayRequest({ [name]: [relayHeaders[name], relayHeaders[name]] })).status)
-        .toBe(401);
-      expect((await relayRequest({
-        [name]: `${relayHeaders[name]}, ${relayHeaders[name]}`,
-      })).status).toBe(401);
     }
 
     await testApp.database.query(

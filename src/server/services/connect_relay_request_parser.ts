@@ -1,5 +1,5 @@
 import { Component } from "@noego/ioc";
-import type { Request } from "express";
+import type { CompatRequest as Request } from "@noego/dinner";
 import Ajv2020 from "ajv/dist/2020.js";
 import protocolSchema from "../../../packages/kazi-connect-protocol/schemas/kazi-connect-v1.schema.json" with { type: "json" };
 import type { ConnectExecutorActor } from "./connect_executor_actor_resolver";
@@ -89,7 +89,7 @@ export default class ConnectRelayRequestParser {
   }
 
   private single(req: Request, name: string): string | null {
-    const raw = req.rawHeaders;
+    const raw = Array.isArray(req.rawHeaders) ? req.rawHeaders as string[] : [];
     const values: string[] = [];
     for (let index = 0; index < raw.length; index += 2) {
       if (raw[index]?.toLowerCase() === name) values.push(raw[index + 1] ?? "");

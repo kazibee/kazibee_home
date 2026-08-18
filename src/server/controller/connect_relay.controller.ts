@@ -1,8 +1,9 @@
 import { Component, Inject } from "@noego/ioc";
-import type { Request, Response } from "express";
+import type { CompatRequest as Request, CompatResponse as Response } from "@noego/dinner";
 import ConnectRelayLogic from "../logic/connect_relay.logic";
 import ConnectRelayRequestParser, { type RelayRequestFailure } from "../services/connect_relay_request_parser";
 import { ConnectExecutorDeviceAuthVerifier } from "../services/connect_executor_actor_resolver";
+import { createSseStream } from "../services/sse_stream";
 
 type Context = { req: Request; res: Response };
 const PROTOCOL = "1.0";
@@ -26,22 +27,19 @@ export default class ConnectRelayController {
   }
 
   async events({ req, res }: Context) {
-    res.setHeader("x-kazi-protocol-version", PROTOCOL);
     const authenticated = await this.authenticate(req);
-    if (!authenticated.ok) return this.failure(res, authenticated.reason, "cor_relayinvalid");
-    res.status(200);
-    res.setHeader("content-type", "text/event-stream; charset=utf-8");
-    res.setHeader("cache-control", "no-cache, no-transform");
-    res.setHeader("connection", "keep-alive");
-    res.flushHeaders();
-    const fence = this.logic.open(authenticated.actor, res);
-    const close = () => {
-      res.off("close", close);
-      res.off("error", close);
-      this.logic.close(authenticated.actor.executorId, fence);
-    };
-    res.once("close", close);
-    res.once("error", close);
+    if (!authenticated.ok) {
+      res.setHeader("x-kazi-protocol-version", PROTOCOL);
+      return this.failure(res, authenticated.reason, "cor_relayinvalid");
+    }
+    const { response, sink } = createSseStream();
+    response.headers.set("x-kazi-protocol-version", PROTOCOL);
+    // Presence is transient and activity-driven: a dropped socket does not
+    // unregister the executor (network blips); staleness/heartbeats and
+    // explicit takeover/revocation do. The ended sink simply stops accepting
+    // writes.
+    this.logic.open(authenticated.actor, sink);
+    return response;
   }
 
   private async authenticate(req: Request) {

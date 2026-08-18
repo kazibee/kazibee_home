@@ -1,6 +1,6 @@
 import { Component, Inject } from "@noego/ioc";
 import { getLogger } from "@noego/logger";
-import type { Request, Response } from "express";
+import type { CompatRequest as Request, CompatResponse as Response } from "@noego/dinner";
 import { NotFoundError, ValidationError } from "../errors/domain_errors";
 import DownloadLogic from "../logic/download.logic";
 import { isDownloadKind } from "../services/download_service";

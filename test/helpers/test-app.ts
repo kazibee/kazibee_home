@@ -1,21 +1,17 @@
 import request from "supertest";
-import type { Express } from "express";
 import type { Server } from "node:http";
-import { buildConfig } from "@noego/app/config";
-import { resetContainer } from "@noego/app";
-import bootServer from "../../src/server/server";
-import boot from "../../src/index";
+import { resetContainer, serve } from "@noego/app";
 import { resetTestDatabase, closeTestDatabase } from "./test-db";
-import { SqlStackDB, createSqliteDb, type Database } from "sqlstack";
+import { ManifestResolver, SqlStack, SqlStackDB, createSqliteDb, type Database } from "sqlstack";
 import * as sqlite from "sqlite";
 import sqlite3 from "sqlite3";
 import { MigrationRunnerFactory } from "@noego/proper";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
+import { pathToFileURL } from "node:url";
 
 export interface TestAppResult {
-  app: Express;
   database: Database;
   server: Server;
   agent: ReturnType<typeof request.agent>;
@@ -23,17 +19,22 @@ export interface TestAppResult {
 }
 
 async function startTestApp(db: Database): Promise<TestAppResult> {
-  const { config, app } = await buildConfig(boot);
-  await bootServer(app, { ...config, database: db });
-
-  const server = await new Promise<Server>((resolve, reject) => {
-    const listener = app.listen(0, "127.0.0.1", () => resolve(listener));
-    listener.once("error", reject);
-  });
+  const server = await serve({
+    cwd: process.cwd(),
+    port: 0,
+    env: { ...process.env, NODE_ENV: "test" },
+  }) as Server;
   server.unref();
 
+  const manifestUrl = pathToFileURL(path.resolve(process.cwd(), "dist/v1/sql-manifest.mjs"));
+  manifestUrl.searchParams.set("test", String(Date.now()));
+  const { sqlManifest } = await import(manifestUrl.href) as {
+    sqlManifest: Record<string, string>;
+  };
+  SqlStack.useResolver(new ManifestResolver(sqlManifest, { assert: false }));
+
   const agent = request.agent(server);
-  return { app, database: db, server, agent };
+  return { database: db, server, agent };
 }
 
 export async function getTestApp(): Promise<TestAppResult> {

@@ -26,7 +26,8 @@ export default class ConnectDesktopDeviceRepo {
     throw new SqlStackError("Not implemented");
   }
 
-  @Query() @Single
+  @Single
+  @Query()
   findByDeviceId(_params: { device_id: string }): Promise<ConnectDesktopDevice | null> {
     throw new SqlStackError("Not implemented");
   }

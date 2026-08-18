@@ -1,5 +1,5 @@
 import { Component, Inject } from "@noego/ioc";
-import type { Response } from "express";
+import type { SseSink as Response } from "../services/sse_stream";
 import ConnectClientRelayService from "../services/connect_client_relay_service";
 import type { DesktopRelayActor } from "../services/connect_desktop_actor_resolver";
 import type { ClientCommandFrame } from "../services/connect_client_relay_request_parser";

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { Response } from "express";
+import type { SseSink as Response } from "../../../src/server/services/sse_stream";
 import ConnectClientRelayService from "../../../src/server/services/connect_client_relay_service";
 import ConnectExecutorConnectionRegistry from "../../../src/server/services/connect_executor_connection_registry";
 import {

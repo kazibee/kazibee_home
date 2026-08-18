@@ -1,5 +1,5 @@
 import { Component, Inject } from "@noego/ioc";
-import type { Response } from "express";
+import type { SseSink as Response } from "./sse_stream";
 import ConnectExecutorRepo from "../repo/connect_executor_repo";
 import ConnectExecutorConnectionRegistry, {
   ConnectExecutorDispatchPort, type ExecutorDispatchResult,

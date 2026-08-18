@@ -129,10 +129,10 @@ describe("Connect auth HTTP boundary", () => {
     expect(login.body.userId).toBe(account.user_id);
     const setCookies = login.headers["set-cookie"] as unknown as string[];
     expect(setCookies.some((cookie) =>
-      /^kazi_connect_session=.*; Path=\/; HttpOnly; SameSite=Strict$/.test(cookie),
+      /^kazi_connect_session=.*; Path=\/; HttpOnly; SameSite=(?:Strict|strict)$/.test(cookie),
     )).toBe(true);
     expect(setCookies.some((cookie) =>
-      /^kazi_connect_csrf=.*; Path=\/; SameSite=Strict$/.test(cookie),
+      /^kazi_connect_csrf=.*; Path=\/; SameSite=(?:Strict|strict)$/.test(cookie),
     )).toBe(true);
 
     const sessionRows = await testApp.database.query(

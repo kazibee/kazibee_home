@@ -1,5 +1,5 @@
 import { Component } from "@noego/ioc";
-import type { Response } from "express";
+import type { CompatResponse as Response } from "@noego/dinner";
 
 @Component()
 export default class RelayController {

@@ -1,5 +1,5 @@
 import { Component, Inject } from "@noego/ioc";
-import type { Request, Response } from "express";
+import type { CompatRequest as Request, CompatResponse as Response } from "@noego/dinner";
 import ConnectAuthLogic from "../logic/connect_auth.logic";
 import { GUEST_ACTOR } from "../types/actor";
 import {

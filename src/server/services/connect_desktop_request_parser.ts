@@ -1,5 +1,5 @@
 import { Component, Inject, LoadAs } from "@noego/ioc";
-import type { Request } from "express";
+import type { CompatRequest as Request } from "@noego/dinner";
 import ConnectDesktopPolicy from "./connect_desktop_policy";
 
 export type DesktopPlatform = "macos" | "linux" | "windows";
@@ -117,7 +117,7 @@ export default class ConnectDesktopRequestParser {
 
   /** Fail closed unless the raw request contains each relay header exactly once. */
   relayHeaders(req: Request): DesktopRelayHeaders | null {
-    const raw = req.rawHeaders;
+    const raw = Array.isArray(req.rawHeaders) ? req.rawHeaders as string[] : [];
     const one = (name: string): string | null => {
       const values: string[] = [];
       for (let index = 0; index < raw.length; index += 2) {

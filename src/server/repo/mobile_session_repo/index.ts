@@ -13,8 +13,8 @@ export interface MobileSession {
 @QueryBinder()
 @Component()
 export default class MobileSessionRepo {
-  @Query()
   @Single
+  @Query()
   findByToken(_params: { session_token: string }): Promise<MobileSession | null> {
     throw new SqlStackError("Not implemented");
   }

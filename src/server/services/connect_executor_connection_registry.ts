@@ -1,5 +1,5 @@
 import { Component, Inject, LoadAs } from "@noego/ioc";
-import type { Response } from "express";
+import type { SseSink as Response } from "./sse_stream";
 import { ConnectClock, ConnectIdGenerator } from "./connect_auth_primitives";
 
 const PROTOCOL = "1.0";
@@ -172,7 +172,7 @@ export default class ConnectExecutorConnectionRegistry {
   }
 
   private write(connection: Connection, frame: Record<string, unknown>): boolean {
-    if (connection.response.destroyed || connection.response.writableEnded) return false;
+    if (connection.response.writableEnded) return false;
     return connection.response.write(`data: ${JSON.stringify(frame)}\n\n`);
   }
 

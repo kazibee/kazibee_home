@@ -21,14 +21,14 @@ export default class DeviceRepo {
     throw new SqlStackError("Not implemented");
   }
 
-  @Query()
   @Single
+  @Query()
   findByDeviceId(_params: { device_id: string }): Promise<Device | null> {
     throw new SqlStackError("Not implemented");
   }
 
-  @Query()
   @Single
+  @Query()
   findByPairingCode(_params: { pairing_code: string }): Promise<Device | null> {
     throw new SqlStackError("Not implemented");
   }

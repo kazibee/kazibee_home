@@ -25,14 +25,14 @@ export default class ConnectAccountRepo {
     throw new SqlStackError("Not implemented");
   }
 
-  @Query()
   @Single
+  @Query()
   findByUsername(_params: { username: string }): Promise<ConnectAccount | null> {
     throw new SqlStackError("Not implemented");
   }
 
-  @Query()
   @Single
+  @Query()
   findByUserId(_params: { user_id: string }): Promise<ConnectAccount | null> {
     throw new SqlStackError("Not implemented");
   }

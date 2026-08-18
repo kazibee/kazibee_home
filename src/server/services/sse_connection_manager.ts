@@ -1,6 +1,6 @@
 import { Component, Inject, LoadAs } from "@noego/ioc";
 import { getLogger } from "@noego/logger";
-import type { Response } from "express";
+import type { SseSink as Response } from "./sse_stream";
 import type { Message } from "../repo/message_repo";
 import TraceAdapter, { type TracePort } from "../observability/trace_adapter";
 

@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { createHash } from "node:crypto";
 import type { Database } from "sqlstack";
-import type { Request } from "express";
+import type { CompatRequest as Request } from "@noego/dinner";
 import { closeTestDatabase, resetTestDatabase } from "../helpers/test-db";
 import ConnectAccountRepo from "../../src/server/repo/connect_account_repo";
 import ConnectBrowserSessionRepo from "../../src/server/repo/connect_browser_session_repo";

@@ -1,7 +1,7 @@
 import { Component, Inject, LoadAs } from "@noego/ioc";
 import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
 import bcrypt from "bcryptjs";
-import type { Response } from "express";
+import type { CompatResponse as Response } from "@noego/dinner";
 import { getLogger } from "@noego/logger";
 import ConnectAuthPolicy from "./connect_auth_policy";
 

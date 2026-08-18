@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import type { Request, Response } from "express";
+import type { CompatRequest as Request, CompatResponse as Response } from "@noego/dinner";
 import UpdateController from "../../../src/server/controller/update.controller";
 import type UpdateLogic from "../../../src/server/logic/update.logic";
 import { NotFoundError } from "../../../src/server/errors/domain_errors";

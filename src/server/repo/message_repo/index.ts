@@ -33,8 +33,8 @@ export default class MessageRepo {
     throw new SqlStackError("Not implemented");
   }
 
-  @Query()
   @Single
+  @Query()
   getLastInsertedId(): Promise<{ message_id: number }> {
     throw new SqlStackError("Not implemented");
   }
@@ -48,14 +48,14 @@ export default class MessageRepo {
     throw new SqlStackError("Not implemented");
   }
 
-  @Query()
   @Single
+  @Query()
   getHighWaterMark(): Promise<{ hwm: number }> {
     throw new SqlStackError("Not implemented");
   }
 
-  @Query()
   @Single
+  @Query()
   findByRequestId(_params: {
     from_device_id: string;
     request_id: string;
@@ -63,8 +63,8 @@ export default class MessageRepo {
     throw new SqlStackError("Not implemented");
   }
 
-  @Query()
   @Single
+  @Query()
   findByMessageId(_params: { message_id: number }): Promise<Message | null> {
     throw new SqlStackError("Not implemented");
   }

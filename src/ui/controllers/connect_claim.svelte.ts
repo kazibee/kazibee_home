@@ -1,4 +1,4 @@
-import type { PageController } from '@noego/forge/client';
+import type { PageController } from '@noego/forge';
 import {
   CONNECT_PROTOCOL_VERSION,
   createEnvelopeId,

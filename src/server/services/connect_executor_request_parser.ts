@@ -1,5 +1,5 @@
 import { Component, Inject, LoadAs } from "@noego/ioc";
-import type { Request } from "express";
+import type { CompatRequest as Request } from "@noego/dinner";
 import ConnectExecutorPolicy from "./connect_executor_policy";
 
 export type ExecutorPlatform = "macos" | "linux" | "windows";

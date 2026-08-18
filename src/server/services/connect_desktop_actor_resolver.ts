@@ -1,5 +1,5 @@
 import { Component, Inject } from "@noego/ioc";
-import type { Request } from "express";
+import type { CompatRequest as Request } from "@noego/dinner";
 import ConnectSessionAuthService from "./connect_session_auth_service";
 import ConnectAuthPolicy from "./connect_auth_policy";
 import ConnectDesktopCredentialRepo from "../repo/connect_desktop_credential_repo";

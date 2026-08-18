@@ -1,5 +1,5 @@
 import { Component, Inject } from "@noego/ioc";
-import type { Request, Response } from "express";
+import type { CompatRequest as Request, CompatResponse as Response } from "@noego/dinner";
 import ConnectDesktopLogic from "../logic/connect_desktop.logic";
 import ConnectDesktopRequestParser from "../services/connect_desktop_request_parser";
 import ConnectDesktopActorResolver, { type ConnectDesktopActor } from "../services/connect_desktop_actor_resolver";

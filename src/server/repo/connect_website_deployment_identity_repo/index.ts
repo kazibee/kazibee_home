@@ -18,8 +18,8 @@ export default class ConnectWebsiteDeploymentIdentityRepo {
     throw new SqlStackError("Not implemented");
   }
 
-  @Query()
   @Single
+  @Query()
   findSingleton(): Promise<ConnectWebsiteDeploymentIdentity | null> {
     throw new SqlStackError("Not implemented");
   }

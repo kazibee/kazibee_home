@@ -1,6 +1,3 @@
-import { getContainer } from "@noego/app/container";
-import DownloadLogic from "../../../server/logic/download.logic";
-
 interface DownloadItem {
   name: string;
   href: string;
@@ -18,10 +15,7 @@ interface RequestDataLike {
     kind?: string;
     version?: string;
   };
-  /** 0.x load contract: the request URL as a string. */
-  url?: string;
-  /** v1 FrontendExecutionInput: the fetch Request. */
-  request?: { url: string };
+  request: { url: string };
 }
 
 interface DownloadsResponse {
@@ -42,12 +36,16 @@ function resolveKindFromUrl(rawUrl: string): DownloadKind {
 export default async function load(req: RequestDataLike) {
   const kind = (req.params?.kind === "app" || req.params?.kind === "cli")
     ? req.params.kind as DownloadKind
-    : resolveKindFromUrl(req.request?.url ?? req.url ?? "");
+    : resolveKindFromUrl(req.request.url);
   const selectedVersion = req.params?.version ?? "latest";
 
   try {
-    const downloadLogic = await getContainer().instance(DownloadLogic);
-    const body = await downloadLogic.listVersions(kind) as DownloadsResponse;
+    const endpoint = new URL(`/downloads/binary/${kind}`, req.request.url);
+    const response = await fetch(endpoint);
+    if (!response.ok) {
+      throw new Error(`Download API returned ${response.status}`);
+    }
+    const body = await response.json() as DownloadsResponse;
     return {
       kind,
       versions: body.versions ?? [],

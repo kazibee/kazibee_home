@@ -1,6 +1,6 @@
 import { Component, Inject } from "@noego/ioc";
 import { getLogger } from "@noego/logger";
-import type { Request, Response } from "express";
+import type { CompatRequest as Request, CompatResponse as Response } from "@noego/dinner";
 import { NotFoundError, ValidationError } from "../errors/domain_errors";
 import UpdateLogic from "../logic/update.logic";
 import { normalizeUpdateArch } from "../services/update_feed_service";
@@ -33,7 +33,8 @@ export default class UpdateController {
         throw new ValidationError("Invalid update arch");
       }
       const manifest = await this.updateLogic.createWindowsReleases(normalizedArch);
-      return res.type("text/plain").send(manifest);
+      res.setHeader("content-type", "text/plain");
+      return res.send(manifest);
     } catch (error) {
       return this.handleError(error, res);
     }

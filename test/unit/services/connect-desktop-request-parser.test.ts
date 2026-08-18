@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { Request } from "express";
+import type { CompatRequest as Request } from "@noego/dinner";
 import ConnectDesktopRequestParser from "../../../src/server/services/connect_desktop_request_parser";
 import ConnectDesktopPolicy from "../../../src/server/services/connect_desktop_policy";
 

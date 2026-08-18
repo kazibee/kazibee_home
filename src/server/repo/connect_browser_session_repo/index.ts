@@ -34,8 +34,8 @@ export default class ConnectBrowserSessionRepo {
     throw new SqlStackError("Not implemented");
   }
 
-  @Query()
   @Single
+  @Query()
   findByTokenHash(_params: { session_token_hash: string }): Promise<ConnectBrowserSession | null> {
     throw new SqlStackError("Not implemented");
   }

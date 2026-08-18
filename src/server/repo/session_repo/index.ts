@@ -21,8 +21,8 @@ export default class SessionRepo {
     throw new SqlStackError("Not implemented");
   }
 
-  @Query()
   @Single
+  @Query()
   findBySessionId(_params: { session_id: string }): Promise<Session | null> {
     throw new SqlStackError("Not implemented");
   }

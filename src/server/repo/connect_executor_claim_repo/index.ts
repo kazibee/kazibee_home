@@ -25,17 +25,20 @@ export default class ConnectExecutorClaimRepo {
     throw new SqlStackError("Not implemented");
   }
 
-  @Query() @Single
+  @Single
+  @Query()
   findByClaimId(_params: { claim_id: string }): Promise<ConnectExecutorClaim | null> {
     throw new SqlStackError("Not implemented");
   }
 
-  @Query() @Single
+  @Single
+  @Query()
   findByCodeHash(_params: { short_code_hash: string }): Promise<ConnectExecutorClaim | null> {
     throw new SqlStackError("Not implemented");
   }
 
-  @Query() @Single
+  @Single
+  @Query()
   findByIdempotencyKey(_params: { idempotency_key: string }): Promise<ConnectExecutorClaim | null> {
     throw new SqlStackError("Not implemented");
   }

@@ -27,7 +27,8 @@ export default class ConnectExecutorRepo {
     throw new SqlStackError("Not implemented");
   }
 
-  @Query() @Single
+  @Single
+  @Query()
   findByExecutorId(_params: { executor_id: string }): Promise<ConnectExecutor | null> {
     throw new SqlStackError("Not implemented");
   }

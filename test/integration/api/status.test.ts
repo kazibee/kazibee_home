@@ -9,18 +9,15 @@
  * The test database is an in-memory SQLite database with all migrations applied.
  */
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
-import type { Express } from 'express';
 import request from 'supertest';
 import { getTestApp, cleanupTestApp, type TestAppResult } from '../../helpers/test-app';
 
 describe('Status Controller', () => {
   let testApp: TestAppResult;
-  let app: Express;
   let agent: ReturnType<typeof request.agent>;
 
   beforeAll(async () => {
     testApp = await getTestApp();
-    app = testApp.app;
     agent = testApp.agent;
   });
 
@@ -58,26 +55,3 @@ describe('Status Controller', () => {
   });
 });
 
-/**
- * Example of testing with the app directly (without agent)
- */
-describe('Status Controller (direct app)', () => {
-  let testResult: TestAppResult;
-
-  beforeAll(async () => {
-    testResult = await getTestApp();
-  });
-
-  afterAll(async () => {
-    await cleanupTestApp(testResult);
-  });
-
-  it('should handle the status endpoint', async () => {
-    // You can also use request(app) directly instead of the agent
-    // The agent is useful when you need to maintain cookies across requests
-    const response = await request(testResult.app).get('/api/status');
-
-    expect(response.status).toBe(200);
-    expect(response.body.status).toBe('OK');
-  });
-});

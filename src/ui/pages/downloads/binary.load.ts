@@ -1,4 +1,4 @@
-import { getContainer } from "@noego/app";
+import { getContainer } from "@noego/app/container";
 import DownloadLogic from "../../../server/logic/download.logic";
 
 interface DownloadItem {

@@ -1,22 +1,24 @@
 name: Deploy Worker (Cloudflare)
 
 # Same release discipline as deploy.yml (Docker/Node prod): pushing the
-# `release` branch deploys production; `workflow_dispatch` allows manual
-# staging deploys from any ref. Dev never runs here — local dev is
-# `noego serve` (Node) or `wrangler dev` (workerd) against .dev.vars.
+# `release` branch deploys; `workflow_dispatch` allows manual deploys
+# from any ref. Dev never runs here — local dev is `noego serve` (Node)
+# or `wrangler dev` (workerd) against .dev.vars.
 #
-# Required repo secrets:
-#   CLOUDFLARE_API_TOKEN   — API token with Workers deploy permission
-#                            (replaces interactive `wrangler login` in CI)
-#   CLOUDFLARE_ACCOUNT_ID  — the target Cloudflare account
-# One-time (per environment), run locally or via wrangler-action:
+# RUNNER: self-hosted. Register one on the machine that hosts the
+# noego_manager checkout (repo Settings → Actions → Runners → New
+# self-hosted runner), and set NOEGO_MANAGER=/path/to/noego_manager in
+# the runner's env (.env file in the runner directory). The workspace
+# link step below then makes the file:../../noego/* framework deps
+# resolve exactly like the local layout — no npm publish required.
+# When the packages are published and package.json pins versions, the
+# link step becomes a no-op and this can move back to ubuntu-latest.
+#
+# Required secrets:
+#   CLOUDFLARE_API_TOKEN   — environment secret on `dev` (Workers deploy)
+#   CLOUDFLARE_ACCOUNT_ID  — repository secret
+# One-time runtime secret (per environment):
 #   wrangler secret put DATABASE_URL   (worker Postgres; Hyperdrive later)
-#
-# KNOWN GATE: `npm ci` requires the @noego/* + sqlstack packages to be
-# published versions. The repo currently uses file:../../noego/* links,
-# which only resolve in the local meta-repo checkout — this workflow goes
-# green when the framework packages are published and package.json pins
-# them (the "release-legit" npm-publish workstream).
 
 on:
   push:
@@ -26,7 +28,7 @@ on:
 
 jobs:
   deploy-worker:
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
     # CLOUDFLARE_API_TOKEN lives as an ENVIRONMENT secret (GitHub
     # Environments are the dev/prod boundary): jobs only receive
     # environment secrets when they declare the environment. `dev` for
@@ -37,6 +39,19 @@ jobs:
     steps:
       - name: Checkout website
         uses: actions/checkout@v4
+
+      - name: Link framework workspace
+        # file:../../noego/* deps resolve two directories above the
+        # checkout — mirror the meta-repo layout with one symlink when
+        # the runner provides NOEGO_MANAGER. No-op otherwise (published
+        # packages path).
+        run: |
+          if [ -n "${NOEGO_MANAGER:-}" ] && [ -d "$NOEGO_MANAGER/noego" ]; then
+            ln -sfn "$NOEGO_MANAGER/noego" "$GITHUB_WORKSPACE/../../noego"
+            echo "Linked $GITHUB_WORKSPACE/../../noego -> $NOEGO_MANAGER/noego"
+          else
+            echo "NOEGO_MANAGER not set; expecting published framework packages."
+          fi
 
       - name: Setup Node
         uses: actions/setup-node@v4

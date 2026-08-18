@@ -27,6 +27,12 @@ on:
 jobs:
   deploy-worker:
     runs-on: ubuntu-latest
+    # CLOUDFLARE_API_TOKEN lives as an ENVIRONMENT secret (GitHub
+    # Environments are the dev/prod boundary): jobs only receive
+    # environment secrets when they declare the environment. `dev` for
+    # now; a `production` environment (own token + protection rules) can
+    # gate the release-branch deploy later.
+    environment: dev
 
     steps:
       - name: Checkout website

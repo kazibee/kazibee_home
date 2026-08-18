@@ -18,7 +18,10 @@ interface RequestDataLike {
     kind?: string;
     version?: string;
   };
-  url: string;
+  /** 0.x load contract: the request URL as a string. */
+  url?: string;
+  /** v1 FrontendExecutionInput: the fetch Request. */
+  request?: { url: string };
 }
 
 interface DownloadsResponse {
@@ -39,7 +42,7 @@ function resolveKindFromUrl(rawUrl: string): DownloadKind {
 export default async function load(req: RequestDataLike) {
   const kind = (req.params?.kind === "app" || req.params?.kind === "cli")
     ? req.params.kind as DownloadKind
-    : resolveKindFromUrl(req.url);
+    : resolveKindFromUrl(req.request?.url ?? req.url ?? "");
   const selectedVersion = req.params?.version ?? "latest";
 
   try {

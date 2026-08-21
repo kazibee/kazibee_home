@@ -1,0 +1,6 @@
+{
+  "migration_folder": "migrations/relay",
+  "migration_table": "proper_migrations_relay",
+  "database": "pg",
+  "pg": {}
+}

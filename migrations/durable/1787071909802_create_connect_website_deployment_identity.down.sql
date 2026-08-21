@@ -1,0 +1,1 @@
+DROP TABLE connect_website_deployment_identity;

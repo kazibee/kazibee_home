@@ -78,7 +78,7 @@ jobs:
             echo "GOOGLE_CLIENT_SECRET=$GOOGLE_CLIENT_SECRET"
           } >> "$GITHUB_ENV"
 
-      - name: Deploy with wrangler (env: production)
+      - name: "Deploy with wrangler (env: production)"
         uses: cloudflare/wrangler-action@v3
         # --env production on the command selects the [env.production]
         # wrangler section (worker `kazibee`, kazibee.com); the separate

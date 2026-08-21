@@ -1,0 +1,102 @@
+name: Deploy Worker Production (Cloudflare)
+
+# Production deploy of the SAME artifact discipline as deploy-worker.yml
+# (dev): build once with `noego build --target cloudflare`, then deploy the
+# wrangler [env.production] section (worker `kazibee`, kazibee.com custom
+# domain) generated from deploy.cloudflare.environments.production in
+# noego.config.yml.
+#
+# Manual-only (`workflow_dispatch`) until the VM deploy (deploy.yml) is
+# retired and prod cutover is verified; then add the `release` push
+# trigger and delete deploy.yml.
+#
+# Requires @noego/app >= 2.2.0 (deploy.cloudflare.environments support).
+#
+# Required configuration (GitHub `production` environment):
+#   CLOUDFLARE_API_TOKEN   — environment secret (Workers deploy, prod)
+#   DATABASE_URL           — environment secret: prod Postgres, used by the
+#                            migrate step (runner must reach it) and
+#                            uploaded as a Worker secret
+#   CLOUDFLARE_ACCOUNT_ID  — repository secret (account binding lives in
+#                            CI, not in noego.config.yml)
+#   AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY — repository secrets
+#                            (kazibee_deploy IAM user: SSM + S3 downloads)
+
+on:
+  workflow_dispatch:
+
+jobs:
+  deploy-worker-production:
+    runs-on: self-hosted
+    environment: production
+
+    steps:
+      - name: Checkout website
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build CSS (Tailwind)
+        run: npm run build:css
+
+      - name: Build Cloudflare worker (SSR pages + API)
+        run: npx noego build --target cloudflare --nodejs-compat
+
+      # Migrate the PROD Postgres before deploying. Worker owns only the
+      # durable set (proper.durable.json); relay is Node-only. `proper up`
+      # is idempotent and exits 1 on error, stopping the deploy.
+      - name: Migrate database (durable)
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: |
+          npx proper -c proper.durable.json status
+          npx proper -c proper.durable.json up
+
+      # App secrets live in AWS SSM Parameter Store (us-east-1, SecureString)
+      # under /kazibee/prod/... — pulled here and handed to wrangler as
+      # Worker secrets below.
+      - name: Load app secrets from SSM
+        id: ssm
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: us-east-1
+          SSM_PREFIX: /kazibee/prod
+        run: |
+          get() { aws ssm get-parameter --name "$SSM_PREFIX/$1" --with-decryption --query Parameter.Value --output text; }
+          GOOGLE_CLIENT_ID=$(get google/client_id)
+          GOOGLE_CLIENT_SECRET=$(get google/client_secret)
+          echo "::add-mask::$GOOGLE_CLIENT_SECRET"
+          {
+            echo "GOOGLE_CLIENT_ID=$GOOGLE_CLIENT_ID"
+            echo "GOOGLE_CLIENT_SECRET=$GOOGLE_CLIENT_SECRET"
+          } >> "$GITHUB_ENV"
+
+      - name: Deploy with wrangler (env: production)
+        uses: cloudflare/wrangler-action@v3
+        # --env production on the command selects the [env.production]
+        # wrangler section (worker `kazibee`, kazibee.com); the separate
+        # `environment: production` input scopes the `wrangler secret put`
+        # calls so the secrets below land on the production worker, not dev.
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          workingDirectory: dist/cloudflare
+          environment: production
+          command: deploy --env production
+          secrets: |
+            AWS_ACCESS_KEY_ID
+            AWS_SECRET_ACCESS_KEY
+            DATABASE_URL
+            GOOGLE_CLIENT_ID
+            GOOGLE_CLIENT_SECRET

@@ -25,11 +25,24 @@ assets:
 
 # Non-secret deploy metadata; secrets live in the Cloudflare secret
 # store (wrangler secret put) and GitHub Environments, never here.
+# Account binding is CI-owned too: set CLOUDFLARE_ACCOUNT_ID in the
+# environment (wrangler-action accountId input / shell export).
 deploy:
   cloudflare:
-    # dev.kazibee.com serves the FULL site (SSR pages + API) from the worker.
+    # Top level = the default (dev) environment: dev.kazibee.com serves
+    # the FULL site (SSR pages + API) from the worker.
     name: kazibee-dev
-    accountId: f2d8e579cb41cb1aa6a8aaa264222eaf
     routes:
       - pattern: dev.kazibee.com
         customDomain: true
+    # Named environments become wrangler [env.<name>] sections in the
+    # generated dist/cloudflare/wrangler.toml (one build artifact; pick
+    # the env at deploy time with `wrangler deploy --env <name>`).
+    # name and routes are required per env — wrangler inherits top-level
+    # routes otherwise, which would serve dev's routes.
+    environments:
+      production:
+        name: kazibee
+        routes:
+          - pattern: kazibee.com
+            customDomain: true

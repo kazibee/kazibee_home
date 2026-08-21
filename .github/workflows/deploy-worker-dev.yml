@@ -1,4 +1,4 @@
-name: Deploy Worker (Cloudflare)
+name: Deploy Worker Dev (Cloudflare)
 
 # Same release discipline as deploy.yml (Docker/Node prod): pushing the
 # `release` branch deploys; `workflow_dispatch` allows manual deploys
@@ -13,8 +13,9 @@ name: Deploy Worker (Cloudflare)
 # Required secrets:
 #   CLOUDFLARE_API_TOKEN   — environment secret on `dev` (Workers deploy)
 #   CLOUDFLARE_ACCOUNT_ID  — repository secret
-# One-time runtime secret (per environment):
-#   wrangler secret put DATABASE_URL   (worker Postgres; Hyperdrive later)
+#   DATABASE_URL           — environment secret on `dev`: used by the
+#                            migrate step (runner must reach the dev
+#                            Postgres) and uploaded as a Worker secret
 
 on:
   push:
@@ -49,6 +50,18 @@ jobs:
 
       - name: Build Cloudflare worker (SSR pages + API)
         run: npx noego build --target cloudflare --nodejs-compat
+
+      # Migrate the dev Postgres BEFORE deploying the new worker. The Worker
+      # only owns the durable set (proper.durable.json); relay is Node-only.
+      # `proper up` is idempotent: it diffs the migrations table, applies only
+      # pending files, prints "No pending migrations" otherwise, and exits 1
+      # on any error — which fails this step and stops the deploy.
+      - name: Migrate database (durable)
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: |
+          npx proper -c proper.durable.json status
+          npx proper -c proper.durable.json up
 
       # App secrets live in AWS SSM Parameter Store (account 083123597636,
       # us-east-1, SecureString) under /kazibee/<env>/... — the deploy IAM

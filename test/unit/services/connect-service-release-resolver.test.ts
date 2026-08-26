@@ -287,3 +287,71 @@ describe("index and revocation adapters", () => {
     expect(parsed).toEqual([{ releaseId: "rel_aaaaaaaa" }]);
   });
 });
+
+describe("dependency retry (transient S3/presign failures)", () => {
+  const EMPTY_POLICY = JSON.stringify({ schemaVersion: 1, revoked: [] });
+
+  function retryService(overrides: Partial<Record<"readItemText" | "readPolicyText" | "createDownload", unknown>>) {
+    const base = {
+      readItemText: vi.fn(async () => indexText([release()])),
+      readPolicyText: vi.fn(async () => EMPTY_POLICY),
+      createDownload: vi.fn(async () => ({ key: "k", url: "https://signed.example/a.tar.gz" })),
+      ...overrides,
+    };
+    return { service: base as unknown as DownloadService, ...base };
+  }
+
+  it("retries a transient index-read failure once and succeeds", async () => {
+    const readItemText = vi.fn()
+      .mockRejectedValueOnce(new Error("ETIMEDOUT"))
+      .mockResolvedValue(indexText([release()]));
+    const { service } = retryService({ readItemText });
+
+    const candidate = await new ConnectServiceReleaseResolver(service).resolve(REQUEST);
+
+    expect(candidate.version).toBe("1.2.1");
+    expect(readItemText).toHaveBeenCalledTimes(2);
+  });
+
+  it("gives up after the bounded retry and stays fail-closed", async () => {
+    const readItemText = vi.fn().mockRejectedValue(new Error("ETIMEDOUT"));
+    const { service } = retryService({ readItemText });
+
+    await expect(new ConnectServiceReleaseResolver(service).resolve(REQUEST))
+      .rejects.toThrow("ETIMEDOUT");
+    expect(readItemText).toHaveBeenCalledTimes(2);
+  });
+
+  it("retries a transient policy-read failure once and succeeds", async () => {
+    const readPolicyText = vi.fn()
+      .mockRejectedValueOnce(new Error("socket hang up"))
+      .mockResolvedValue(EMPTY_POLICY);
+    const { service } = retryService({ readPolicyText });
+
+    const candidate = await new ConnectServiceReleaseResolver(service).resolve(REQUEST);
+
+    expect(candidate.version).toBe("1.2.1");
+    expect(readPolicyText).toHaveBeenCalledTimes(2);
+  });
+
+  it("retries a transient presign failure once and succeeds", async () => {
+    const createDownload = vi.fn()
+      .mockRejectedValueOnce(new Error("connection reset"))
+      .mockResolvedValue({ key: "k", url: "https://signed.example/a.tar.gz" });
+    const { service } = retryService({ createDownload });
+
+    const candidate = await new ConnectServiceReleaseResolver(service).resolve(REQUEST);
+
+    expect(candidate.url).toBe("https://signed.example/a.tar.gz");
+    expect(createDownload).toHaveBeenCalledTimes(2);
+  });
+
+  it("does not retry semantic not-found results (absent policy fails closed on one attempt)", async () => {
+    const readPolicyText = vi.fn().mockRejectedValue(new NotFoundError("Policy item not found"));
+    const { service } = retryService({ readPolicyText });
+
+    await expect(new ConnectServiceReleaseResolver(service).resolve(REQUEST))
+      .rejects.toThrow("No compatible service release");
+    expect(readPolicyText).toHaveBeenCalledTimes(1);
+  });
+});

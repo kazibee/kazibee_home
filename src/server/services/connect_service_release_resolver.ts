@@ -14,6 +14,13 @@ const MAX_INDEX_BYTES = 1024 * 1024;
 const MAX_POLICY_BYTES = 256 * 1024;
 const MAX_INDEX_RELEASES = 500;
 
+/** Dependency-call resilience: one bounded retry with small backoff for
+ *  transient S3/presign failures. Semantic NotFound/Validation results are
+ *  never retried, and exhausted retries rethrow — callers keep today's
+ *  fail-closed behavior. */
+const DEPENDENCY_MAX_ATTEMPTS = 2;
+const DEPENDENCY_RETRY_BACKOFF_MS = 150;
+
 /** Ratified cross-repo contract: release CI writes the resolver index LAST at
  *  `service/latest/index.json`; operators (never release CI, never the website
  *  runtime) write the owner-protected revocation policy at
@@ -246,12 +253,12 @@ export default class ConnectServiceReleaseResolver {
 
     for (const { release } of candidates) {
       try {
-        const { url } = await this.downloads.createDownload(
+        const { url } = await this.dependencyCall("presign", () => this.downloads.createDownload(
           "service",
           `v${release.version}`,
           release.artifact,
           { expiresIn: this.expiresIn },
-        );
+        ));
         logger.info("Resolved service release", {
           architecture: request.architecture,
           platform: request.platform,
@@ -285,7 +292,8 @@ export default class ConnectServiceReleaseResolver {
   private async readIndex(): Promise<ResolverIndexRelease[]> {
     let text: string;
     try {
-      text = await this.downloads.readItemText("service", INDEX_VERSION_SEGMENT, INDEX_ITEM);
+      text = await this.dependencyCall("index-read", () =>
+        this.downloads.readItemText("service", INDEX_VERSION_SEGMENT, INDEX_ITEM));
     } catch (error) {
       if (error instanceof NotFoundError) {
         throw new NotFoundError(SAFE_NOT_FOUND);
@@ -303,7 +311,8 @@ export default class ConnectServiceReleaseResolver {
   private async readRevocations(): Promise<RevocationEntry[]> {
     let text: string;
     try {
-      text = await this.downloads.readPolicyText("service", REVOCATIONS_ITEM);
+      text = await this.dependencyCall("policy-read", () =>
+        this.downloads.readPolicyText("service", REVOCATIONS_ITEM));
     } catch (error) {
       if (error instanceof NotFoundError) {
         // Ratified: an absent policy object FAILS CLOSED — absence-as-empty would
@@ -324,6 +333,39 @@ export default class ConnectServiceReleaseResolver {
     return entries;
   }
 
+  /** One bounded retry for transient dependency failures (S3 reads, presign).
+   *  Semantic errors (NotFoundError/ValidationError) pass through untouched;
+   *  exhausted retries rethrow the last error so callers keep today's
+   *  fail-closed behavior. Structured logs name the failing leg for ops. */
+  private async dependencyCall<T>(leg: string, call: () => Promise<T>): Promise<T> {
+    let lastError: unknown;
+    for (let attempt = 1; attempt <= DEPENDENCY_MAX_ATTEMPTS; attempt += 1) {
+      try {
+        return await call();
+      } catch (error) {
+        if (error instanceof NotFoundError || error instanceof ValidationError) {
+          throw error;
+        }
+        lastError = error;
+        logger.warn("Service resolver dependency call failed", {
+          attempt,
+          leg,
+          maxAttempts: DEPENDENCY_MAX_ATTEMPTS,
+          ...describeDependencyError(error),
+        });
+        if (attempt < DEPENDENCY_MAX_ATTEMPTS) {
+          await sleep(DEPENDENCY_RETRY_BACKOFF_MS);
+        }
+      }
+    }
+    logger.error("Service resolver dependency failed after retries", {
+      leg,
+      maxAttempts: DEPENDENCY_MAX_ATTEMPTS,
+      ...describeDependencyError(lastError),
+    });
+    throw lastError;
+  }
+
   private readExpiresIn(): number {
     const raw = process.env.KAZIBEE_SERVICE_RESOLVE_EXPIRES_SECONDS ?? "300";
     const parsed = Number.parseInt(raw, 10);
@@ -332,6 +374,24 @@ export default class ConnectServiceReleaseResolver {
     }
     return 300;
   }
+}
+
+function describeDependencyError(error: unknown): Record<string, unknown> {
+  if (error instanceof Error) {
+    const metadata = (error as { $metadata?: { httpStatusCode?: number } }).$metadata;
+    return {
+      errorName: error.name,
+      errorMessage: error.message,
+      httpStatusCode: metadata?.httpStatusCode ?? null,
+    };
+  }
+  return { errorName: "unknown", errorMessage: String(error), httpStatusCode: null };
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => {
+    setTimeout(resolve, ms);
+  });
 }
 
 interface ParsedVersion {

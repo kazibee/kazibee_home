@@ -6,7 +6,10 @@ import { NotFoundError, ValidationError } from "../errors/domain_errors";
 
 const logger = getLogger("kazibee:download-service");
 
-export type DownloadKind = "cli" | "app";
+/** Public download kinds are listed on the website; "service" is a private
+ *  artifact prefix consumed only by the Connect service-release resolver
+ *  (isDownloadKind keeps public routes gated to cli|app). */
+export type DownloadKind = "cli" | "app" | "service";
 
 export const DOWNLOAD_KINDS: readonly DownloadKind[] = ["cli", "app"];
 
@@ -40,6 +43,7 @@ export default class DownloadService {
   private readonly prefixes: Record<DownloadKind, string> = {
     cli: this.normalizePrefix(process.env.KAZIBEE_CLI_PREFIX ?? "cli/"),
     app: this.normalizePrefix(process.env.KAZIBEE_APP_PREFIX ?? "app/"),
+    service: this.normalizePrefix(process.env.KAZIBEE_SERVICE_PREFIX ?? "service/"),
   };
 
   async listVersions(kind: DownloadKind): Promise<VersionsResult> {
@@ -168,6 +172,32 @@ export default class DownloadService {
     } catch (error) {
       if (this.isMissingObjectError(error)) {
         throw new NotFoundError("Download item not found");
+      }
+      throw error;
+    }
+  }
+
+  /** Read a small owner-protected policy text object under `<prefix>policy/<item>`. */
+  async readPolicyText(kind: DownloadKind, item: string): Promise<string> {
+    this.assertConfigured();
+    this.validateItem(item);
+
+    const key = `${this.prefixes[kind]}policy/${item}`;
+    logger.info("Reading policy item text", { bucket: this.bucket, key, kind });
+    try {
+      const result = await this.client.send(new GetObjectCommand({
+        Bucket: this.bucket,
+        Key: key,
+      }));
+      const text = await result.Body?.transformToString();
+      if (text === undefined) {
+        throw new NotFoundError("Policy item not found");
+      }
+      logger.info("Read policy item text", { bucket: this.bucket, key, length: text.length });
+      return text;
+    } catch (error) {
+      if (this.isMissingObjectError(error)) {
+        throw new NotFoundError("Policy item not found");
       }
       throw error;
     }

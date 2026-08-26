@@ -1,0 +1,65 @@
+module:
+  connectServiceReleases:
+    basePath: '/v1/connect/service-releases'
+    paths:
+      '/resolve':
+        post:
+          x-controller: connect_service_release.controller
+          x-action: resolve
+          summary: 'Resolve the highest compatible non-revoked Kazibee service release (public; untrusted transport hint only)'
+          requestBody:
+            required: true
+            content:
+              application/json:
+                schema: { $ref: '#/components/schemas/ServiceReleaseResolveRequest' }
+          responses:
+            '200':
+              description: 'One untrusted candidate hint with a short-lived download URL'
+              content:
+                application/json:
+                  schema: { $ref: '#/components/schemas/ServiceReleaseCandidate' }
+            '400': { $ref: '#/components/responses/ServiceReleaseErrorResult' }
+            '404': { $ref: '#/components/responses/ServiceReleaseErrorResult' }
+            '500': { $ref: '#/components/responses/ServiceReleaseErrorResult' }
+    components: &serviceReleaseComponents
+      schemas:
+        ServiceReleaseResolveRequest:
+          type: object
+          additionalProperties: false
+          required: [range, platform, architecture]
+          properties:
+            range:
+              type: string
+              maxLength: 32
+              pattern: '^\^?(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$'
+            platform: { type: string, enum: [darwin] }
+            architecture: { type: string, enum: [arm64, x64] }
+        ServiceReleaseCandidate:
+          type: object
+          additionalProperties: false
+          required: [releaseId, version, size, sha256, revoked, url]
+          properties:
+            releaseId: { type: string, pattern: '^rel_[A-Za-z0-9]{8,64}$', maxLength: 68 }
+            version:
+              type: string
+              maxLength: 64
+              pattern: '^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$'
+            size: { type: integer, minimum: 1 }
+            sha256: { type: string, pattern: '^[a-f0-9]{64}$' }
+            revoked: { type: boolean, enum: [false] }
+            url: { type: string, pattern: '^https://', maxLength: 2048 }
+        ServiceReleaseError:
+          type: object
+          additionalProperties: false
+          required: [error, code]
+          properties:
+            error: { type: boolean, enum: [true] }
+            code: { type: string, enum: [invalid-request, no-compatible-release, internal-error] }
+      responses:
+        ServiceReleaseErrorResult:
+          description: 'Closed error result — no artifact details disclosed'
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ServiceReleaseError' }
+components:
+  <<: *serviceReleaseComponents

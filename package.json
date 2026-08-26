@@ -13,6 +13,7 @@
     "dev": "DATABASE_URL=${DATABASE_URL:-postgres://noego:noego_dev@localhost:5432/kazibee};if [ -z \"$GOOGLE_CLIENT_ID\" ] && command -v aws >/dev/null 2>&1;then GOOGLE_CLIENT_ID=$(aws ssm get-parameter --profile kazibee --region us-east-1 --name /kazibee/dev/google/client_id --with-decryption --query Parameter.Value --output text);fi;export DATABASE_URL GOOGLE_CLIENT_ID;PORT=${PORT:-3000};lsof -ti :$PORT|xargs kill 2>/dev/null;noego dev 2>&1 | tee server.log",
     "build": "noego build",
     "lint": "eslint src",
+    "typecheck": "tsc --noEmit",
     "test": "NODE_OPTIONS='--import tsx' vitest run",
     "test:watch": "NODE_OPTIONS='--import tsx' vitest",
     "reset": "proper reset",

@@ -294,9 +294,11 @@ module:
         ConnectClaimChallenge:
           type: object
           additionalProperties: false
-          required: [kind, protocolVersion, claimId, actorRole, claimUrl, shortCode, displayName, platform, architecture, executorVersion, keyFingerprint, expiresAt, correlationId]
+          required: [kind, protocolVersion, claimId, executorId, deviceId, actorRole, claimUrl, shortCode, displayName, platform, architecture, executorVersion, keyFingerprint, expiresAt, correlationId]
           properties:
             kind: { type: string, enum: [executor.claim.challenge] }
+            executorId: { $ref: '#/components/schemas/ExecutorId' }
+            deviceId: { $ref: '#/components/schemas/ExecutorDeviceId' }
             protocolVersion: { type: string, enum: ['1.0'] }
             claimId: { $ref: '#/components/schemas/ExecutorClaimId' }
             actorRole: { type: string, enum: [claim_challenge] }

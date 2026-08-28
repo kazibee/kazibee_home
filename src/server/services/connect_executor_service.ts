@@ -14,7 +14,8 @@ import ConnectExecutorConnectionRegistry, { type ExecutorPresence } from "./conn
 import ConnectWebsiteDeploymentIdentityService from "./connect_website_deployment_identity_service";
 
 export interface ClaimChallenge {
-  claimId: string; claimUrl: string; shortCode: string; displayName: string;
+  claimId: string; executorId: string; deviceId: string;
+  claimUrl: string; shortCode: string; displayName: string;
   platform: string; architecture: string; executorVersion: string;
   keyFingerprint: string; expiresAt: string;
 }
@@ -313,7 +314,8 @@ export default class ConnectExecutorService {
     bootstrapToken: string,
   ): ClaimChallenge {
     return {
-      claimId: claim.claim_id, claimUrl: `${this.policy.claimBaseUrl}/claim/${claim.claim_id}`,
+      claimId: claim.claim_id, executorId: executor.executor_id, deviceId: executor.device_id,
+      claimUrl: `${this.policy.claimBaseUrl}/claim/${claim.claim_id}`,
       shortCode: this.shortCode(bootstrapToken, claim.claim_id),
       displayName: executor.display_name, platform: executor.platform,
       architecture: executor.architecture, executorVersion: executor.executor_version,

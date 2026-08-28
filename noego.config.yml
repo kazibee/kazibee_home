@@ -58,8 +58,16 @@ deploy:
         routes:
           - pattern: dev.kazibee.com
             customDomain: true
+        wrangler:
+          vars:
+            # Claim links printed by executors: ${base}/claim/:claimId maps
+            # onto the website's /connect/claim/:claimId page.
+            KAZI_CONNECT_ACCOUNT_URL: https://dev.kazibee.com/connect
       production:
         name: kazibee
         routes:
           - pattern: kazibee.com
             customDomain: true
+        wrangler:
+          vars:
+            KAZI_CONNECT_ACCOUNT_URL: https://kazibee.com/connect

@@ -38,7 +38,8 @@ export default class ConnectExecutorController {
     if (result.outcome === "failed") return this.internal(res, input.value.correlationId);
     return res.status(result.outcome === "created" ? 201 : 200).json({
       kind: "executor.claim.challenge", protocolVersion: PROTOCOL,
-      claimId: result.challenge.claimId, actorRole: "claim_challenge",
+      claimId: result.challenge.claimId, executorId: result.challenge.executorId,
+      deviceId: result.challenge.deviceId, actorRole: "claim_challenge",
       claimUrl: result.challenge.claimUrl, shortCode: result.challenge.shortCode,
       displayName: result.challenge.displayName, platform: result.challenge.platform,
       architecture: result.challenge.architecture, executorVersion: result.challenge.executorVersion,

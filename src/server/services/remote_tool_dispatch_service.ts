@@ -46,6 +46,31 @@ const DEFAULT_DEADLINE_MS = 45_000;
 export default class RemoteToolDispatchService {
   constructor(@Inject(Env) private readonly env: Env) {}
 
+  /**
+   * Live presence as the ExecutorCoordinator sees it, or null when this
+   * deployment has no coordinator routing at all (pure in-process channels).
+   */
+  async presence(executorId: string): Promise<"online" | "stale" | "offline" | null> {
+    const coordinator = asCoordinator(this.env.get("EXECUTOR_COORDINATOR"));
+    const devOrigin = this.env.string("KAZIBEE_DEV_COORDINATOR_ORIGIN");
+    if (!coordinator && !devOrigin) return null;
+    try {
+      const request = new Request(
+        coordinator
+          ? "https://coordinator/presence"
+          : `${devOrigin}/executors/${encodeURIComponent(executorId)}/presence`,
+      );
+      const response = coordinator
+        ? await coordinator.get(coordinator.idFromName(executorId)).fetch(request)
+        : await fetch(request);
+      if (!response.ok) return "offline";
+      const body = (await response.json()) as { state?: unknown };
+      return body.state === "online" || body.state === "stale" ? body.state : "offline";
+    } catch {
+      return "offline";
+    }
+  }
+
   async call(grant: RemoteToolGrant, toolName: string, args: Record<string, unknown>): Promise<DispatchResult> {
     const coordinator = asCoordinator(this.env.get("EXECUTOR_COORDINATOR"));
     // Node dev has no Durable Object runtime; a local dev coordinator speaks

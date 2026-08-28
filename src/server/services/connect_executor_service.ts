@@ -12,6 +12,7 @@ import type { ConnectExecutorActor } from "./connect_executor_actor_resolver";
 import TraceAdapter, { type TracePort } from "../observability/trace_adapter";
 import ConnectExecutorConnectionRegistry, { type ExecutorPresence } from "./connect_executor_connection_registry";
 import ConnectWebsiteDeploymentIdentityService from "./connect_website_deployment_identity_service";
+import RemoteToolDispatchService from "./remote_tool_dispatch_service";
 
 export interface ClaimChallenge {
   claimId: string; executorId: string; deviceId: string;
@@ -67,6 +68,7 @@ export default class ConnectExecutorService {
     @Inject(ConnectExecutorConnectionRegistry) private readonly connections: ConnectExecutorConnectionRegistry,
     @Inject(ConnectWebsiteDeploymentIdentityService)
     private readonly deploymentIdentity: ConnectWebsiteDeploymentIdentityService,
+    @Inject(RemoteToolDispatchService) private readonly dispatchRouting: RemoteToolDispatchService,
   ) {
     this.logger = loggers.forSource("connect-executors");
     this.trace = traces.forSource("ConnectExecutorService");
@@ -264,8 +266,13 @@ export default class ConnectExecutorService {
       : [];
   }
 
-  presence(executorId: string): ExecutorPresence {
-    return this.connections.presence(executorId);
+  async presence(executorId: string): Promise<ExecutorPresence> {
+    // Channels terminate at the ExecutorCoordinator (Durable Object on
+    // workers, dev coordinator under node dev), so live presence comes from
+    // there; the in-process registry only answers when no coordinator
+    // routing exists.
+    const routed = await this.dispatchRouting.presence(executorId);
+    return routed ?? this.connections.presence(executorId);
   }
 
   async detail(actor: ConnectExecutorActor, executorId: string): Promise<OwnerResult> {

@@ -128,7 +128,7 @@ export default class ConnectExecutorController {
     const executors = await this.logic.list(actor.actor);
     return res.json({
       kind: "executor.list.response", protocolVersion: PROTOCOL,
-      executors: executors.map((executor) => this.summary(executor)),
+      executors: await Promise.all(executors.map((executor) => this.summary(executor))),
       correlationId: query.value.correlationId,
     });
   }
@@ -144,7 +144,7 @@ export default class ConnectExecutorController {
     if (result.outcome === "failed") return this.internal(res, query.value.correlationId);
     return res.json({
       kind: "executor.detail.response", protocolVersion: PROTOCOL,
-      executor: this.summary(result.executor), deviceId: result.executor.device_id,
+      executor: await this.summary(result.executor), deviceId: result.executor.device_id,
       actorRole: "executor_device", lastSeenAt: result.executor.last_seen_at,
       correlationId: query.value.correlationId,
     });
@@ -170,7 +170,7 @@ export default class ConnectExecutorController {
     if (result.outcome === "failed") return this.internal(res, input.value.correlationId);
     return res.json({
       kind: "executor.detail.response", protocolVersion: PROTOCOL,
-      executor: this.summary(result.executor), deviceId: result.executor.device_id,
+      executor: await this.summary(result.executor), deviceId: result.executor.device_id,
       actorRole: "executor_device", lastSeenAt: result.executor.last_seen_at,
       correlationId: input.value.correlationId,
     });
@@ -200,8 +200,8 @@ export default class ConnectExecutorController {
     });
   }
 
-  private summary(executor: ConnectExecutor) {
-    const presence = this.logic.presence(executor.executor_id);
+  private async summary(executor: ConnectExecutor) {
+    const presence = await this.logic.presence(executor.executor_id);
     return {
       executorId: executor.executor_id, displayName: executor.display_name,
       state: executor.state, online: presence === "online", presence, protocolVersion: PROTOCOL,

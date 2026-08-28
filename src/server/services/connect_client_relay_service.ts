@@ -122,8 +122,8 @@ export default class ConnectClientRelayService {
       owner_user_id: actor.ownerUserId,
       limit: 100,
     });
-    return executors.map((executor) => {
-      const presence = this.executors.presence(executor.executor_id);
+    return Promise.all(executors.map(async (executor) => {
+      const presence = await this.executors.presence(executor.executor_id);
       return {
         executorId: executor.executor_id,
         displayName: executor.display_name,
@@ -132,7 +132,7 @@ export default class ConnectClientRelayService {
         presence,
         protocolVersion: PROTOCOL,
       };
-    });
+    }));
   }
 
   revokeDesktop(deviceId: string, correlationId: string): void {

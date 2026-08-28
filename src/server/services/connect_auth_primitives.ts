@@ -57,6 +57,10 @@ export class ConnectIdGenerator {
     return `ses_${randomBytes(16).toString("hex")}`;
   }
 
+  identityId(): string {
+    return `idn_${randomBytes(18).toString("base64url")}`;
+  }
+
   credentialId(): string {
     return `cred_${randomBytes(16).toString("hex")}`;
   }

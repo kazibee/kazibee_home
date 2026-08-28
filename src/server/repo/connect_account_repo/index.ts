@@ -6,9 +6,12 @@ export type ConnectAccountStatus = "active" | "disabled";
 export interface ConnectAccount {
   user_id: string;
   username: string;
-  password_hash: string;
+  email: string;
+  email_verified_at: string | null;
+  password_hash: string | null;
   status: ConnectAccountStatus;
   created_at: string;
+  updated_at: string;
 }
 
 @QueryBinder()
@@ -18,9 +21,12 @@ export default class ConnectAccountRepo {
   createAccount(_params: {
     user_id: string;
     username: string;
-    password_hash: string;
+    email: string;
+    email_verified_at: string | null;
+    password_hash: string | null;
     status: ConnectAccountStatus;
     created_at: string;
+    updated_at: string;
   }): Promise<void> {
     throw new SqlStackError("Not implemented");
   }
@@ -28,6 +34,22 @@ export default class ConnectAccountRepo {
   @Single
   @Query()
   findByUsername(_params: { username: string }): Promise<ConnectAccount | null> {
+    throw new SqlStackError("Not implemented");
+  }
+
+  @Single
+  @Query()
+  findByEmail(_params: { email: string }): Promise<ConnectAccount | null> {
+    throw new SqlStackError("Not implemented");
+  }
+
+  @Query()
+  setPassword(_params: {
+    user_id: string;
+    username: string;
+    password_hash: string;
+    updated_at: string;
+  }): Promise<void> {
     throw new SqlStackError("Not implemented");
   }
 

@@ -33,7 +33,7 @@ async function authenticate(
   const username = `desktop.${suffix}`;
   const accountPassword = `desktop ${suffix} secret phrase`;
   const signup = await agent.post("/v1/connect/auth/signup").send({
-    kind: "auth.signup.request", protocolVersion: "1.0", username,
+    kind: "auth.signup.request", protocolVersion: "1.0", username, email: "shavyg2@gmail.com",
     password: accountPassword, idempotencyKey: `idem_desktop_signup_${suffix}_0001`,
     correlationId: `cor_signup${suffix}0001`,
   });
@@ -106,7 +106,7 @@ describe("Connect Desktop migrated real HTTP boundary", () => {
       .send({ ...claim, displayName: "Mismatch", correlationId: "cor_desktophttp3" })).status).toBe(409);
 
     await testApp.agent.post("/v1/connect/auth/signup").send({
-      kind: "auth.signup.request", protocolVersion: "1.0", username: "desktop.owner",
+      kind: "auth.signup.request", protocolVersion: "1.0", username: "desktop.owner", email: "shavyg2@gmail.com",
       password, idempotencyKey: "idem_desktop_signup_0001", correlationId: "cor_desktopsign1",
     });
     const login = await testApp.agent.post("/v1/connect/auth/login").send({

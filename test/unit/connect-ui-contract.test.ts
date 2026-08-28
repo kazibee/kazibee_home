@@ -31,14 +31,15 @@ describe('Connect UI Forge contract', () => {
 
   it('loads auth mode/return target and dynamic claim params for Forge controllers', async () => {
     await expect(loadAuth({
-      url: 'https://kazibee.test/connect/signup?returnTo=%2Fconnect%2Fclaim%2Fclm_12345678',
+      request: { url: 'https://kazibee.test/connect/signup?returnTo=%2Fconnect%2Fclaim%2Fclm_12345678' },
     })).resolves.toEqual({
       mode: 'signup',
       returnTo: '/connect/claim/clm_12345678',
+      googleClientId: '',
     });
     await expect(loadClaim({
       params: { claimId: 'clm_12345678' },
-      url: 'https://kazibee.test/connect/claim/clm_other123',
+      request: { url: 'https://kazibee.test/connect/claim/clm_other123' },
     })).resolves.toEqual({ claimId: 'clm_12345678' });
   });
 });

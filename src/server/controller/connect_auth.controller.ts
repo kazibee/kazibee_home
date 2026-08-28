@@ -40,6 +40,7 @@ export default class ConnectAuthController {
       protocolVersion: "1.0",
       userId: result.userId,
       username: result.username,
+      email: result.email,
       correlationId: input.value.correlationId,
     });
   }
@@ -51,6 +52,27 @@ export default class ConnectAuthController {
     const result = await this.logic.login(GUEST_ACTOR, input.value);
     if (result.outcome === "invalid-credentials") {
       return this.error(res, 401, "invalid-envelope", "Invalid credentials", input.value.correlationId);
+    }
+    if (result.outcome === "failed") return this.internal(res, input.value.correlationId);
+    this.cookies.set(res, result.session.sessionToken, result.session.csrfToken);
+    return res.status(200).json({
+      kind: "auth.login.response",
+      protocolVersion: "1.0",
+      userId: result.session.userId,
+      sessionId: result.session.sessionId,
+      actorRole: "browser_session",
+      expiresAt: result.session.expiresAt,
+      correlationId: input.value.correlationId,
+    });
+  }
+
+  async google({ req, res }: { req: Request; res: Response }) {
+    this.routeStarted("google");
+    const input = this.parser.google(req.body);
+    if (!input.ok) return this.parseError(res, "google", input.reason, input.correlationId);
+    const result = await this.logic.google(GUEST_ACTOR, input.value);
+    if (result.outcome === "invalid-credentials") {
+      return this.error(res, 401, "invalid-envelope", "Invalid Google account", input.value.correlationId);
     }
     if (result.outcome === "failed") return this.internal(res, input.value.correlationId);
     this.cookies.set(res, result.session.sessionToken, result.session.csrfToken);

@@ -1,6 +1,7 @@
 import { Component, Inject } from "@noego/ioc";
 import ConnectAccountRepo from "../repo/connect_account_repo";
 import ConnectBrowserSessionRepo from "../repo/connect_browser_session_repo";
+import ConnectIdentityRepo from "../repo/connect_identity_repo";
 import TraceAdapter, { type TracePort } from "../observability/trace_adapter";
 import ConnectAuthPolicy from "./connect_auth_policy";
 import {
@@ -13,14 +14,16 @@ import {
 } from "./connect_auth_primitives";
 import type {
   LoginInput,
+  GoogleInput,
   LogoutInput,
   SessionInput,
   SignupInput,
 } from "./connect_auth_request_parser";
 import ConnectSessionAuthService from "./connect_session_auth_service";
+import ConnectGoogleTokenVerifier from "./connect_google_token_verifier";
 
 export type SignupResult =
-  | { outcome: "created"; userId: string; username: string }
+  | { outcome: "created"; userId: string; username: string; email: string }
   | { outcome: "duplicate" }
   | { outcome: "failed" };
 
@@ -56,12 +59,14 @@ export default class ConnectAuthService {
   constructor(
     @Inject(ConnectAccountRepo) private readonly accountRepo: ConnectAccountRepo,
     @Inject(ConnectBrowserSessionRepo) private readonly sessionRepo: ConnectBrowserSessionRepo,
+    @Inject(ConnectIdentityRepo) private readonly identityRepo: ConnectIdentityRepo,
     @Inject(ConnectSessionAuthService) private readonly sessionAuth: ConnectSessionAuthService,
     @Inject(ConnectPasswordHasher) private readonly passwords: ConnectPasswordHasher,
     @Inject(ConnectCredentials) private readonly credentials: ConnectCredentials,
     @Inject(ConnectIdGenerator) private readonly ids: ConnectIdGenerator,
     @Inject(ConnectClock) private readonly clock: ConnectClock,
     @Inject(ConnectAuthPolicy) private readonly policy: ConnectAuthPolicy,
+    @Inject(ConnectGoogleTokenVerifier) private readonly googleTokens: ConnectGoogleTokenVerifier,
     @Inject(WebsiteLoggerAdapter) loggers: WebsiteLoggerAdapter,
     @Inject(TraceAdapter) traces: TraceAdapter,
   ) {
@@ -74,15 +79,34 @@ export default class ConnectAuthService {
     const userId = this.ids.userId();
     try {
       const passwordHash = await this.passwords.hash(input.password);
+      const now = this.clock.now().toISOString();
+      const existing = await this.accountRepo.findByEmail({ email: input.email });
+      if (existing) {
+        if (existing.password_hash) {
+          this.skipped("signup", input.correlationId, "duplicate");
+          return { outcome: "duplicate" };
+        }
+        await this.accountRepo.setPassword({
+          user_id: existing.user_id,
+          username: input.username,
+          password_hash: passwordHash,
+          updated_at: now,
+        });
+        this.completed("signup", input.correlationId, { userId: existing.user_id, outcome: "linked", count: 1 });
+        return { outcome: "created", userId: existing.user_id, username: input.username, email: input.email };
+      }
       await this.accountRepo.createAccount({
         user_id: userId,
         username: input.username,
+        email: input.email,
+        email_verified_at: null,
         password_hash: passwordHash,
         status: "active",
-        created_at: this.clock.now().toISOString(),
+        created_at: now,
+        updated_at: now,
       });
       this.completed("signup", input.correlationId, { userId, outcome: "created", count: 1 });
-      return { outcome: "created", userId, username: input.username };
+      return { outcome: "created", userId, username: input.username, email: input.email };
     } catch (error) {
       if (this.isUniqueViolation(error)) {
         this.skipped("signup", input.correlationId, "duplicate");
@@ -96,49 +120,62 @@ export default class ConnectAuthService {
   async login(input: LoginInput): Promise<LoginResult> {
     this.started("login", input.correlationId);
     try {
-      const account = await this.accountRepo.findByUsername({ username: input.username });
+      const account = input.identifier.includes("@")
+        ? await this.accountRepo.findByEmail({ email: input.identifier })
+        : await this.accountRepo.findByUsername({ username: input.identifier });
       const validPassword = account
+        && account.password_hash
         ? await this.passwords.verify(input.password, account.password_hash)
         : await this.passwords.verifyCanary(input.password);
       if (!account || !validPassword || account.status !== "active") {
         this.skipped("login", input.correlationId, "invalid-credentials");
         return { outcome: "invalid-credentials" };
       }
-      const now = this.clock.now();
-      const sessionId = this.ids.sessionId();
-      const sessionToken = this.credentials.randomToken();
-      const csrfToken = this.credentials.randomToken();
-      const absoluteExpiry = new Date(now.getTime() + this.policy.absoluteSessionMs);
-      const idleExpiry = new Date(now.getTime() + this.policy.idleSessionMs);
-      await this.sessionRepo.createSession({
-        session_id: sessionId,
-        user_id: account.user_id,
-        session_token_hash: this.credentials.hashToken(sessionToken),
-        csrf_token_hash: this.credentials.hashToken(csrfToken),
-        status: "active",
-        created_at: now.toISOString(),
-        last_seen_at: now.toISOString(),
-        idle_expires_at: idleExpiry.toISOString(),
-        absolute_expires_at: absoluteExpiry.toISOString(),
-      });
-      this.completed("login", input.correlationId, {
-        userId: account.user_id,
-        sessionId,
-        outcome: "created",
-        count: 1,
-      });
-      return {
-        outcome: "created",
-        session: {
-          userId: account.user_id,
-          sessionId,
-          sessionToken,
-          csrfToken,
-          expiresAt: absoluteExpiry.toISOString(),
-        },
-      };
+      return this.createSession(account, input.correlationId, "login");
     } catch (error) {
       this.failed("login", input.correlationId, error);
+      return { outcome: "failed" };
+    }
+  }
+
+  async google(input: GoogleInput): Promise<LoginResult> {
+    this.started("google", input.correlationId);
+    try {
+      const identity = await this.googleTokens.verify(input.credential);
+      const email = identity?.email ?? "";
+      const subject = identity?.subject ?? "";
+      if (!identity || !this.policy.isAllowedEmail(email)) {
+        this.skipped("google", input.correlationId, "invalid-credentials");
+        return { outcome: "invalid-credentials" };
+      }
+
+      let account = await this.accountRepo.findByEmail({ email });
+      if (!account) {
+        const now = this.clock.now().toISOString();
+        const userId = this.ids.userId();
+        await this.accountRepo.createAccount({
+          user_id: userId,
+          username: "shavyg2",
+          email,
+          email_verified_at: now,
+          password_hash: null,
+          status: "active",
+          created_at: now,
+          updated_at: now,
+        });
+        account = await this.accountRepo.findByEmail({ email });
+        if (!account) throw new Error("Google account was not persisted");
+      }
+      await this.identityRepo.linkGoogle({
+        id: this.ids.identityId(),
+        user_id: account.user_id,
+        provider_subject: subject,
+        email,
+        created_at: this.clock.now().toISOString(),
+      });
+      return this.createSession(account, input.correlationId, "google");
+    } catch (error) {
+      this.failed("google", input.correlationId, error);
       return { outcome: "failed" };
     }
   }
@@ -168,6 +205,42 @@ export default class ConnectAuthService {
       this.failed("session", input.correlationId, error);
       return { outcome: "failed" };
     }
+  }
+
+  private async createSession(
+    account: { user_id: string; status: "active" | "disabled" },
+    correlationId: string,
+    action: "login" | "google",
+  ): Promise<LoginResult> {
+    if (account.status !== "active") return { outcome: "invalid-credentials" };
+    const now = this.clock.now();
+    const sessionId = this.ids.sessionId();
+    const sessionToken = this.credentials.randomToken();
+    const csrfToken = this.credentials.randomToken();
+    const absoluteExpiry = new Date(now.getTime() + this.policy.absoluteSessionMs);
+    const idleExpiry = new Date(now.getTime() + this.policy.idleSessionMs);
+    await this.sessionRepo.createSession({
+      session_id: sessionId,
+      user_id: account.user_id,
+      session_token_hash: this.credentials.hashToken(sessionToken),
+      csrf_token_hash: this.credentials.hashToken(csrfToken),
+      status: "active",
+      created_at: now.toISOString(),
+      last_seen_at: now.toISOString(),
+      idle_expires_at: idleExpiry.toISOString(),
+      absolute_expires_at: absoluteExpiry.toISOString(),
+    });
+    this.completed(action, correlationId, { userId: account.user_id, sessionId, outcome: "created", count: 1 });
+    return {
+      outcome: "created",
+      session: {
+        userId: account.user_id,
+        sessionId,
+        sessionToken,
+        csrfToken,
+        expiresAt: absoluteExpiry.toISOString(),
+      },
+    };
   }
 
   async logout(
@@ -244,7 +317,11 @@ export default class ConnectAuthService {
   }
 
   private isUniqueViolation(error: unknown): boolean {
-    return error instanceof Error
-      && error.message.toLowerCase().includes("unique constraint failed");
+    if (!(error instanceof Error)) return false;
+    const code = (error as Error & { code?: string }).code;
+    const message = error.message.toLowerCase();
+    return code === "23505"
+      || message.includes("unique constraint failed")
+      || message.includes("duplicate key value violates unique constraint");
   }
 }

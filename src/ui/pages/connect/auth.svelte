@@ -2,6 +2,10 @@
   let { data, input } = $props();
 </script>
 
+<svelte:head>
+  <script src="https://accounts.google.com/gsi/client" async defer></script>
+</svelte:head>
+
 <section class="relative overflow-hidden px-5 py-12 sm:px-8 sm:py-20" data-test-id="connect-auth-page">
   <div class="pointer-events-none absolute inset-x-0 top-0 h-72 bg-gradient-to-b from-honey-50 to-transparent"></div>
   <div class="relative mx-auto grid max-w-5xl items-center gap-10 lg:grid-cols-[1fr_440px]">
@@ -41,8 +45,20 @@
           </a>
         </div>
       {:else}
+        {#if data.googleClientId}
+          <div
+            id="g_id_onload"
+            data-client_id={data.googleClientId}
+            data-callback="handleKazibeeGoogleCredential"
+            data-auto_prompt="false"
+          ></div>
+          <div class="g_id_signin mt-7 flex justify-center" data-type="standard" data-theme="outline" data-size="large"></div>
+          <div class="my-6 flex items-center gap-3 text-xs font-semibold uppercase tracking-wider text-neutral-400">
+            <span class="h-px flex-1 bg-neutral-200"></span><span>or</span><span class="h-px flex-1 bg-neutral-200"></span>
+          </div>
+        {/if}
         <form
-          class="mt-7 space-y-5"
+          class={data.googleClientId ? 'space-y-5' : 'mt-7 space-y-5'}
           data-test-id="connect-auth-form"
           onsubmit={(event) => {
             event.preventDefault();
@@ -65,6 +81,22 @@
               data-test-id="connect-username"
             />
           </label>
+
+          {#if data.mode === 'signup'}
+            <label class="block">
+              <span class="text-sm font-semibold text-ink">Email</span>
+              <input
+                type="email"
+                name="email"
+                value={data.email}
+                autocomplete="email"
+                required
+                oninput={(event) => input.setEmail(event.currentTarget.value)}
+                class="mt-2 w-full rounded-xl border border-neutral-300 bg-white px-4 py-3 text-base text-ink outline-none transition focus:border-blue-500 focus:ring-4 focus:ring-blue-50"
+                data-test-id="connect-email"
+              />
+            </label>
+          {/if}
 
           <label class="block">
             <span class="text-sm font-semibold text-ink">Password</span>

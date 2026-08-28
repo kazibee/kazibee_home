@@ -58,6 +58,30 @@ module:
               $ref: '#/components/responses/ConnectConflict'
             '500':
               $ref: '#/components/responses/ConnectInternalError'
+      '/google':
+        post:
+          x-controller: connect_auth.controller
+          x-action: google
+          summary: Sign in with a Google ID token for the configured account
+          requestBody:
+            required: true
+            content:
+              application/json:
+                schema:
+                  $ref: '#/components/schemas/ConnectGoogleRequest'
+          responses:
+            '200':
+              description: Authenticated; browser cookies are set
+              content:
+                application/json:
+                  schema:
+                    $ref: '#/components/schemas/ConnectLoginResponse'
+            '400':
+              $ref: '#/components/responses/ConnectInvalidEnvelope'
+            '401':
+              $ref: '#/components/responses/ConnectUnauthorized'
+            '500':
+              $ref: '#/components/responses/ConnectInternalError'
       '/session':
         get:
           x-controller: connect_auth.controller
@@ -170,6 +194,10 @@ module:
           pattern: '^[a-z0-9][a-z0-9._-]{2,63}$'
           minLength: 3
           maxLength: 64
+        ConnectEmail:
+          type: string
+          format: email
+          enum: [shavyg2@gmail.com]
         ConnectPassword:
           type: string
           minLength: 12
@@ -195,7 +223,7 @@ module:
         ConnectSignupRequest:
           type: object
           additionalProperties: false
-          required: [kind, protocolVersion, username, password, idempotencyKey, correlationId]
+          required: [kind, protocolVersion, username, email, password, idempotencyKey, correlationId]
           properties:
             kind:
               type: string
@@ -204,6 +232,8 @@ module:
               $ref: '#/components/schemas/ConnectProtocolVersion'
             username:
               $ref: '#/components/schemas/ConnectRawUsername'
+            email:
+              $ref: '#/components/schemas/ConnectEmail'
             password:
               $ref: '#/components/schemas/ConnectPassword'
             idempotencyKey:
@@ -213,7 +243,7 @@ module:
         ConnectSignupResponse:
           type: object
           additionalProperties: false
-          required: [kind, protocolVersion, userId, username, correlationId]
+          required: [kind, protocolVersion, userId, username, email, correlationId]
           properties:
             kind:
               type: string
@@ -224,6 +254,8 @@ module:
               $ref: '#/components/schemas/ConnectUserId'
             username:
               $ref: '#/components/schemas/ConnectUsername'
+            email:
+              $ref: '#/components/schemas/ConnectEmail'
             correlationId:
               $ref: '#/components/schemas/ConnectCorrelationId'
         ConnectLoginRequest:
@@ -237,7 +269,8 @@ module:
             protocolVersion:
               $ref: '#/components/schemas/ConnectProtocolVersion'
             username:
-              $ref: '#/components/schemas/ConnectRawUsername'
+              type: string
+              description: The configured account's username or email address.
             password:
               $ref: '#/components/schemas/ConnectPassword'
             idempotencyKey:
@@ -264,6 +297,24 @@ module:
             expiresAt:
               type: string
               format: date-time
+            correlationId:
+              $ref: '#/components/schemas/ConnectCorrelationId'
+        ConnectGoogleRequest:
+          type: object
+          additionalProperties: false
+          required: [kind, protocolVersion, credential, idempotencyKey, correlationId]
+          properties:
+            kind:
+              type: string
+              enum: [auth.google.request]
+            protocolVersion:
+              $ref: '#/components/schemas/ConnectProtocolVersion'
+            credential:
+              type: string
+              minLength: 1
+              maxLength: 8192
+            idempotencyKey:
+              $ref: '#/components/schemas/ConnectIdempotencyKey'
             correlationId:
               $ref: '#/components/schemas/ConnectCorrelationId'
         ConnectSessionResponse:

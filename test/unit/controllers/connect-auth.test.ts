@@ -76,6 +76,7 @@ describe('ConnectAuthController', () => {
     const controller = new ConnectAuthController(dependencies(fetchMock));
     controller.initialize({ mode: 'signup', returnTo: '/connect' });
     controller.input.setUsername('new.owner');
+    controller.input.setEmail('shavyg2@gmail.com');
     controller.input.setPassword('a secure password');
     controller.input.setConfirmPassword('a secure password');
     await controller.input.submit();
@@ -90,6 +91,7 @@ describe('ConnectAuthController', () => {
     const controller = new ConnectAuthController(dependencies(fetchMock));
     controller.initialize({ mode: 'signup' });
     controller.input.setUsername('new.owner');
+    controller.input.setEmail('shavyg2@gmail.com');
     controller.input.setPassword('a secure password');
     controller.input.setConfirmPassword('a different password');
     await controller.input.submit();
@@ -103,4 +105,3 @@ describe('ConnectAuthController', () => {
     expect(controller.data.password).toBe('');
   });
 });
-

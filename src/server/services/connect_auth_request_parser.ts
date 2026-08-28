@@ -10,13 +10,15 @@ export interface SignupInput {
   kind: "auth.signup.request";
   protocolVersion: "1.0";
   username: string;
+  email: string;
   password: string;
   idempotencyKey: string;
   correlationId: string;
 }
 
-export interface LoginInput extends Omit<SignupInput, "kind"> {
+export interface LoginInput extends Omit<SignupInput, "kind" | "email" | "username"> {
   kind: "auth.login.request";
+  identifier: string;
 }
 
 export interface SessionInput {
@@ -30,6 +32,14 @@ export interface SessionInput {
 export interface LogoutInput extends Omit<SessionInput, "kind"> {
   kind: "auth.logout.request";
   idempotencyKey: string;
+}
+
+export interface GoogleInput {
+  kind: "auth.google.request";
+  protocolVersion: "1.0";
+  credential: string;
+  idempotencyKey: string;
+  correlationId: string;
 }
 
 const CORRELATION_PATTERN = /^cor_[A-Za-z0-9]{8,64}$/;
@@ -55,13 +65,32 @@ export default class ConnectAuthRequestParser {
   constructor(@Inject(ConnectAuthPolicy) private readonly policy: ConnectAuthPolicy) {}
 
   signup(body: unknown): ParseResult<SignupInput> {
-    const parsed = this.credentials(body, "auth.signup.request");
+    const parsed = this.signupCredentials(body);
     return parsed.ok ? { ok: true, value: { ...parsed.value, kind: "auth.signup.request" } } : parsed;
   }
 
   login(body: unknown): ParseResult<LoginInput> {
-    const parsed = this.credentials(body, "auth.login.request");
+    const parsed = this.loginCredentials(body);
     return parsed.ok ? { ok: true, value: { ...parsed.value, kind: "auth.login.request" } } : parsed;
+  }
+
+  google(body: unknown): ParseResult<GoogleInput> {
+    const keys = ["kind", "protocolVersion", "credential", "idempotencyKey", "correlationId"];
+    if (!isRecord(body) || !hasExactKeys(body, keys)) return this.invalid(body);
+    if (body.protocolVersion !== this.policy.protocolVersion) return this.protocol(body);
+    const credential = stringField(body, "credential");
+    const idempotencyKey = stringField(body, "idempotencyKey");
+    const correlationId = stringField(body, "correlationId");
+    if (
+      body.kind !== "auth.google.request"
+      || !credential || credential.length > 8192
+      || !idempotencyKey || !IDEMPOTENCY_PATTERN.test(idempotencyKey)
+      || !correlationId || !CORRELATION_PATTERN.test(correlationId)
+    ) return this.invalid(body);
+    return {
+      ok: true,
+      value: { kind: "auth.google.request", protocolVersion: "1.0", credential, idempotencyKey, correlationId },
+    };
   }
 
   session(req: Request): ParseResult<SessionInput> {
@@ -89,11 +118,8 @@ export default class ConnectAuthRequestParser {
     return typeof value === "string" ? value : null;
   }
 
-  private credentials(
-    body: unknown,
-    kind: "auth.signup.request" | "auth.login.request",
-  ): ParseResult<Omit<SignupInput, "kind">> {
-    const keys = ["kind", "protocolVersion", "username", "password", "idempotencyKey", "correlationId"];
+  private signupCredentials(body: unknown): ParseResult<Omit<SignupInput, "kind">> {
+    const keys = ["kind", "protocolVersion", "username", "email", "password", "idempotencyKey", "correlationId"];
     if (!isRecord(body) || !hasExactKeys(body, keys)) return this.invalid(body);
     const correlationId = stringField(body, "correlationId");
     const protocolVersion = stringField(body, "protocolVersion");
@@ -102,14 +128,16 @@ export default class ConnectAuthRequestParser {
     const password = stringField(body, "password");
     const idempotencyKey = stringField(body, "idempotencyKey");
     if (
-      body.kind !== kind || !correlationId || !CORRELATION_PATTERN.test(correlationId)
+      body.kind !== "auth.signup.request" || !correlationId || !CORRELATION_PATTERN.test(correlationId)
       || !rawUsername || !password || !idempotencyKey
       || rawUsername.length > this.policy.rawUsernameMaxLength
       || !IDEMPOTENCY_PATTERN.test(idempotencyKey)
     ) return this.invalid(body);
     const username = this.policy.normalizeUsername(rawUsername);
+    const email = this.policy.normalizeEmail(stringField(body, "email") ?? "");
     if (
       !this.policy.usernamePattern.test(username)
+      || !this.policy.isAllowedEmail(email)
       || password.length < this.policy.passwordMinLength
       || password.length > this.policy.passwordMaxLength
     ) return this.invalid(body);
@@ -118,11 +146,35 @@ export default class ConnectAuthRequestParser {
       value: {
         protocolVersion: "1.0",
         username,
+        email,
         password,
         idempotencyKey,
         correlationId,
       },
     };
+  }
+
+  private loginCredentials(body: unknown): ParseResult<Omit<LoginInput, "kind">> {
+    const keys = ["kind", "protocolVersion", "username", "password", "idempotencyKey", "correlationId"];
+    if (!isRecord(body) || !hasExactKeys(body, keys)) return this.invalid(body);
+    if (body.protocolVersion !== this.policy.protocolVersion) return this.protocol(body);
+    const correlationId = stringField(body, "correlationId");
+    const rawIdentifier = stringField(body, "username");
+    const password = stringField(body, "password");
+    const idempotencyKey = stringField(body, "idempotencyKey");
+    if (
+      body.kind !== "auth.login.request" || !correlationId || !CORRELATION_PATTERN.test(correlationId)
+      || !rawIdentifier || !password || !idempotencyKey
+      || rawIdentifier.length > this.policy.rawUsernameMaxLength
+      || !IDEMPOTENCY_PATTERN.test(idempotencyKey)
+      || password.length < this.policy.passwordMinLength
+      || password.length > this.policy.passwordMaxLength
+    ) return this.invalid(body);
+    const identifier = rawIdentifier.includes("@")
+      ? this.policy.normalizeEmail(rawIdentifier)
+      : this.policy.normalizeUsername(rawIdentifier);
+    if (!this.policy.isAllowedIdentifier(identifier)) return this.invalid(body);
+    return { ok: true, value: { protocolVersion: "1.0", identifier, password, idempotencyKey, correlationId } };
   }
 
   private sessionEnvelope(

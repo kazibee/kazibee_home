@@ -54,6 +54,7 @@ async function enroll(testApp: TestAppResult) {
   expect(created.status, JSON.stringify(created.body)).toBe(201);
   expect((await testApp.agent.post("/v1/connect/auth/signup").send({
     kind: "auth.signup.request",
+    email: "shavyg2@gmail.com",
     protocolVersion: "1.0",
     username: "relay.owner",
     password: ownerPassword,

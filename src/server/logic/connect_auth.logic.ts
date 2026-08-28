@@ -3,6 +3,7 @@ import type { Actor } from "../types/actor";
 import ConnectAuthService from "../services/connect_auth_service";
 import type {
   LoginInput,
+  GoogleInput,
   LogoutInput,
   SessionInput,
   SignupInput,
@@ -18,6 +19,10 @@ export default class ConnectAuthLogic {
 
   login(_actor: Actor, input: LoginInput) {
     return this.auth.login(input);
+  }
+
+  google(_actor: Actor, input: GoogleInput) {
+    return this.auth.google(input);
   }
 
   session(_actor: Actor, input: SessionInput, sessionToken: string | null) {

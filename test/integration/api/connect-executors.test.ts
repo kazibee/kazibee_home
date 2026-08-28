@@ -88,6 +88,7 @@ describe("Connect executor real HTTP registry", () => {
 
     await testApp.agent.post("/v1/connect/auth/signup").send({
       kind: "auth.signup.request", protocolVersion: "1.0",
+      email: "shavyg2@gmail.com",
       username: "executor.owner", password: "correct horse battery staple",
       idempotencyKey: "idem_http_signup_owner_01", correlationId: "cor_httpsignup1",
     });
@@ -231,6 +232,7 @@ describe("Connect executor real HTTP registry", () => {
     for (const racer of racers) {
       const signup = await racer.agent.post("/v1/connect/auth/signup").send({
         kind: "auth.signup.request",
+        email: "shavyg2@gmail.com",
         protocolVersion: "1.0",
         username: racer.username,
         password: racer.password,
@@ -393,6 +395,7 @@ describe("Connect executor real HTTP registry", () => {
 
     const signup = await testApp.agent.post("/v1/connect/auth/signup").send({
       kind: "auth.signup.request",
+      email: "shavyg2@gmail.com",
       protocolVersion: "1.0",
       username: "restart.owner",
       password: restartPassword,

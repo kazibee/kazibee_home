@@ -1,11 +1,10 @@
 import type { Database } from "sqlstack";
-import { SqlStackDB, createSqliteDb } from "sqlstack";
-import path from "path";
+import { SqlStackDB } from "sqlstack";
+import { createPgDb } from "sqlstack/adapters";
 import { getLogger } from '@noego/logger';
 const baseLogger = getLogger('kazibee:db');
 
-// Default to repo-local SQLite file for dev/tests if env not provided
-export const SQLITE_URL = path.resolve(process.cwd(), process.env.SQLITE_URL || 'database/db.sqlite');
+export const LOCAL_DATABASE_URL = "postgres://noego:noego_dev@localhost:5432/kazibee";
 
 export let DATABASE: Database;
 
@@ -14,11 +13,11 @@ export let DATABASE: Database;
  *
  * Connection-aware behavior:
  * - If a default connection already exists (e.g., from tests), uses it
- * - Otherwise, creates a new file-based SQLite connection
+ * - Otherwise, creates a PostgreSQL connection from DATABASE_URL
  *
  * This allows:
  * - Tests to provide in-memory databases that seeds/services respect
- * - Production to create file-based connections as normal
+ * - Local development to use the local PostgreSQL container
  * - Container services to safely call initDatabase() without breaking test isolation
  */
 export async function initDatabase(database?: Database): Promise<Database> {
@@ -50,10 +49,11 @@ export async function initDatabase(database?: Database): Promise<Database> {
     return existingDb;
   } catch {
     // No default connection exists - create one
-    baseLogger.info("Initializing new database at", SQLITE_URL);
+    const databaseUrl = process.env.DATABASE_URL || LOCAL_DATABASE_URL;
+    baseLogger.info("Initializing PostgreSQL database");
 
     try {
-      DATABASE = await createSqliteDb(SQLITE_URL);
+      DATABASE = await createPgDb(databaseUrl);
 
       SqlStackDB
         .register("primary", DATABASE)

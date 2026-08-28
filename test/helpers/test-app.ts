@@ -2,23 +2,27 @@ import request from "supertest";
 import type { Server } from "node:http";
 import { resetContainer, serve } from "@noego/app";
 import { resetTestDatabase, closeTestDatabase } from "./test-db";
-import { ManifestResolver, SqlStack, SqlStackDB, createSqliteDb, type Database } from "sqlstack";
-import * as sqlite from "sqlite";
-import sqlite3 from "sqlite3";
-import { MigrationRunnerFactory } from "@noego/proper";
-import { mkdtemp, rm } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { ManifestResolver, SqlStack, SqlStackDB, type Database } from "sqlstack";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
+import {
+  createPostgresTestDatabase,
+  type PostgresTestDatabase,
+} from "./postgres-test-databases";
 
 export interface TestAppResult {
   database: Database;
   server: Server;
   agent: ReturnType<typeof request.agent>;
-  persistentDirectory?: string;
+  persistentDatabase?: PostgresTestDatabase;
+  previousDatabaseUrl?: string;
 }
 
-async function startTestApp(db: Database): Promise<TestAppResult> {
+async function startTestApp(
+  db: Database,
+  persistentDatabase?: PostgresTestDatabase,
+  previousDatabaseUrl?: string,
+): Promise<TestAppResult> {
   const server = await serve({
     cwd: process.cwd(),
     port: 0,
@@ -33,8 +37,13 @@ async function startTestApp(db: Database): Promise<TestAppResult> {
   };
   SqlStack.useResolver(new ManifestResolver(sqlManifest, { assert: false }));
 
-  const agent = request.agent(server);
-  return { database: db, server, agent };
+  return {
+    database: db,
+    server,
+    agent: request.agent(server),
+    persistentDatabase,
+    previousDatabaseUrl,
+  };
 }
 
 export async function getTestApp(): Promise<TestAppResult> {
@@ -42,57 +51,32 @@ export async function getTestApp(): Promise<TestAppResult> {
   return startTestApp(await resetTestDatabase());
 }
 
-async function openPersistentDatabase(filename: string, migrate: boolean): Promise<Database> {
-  const connection = await sqlite.open({ filename, driver: sqlite3.Database });
-  if (migrate) {
-    const runner = await MigrationRunnerFactory.create(
-      path.resolve(process.cwd(), "proper.json"),
-      connection,
-    );
-    await runner.reset();
-  }
-  await connection.exec("PRAGMA foreign_keys = ON;");
-  const native = connection.db as sqlite3.Database;
-  const proxy = new Proxy(native, {
-    get(target, property, receiver) {
-      if (property === "prepare") return undefined;
-      const value = Reflect.get(target, property, receiver);
-      return typeof value === "function" ? value.bind(target) : value;
-    },
-  }) as unknown as sqlite3.Database;
-  const database = await createSqliteDb(proxy);
-  const connectionName = `persistent-test-${Date.now()}`;
-  SqlStackDB.register(connectionName, database).setDefault(connectionName);
-  return database;
-}
-
-/** Starts a file-backed test app so a later process-style restart can reopen SQLite. */
 export async function getPersistentTestApp(): Promise<TestAppResult> {
   resetContainer();
-  const persistentDirectory = await mkdtemp(path.join(tmpdir(), "kazibee-auth-"));
-  const database = await openPersistentDatabase(
-    path.join(persistentDirectory, "connect.sqlite"),
-    true,
+  const previousDatabaseUrl = process.env.DATABASE_URL;
+  const persistentDatabase = await createPostgresTestDatabase("full");
+  process.env.DATABASE_URL = persistentDatabase.url;
+  SqlStackDB.register("test", persistentDatabase.database).setDefault("test");
+  return startTestApp(
+    persistentDatabase.database,
+    persistentDatabase,
+    previousDatabaseUrl,
   );
-  return { ...(await startTestApp(database)), persistentDirectory };
 }
 
-/** Rebuilds the application container and reopens the same SQLite file. */
 export async function restartPersistentTestApp(
   testApp: TestAppResult,
 ): Promise<TestAppResult> {
-  if (!testApp.persistentDirectory) throw new Error("Expected a persistent test app");
+  if (!testApp.persistentDatabase) throw new Error("Expected a persistent test database");
   await closeTestServer(testApp);
-  await testApp.database.close();
   resetContainer();
-  const database = await openPersistentDatabase(
-    path.join(testApp.persistentDirectory, "connect.sqlite"),
-    false,
+  process.env.DATABASE_URL = testApp.persistentDatabase.url;
+  SqlStackDB.register("test", testApp.persistentDatabase.database).setDefault("test");
+  return startTestApp(
+    testApp.persistentDatabase.database,
+    testApp.persistentDatabase,
+    testApp.previousDatabaseUrl,
   );
-  return {
-    ...(await startTestApp(database)),
-    persistentDirectory: testApp.persistentDirectory,
-  };
 }
 
 async function closeTestServer(testApp?: TestAppResult): Promise<void> {
@@ -107,9 +91,10 @@ async function closeTestServer(testApp?: TestAppResult): Promise<void> {
 
 export async function cleanupTestApp(testApp?: TestAppResult): Promise<void> {
   await closeTestServer(testApp);
-  if (testApp?.persistentDirectory) {
-    await testApp.database.close();
-    await rm(testApp.persistentDirectory, { recursive: true, force: true });
+  if (testApp?.persistentDatabase) {
+    await testApp.persistentDatabase.close();
+    if (testApp.previousDatabaseUrl === undefined) delete process.env.DATABASE_URL;
+    else process.env.DATABASE_URL = testApp.previousDatabaseUrl;
   } else {
     await closeTestDatabase();
   }

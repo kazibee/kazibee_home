@@ -12,6 +12,7 @@ export default defineConfig({
     include: ['test/**/*.test.ts'],
     exclude: ['node_modules', 'dist'],
     setupFiles: ['./vitest.setup.ts'],
+    globalSetup: ['./test/global-setup.ts'],
     testTimeout: 30000,
     hookTimeout: 30000,
     pool: 'forks',

@@ -21,10 +21,24 @@ const signupEnvelope = {
   kind: "auth.signup.request",
   protocolVersion: "1.0",
   username: "  Alice.Example  ",
+  email: "shavyg2@gmail.com",
   password: "correct horse battery staple",
   idempotencyKey: "idem_signup_auth_00000001",
   correlationId: "cor_signup001",
 };
+const nativeFetch = globalThis.fetch;
+
+function loginEnvelope(overrides: Record<string, unknown> = {}) {
+  return {
+    kind: "auth.login.request",
+    protocolVersion: "1.0",
+    username: signupEnvelope.username,
+    password: signupEnvelope.password,
+    idempotencyKey: "idem_login_auth_default001",
+    correlationId: "cor_login0000",
+    ...overrides,
+  };
+}
 
 function cookieValue(setCookies: string[], name: string): string {
   const cookie = setCookies.find((value) => value.startsWith(`${name}=`));
@@ -63,13 +77,11 @@ async function loginAndAssert(
   suffix: string,
   overrides: Record<string, unknown> = {},
 ) {
-  const response = await testApp.agent.post("/v1/connect/auth/login").send({
-    ...signupEnvelope,
-    kind: "auth.login.request",
+  const response = await testApp.agent.post("/v1/connect/auth/login").send(loginEnvelope({
     idempotencyKey: `idem_login_assert_${suffix}`,
     correlationId: `cor_assert${suffix}`,
     ...overrides,
-  });
+  }));
   expect(response.status, JSON.stringify(response.body)).toBe(200);
   expect(response.body).toMatchObject({
     kind: "auth.login.response",
@@ -85,11 +97,25 @@ describe("Connect auth HTTP boundary", () => {
   let testApp: TestAppResult;
 
   beforeEach(async () => {
+    process.env.GOOGLE_CLIENT_ID = "kazibee-google-client";
+    globalThis.fetch = async (input, init) => {
+      if (String(input).startsWith("https://oauth2.googleapis.com/tokeninfo")) {
+        return new Response(JSON.stringify({
+          aud: "kazibee-google-client",
+          sub: "google-subject-shavyg2",
+          email: "SHAVYG2@GMAIL.COM",
+          email_verified: "true",
+        }), { status: 200, headers: { "content-type": "application/json" } });
+      }
+      return nativeFetch(input, init);
+    };
     testApp = await getTestApp();
   });
 
   afterEach(async () => {
     await cleanupTestApp(testApp);
+    globalThis.fetch = nativeFetch;
+    delete process.env.GOOGLE_CLIENT_ID;
   });
 
   it("signs up, normalizes, hashes, logs in, verifies, and logs out", async () => {
@@ -104,7 +130,7 @@ describe("Connect auth HTTP boundary", () => {
     expect(signup.body).not.toHaveProperty("password");
 
     const accountRows = await testApp.database.query(
-      "SELECT user_id, username, password_hash FROM connect_accounts WHERE username = ?",
+      "SELECT user_id, username, password_hash FROM connect_accounts WHERE username = $1",
       ["alice.example"],
     );
     expect(Array.isArray(accountRows)).toBe(true);
@@ -118,13 +144,11 @@ describe("Connect auth HTTP boundary", () => {
     expect(await bcrypt.compare(signupEnvelope.password, account.password_hash)).toBe(true);
     expect(Number(account.password_hash.split("$")[2])).toBe(CONNECT_BCRYPT_COST);
 
-    const login = await testApp.agent.post("/v1/connect/auth/login").send({
-      ...signupEnvelope,
-      kind: "auth.login.request",
+    const login = await testApp.agent.post("/v1/connect/auth/login").send(loginEnvelope({
       username: "ALICE.EXAMPLE",
       idempotencyKey: "idem_login_auth_000000001",
       correlationId: "cor_login0001",
-    });
+    }));
     expect(login.status).toBe(200);
     expect(login.body.userId).toBe(account.user_id);
     const setCookies = login.headers["set-cookie"] as unknown as string[];
@@ -136,7 +160,7 @@ describe("Connect auth HTTP boundary", () => {
     )).toBe(true);
 
     const sessionRows = await testApp.database.query(
-      "SELECT * FROM connect_browser_sessions WHERE session_id = ?",
+      "SELECT * FROM connect_browser_sessions WHERE session_id = $1",
       [login.body.sessionId],
     );
     if (!Array.isArray(sessionRows)) throw new Error("Expected session rows");
@@ -187,6 +211,29 @@ describe("Connect auth HTTP boundary", () => {
     expect(afterLogout.status).toBe(401);
   });
 
+  it("links Google and password sign-in to the one allowed email account", async () => {
+    const google = await testApp.agent.post("/v1/connect/auth/google").send({
+      kind: "auth.google.request",
+      protocolVersion: "1.0",
+      credential: "signed-google-id-token",
+      idempotencyKey: "idem_google_auth_00000001",
+      correlationId: "cor_google001",
+    });
+    expect(google.status, JSON.stringify(google.body)).toBe(200);
+
+    const signup = await testApp.agent.post("/v1/connect/auth/signup").send(signupEnvelope);
+    expect(signup.status, JSON.stringify(signup.body)).toBe(201);
+    expect(signup.body.userId).toBe(google.body.userId);
+
+    const passwordLogin = await testApp.agent.post("/v1/connect/auth/login").send(loginEnvelope({
+      username: "shavyg2@gmail.com",
+      idempotencyKey: "idem_login_google_00000001",
+      correlationId: "cor_google002",
+    }));
+    expect(passwordLogin.status, JSON.stringify(passwordLogin.body)).toBe(200);
+    expect(passwordLogin.body.userId).toBe(google.body.userId);
+  });
+
   it("rejects duplicate usernames, malformed envelopes, and protocol mismatches", async () => {
     await signupAndAssert(testApp);
     const duplicate = await testApp.agent.post("/v1/connect/auth/signup").send({
@@ -206,13 +253,11 @@ describe("Connect auth HTTP boundary", () => {
     });
     expectConnectError(extra, 400, "invalid-envelope");
 
-    const mismatch = await testApp.agent.post("/v1/connect/auth/login").send({
-      ...signupEnvelope,
-      kind: "auth.login.request",
+    const mismatch = await testApp.agent.post("/v1/connect/auth/login").send(loginEnvelope({
       protocolVersion: "2.0",
       idempotencyKey: "idem_login_auth_000000002",
       correlationId: "cor_login0002",
-    });
+    }));
     expectConnectError(mismatch, 409, "protocol-version-mismatch");
   });
 
@@ -267,12 +312,10 @@ describe("Connect auth HTTP boundary", () => {
       },
       {
         name: "body protocol mismatch",
-        request: () => testApp.agent.post("/v1/connect/auth/login").send({
-          ...signupEnvelope,
-          kind: "auth.login.request",
+        request: () => testApp.agent.post("/v1/connect/auth/login").send(loginEnvelope({
           protocolVersion: "9.9",
           correlationId: "cor_boundary04",
-        }),
+        })),
         status: 409,
         code: "protocol-version-mismatch" as const,
         correlationId: "cor_boundary04",
@@ -313,30 +356,24 @@ describe("Connect auth HTTP boundary", () => {
 
   it("does not enumerate accounts and requires double-submit CSRF", async () => {
     await signupAndAssert(testApp);
-    const unknown = await testApp.agent.post("/v1/connect/auth/login").send({
-      ...signupEnvelope,
-      kind: "auth.login.request",
+    const unknown = await testApp.agent.post("/v1/connect/auth/login").send(loginEnvelope({
       username: "unknown.person",
       idempotencyKey: "idem_login_auth_000000003",
       correlationId: "cor_login0003",
-    });
-    const wrong = await testApp.agent.post("/v1/connect/auth/login").send({
-      ...signupEnvelope,
-      kind: "auth.login.request",
+    }));
+    const wrong = await testApp.agent.post("/v1/connect/auth/login").send(loginEnvelope({
       password: "this password is wrong",
       idempotencyKey: "idem_login_auth_000000004",
       correlationId: "cor_login0004",
-    });
+    }));
     expectConnectError(unknown, 401, "invalid-envelope");
     expectConnectError(wrong, 401, "invalid-envelope");
     expect(unknown.body.message).toBe(wrong.body.message);
 
-    const login = await testApp.agent.post("/v1/connect/auth/login").send({
-      ...signupEnvelope,
-      kind: "auth.login.request",
+    const login = await testApp.agent.post("/v1/connect/auth/login").send(loginEnvelope({
       idempotencyKey: "idem_login_auth_000000005",
       correlationId: "cor_login0005",
-    });
+    }));
     expect(login.status, JSON.stringify(login.body)).toBe(200);
     const withoutCsrf = await testApp.agent.post("/v1/connect/auth/logout").send({
       kind: "auth.logout.request",
@@ -355,7 +392,7 @@ describe("Connect auth HTTP boundary", () => {
     const second = await loginAndAssert(testApp, "00000002");
     expect(first.body.sessionId).not.toBe(second.body.sessionId);
     const rows = await testApp.database.query(
-      "SELECT session_id FROM connect_browser_sessions WHERE user_id = ? AND status = 'active'",
+      "SELECT session_id FROM connect_browser_sessions WHERE user_id = $1 AND status = 'active'",
       [first.body.userId],
     );
     expect(Array.isArray(rows) && rows.length).toBeGreaterThanOrEqual(2);
@@ -375,25 +412,25 @@ describe("Connect auth HTTP boundary", () => {
 
     const revoked = await login("0000000000000001");
     await testApp.database.query(
-      "UPDATE connect_browser_sessions SET status = 'revoked', revoked_at = ? WHERE session_id = ?",
+      "UPDATE connect_browser_sessions SET status = 'revoked', revoked_at = $1 WHERE session_id = $2",
       [new Date().toISOString(), revoked.body.sessionId],
     );
     expectConnectError(await verify(revoked.body.sessionId, "0001"), 401, "revoked");
 
     const disabled = await login("0000000000000002");
     await testApp.database.query(
-      "UPDATE connect_accounts SET status = 'disabled' WHERE user_id = ?",
+      "UPDATE connect_accounts SET status = 'disabled' WHERE user_id = $1",
       [disabled.body.userId],
     );
     expectConnectError(await verify(disabled.body.sessionId, "0002"), 401, "revoked");
     await testApp.database.query(
-      "UPDATE connect_accounts SET status = 'active' WHERE user_id = ?",
+      "UPDATE connect_accounts SET status = 'active' WHERE user_id = $1",
       [disabled.body.userId],
     );
 
     const idle = await login("0000000000000003");
     await testApp.database.query(
-      "UPDATE connect_browser_sessions SET idle_expires_at = ? WHERE session_id = ?",
+      "UPDATE connect_browser_sessions SET idle_expires_at = $1 WHERE session_id = $2",
       ["2020-01-01T00:00:00.000Z", idle.body.sessionId],
     );
     expectConnectError(await verify(idle.body.sessionId, "0003"), 401, "revoked");
@@ -401,8 +438,8 @@ describe("Connect auth HTTP boundary", () => {
     const absolute = await login("0000000000000004");
     await testApp.database.query(
       `UPDATE connect_browser_sessions
-       SET idle_expires_at = ?, absolute_expires_at = ?
-       WHERE session_id = ?`,
+       SET idle_expires_at = $1, absolute_expires_at = $2
+       WHERE session_id = $3`,
       [
         "2020-01-01T00:00:00.000Z",
         "2020-01-01T00:00:00.000Z",
@@ -463,7 +500,7 @@ describe("Connect auth HTTP boundary", () => {
     expect(current.status, JSON.stringify(current.body)).toBe(200);
     expect(current.body.sessionId).toBe(sessionId);
     const rows = await testApp.database.query(
-      "SELECT session_id, status FROM connect_browser_sessions WHERE session_id = ?",
+      "SELECT session_id, status FROM connect_browser_sessions WHERE session_id = $1",
       [sessionId],
     );
     expect(rows).toEqual(expect.arrayContaining([

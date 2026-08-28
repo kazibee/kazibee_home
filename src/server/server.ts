@@ -5,7 +5,7 @@ import { configureLogging as configureNoegoLogging, getLogger } from "@noego/log
 // resolved as a relative path and failed — no worker DB registration ever
 // succeeded. Kazidoc imports these statically for exactly this reason.
 import { SqlStackDB, createPgDb } from "sqlstack";
-import { neon } from "@neondatabase/serverless";
+import { neon, Pool } from "@neondatabase/serverless";
 import { initDatabase } from "./repo/boot";
 import TraceAdapter from "./observability/trace_adapter";
 import container from "./container";
@@ -80,6 +80,20 @@ export async function worker({ env }: { env?: Record<string, unknown> } = {}) {
     const poolLike = {
       async query(sql: string, params?: unknown[]) {
         return httpQuery.query(sql, (params ?? []) as unknown[]);
+      },
+      // sqlstack transactions need a dedicated session (.connect()); the HTTP
+      // driver is stateless, so hand out a WebSocket-backed client created per
+      // transaction and torn down on release — request-scoped, which is the
+      // only lifetime Workers allow for I/O objects.
+      async connect() {
+        const pool = new Pool({ connectionString });
+        const client = await pool.connect();
+        const release = client.release.bind(client);
+        client.release = ((...args: unknown[]) => {
+          release(...(args as []));
+          void pool.end().catch(() => {});
+        }) as typeof client.release;
+        return client;
       },
     };
     SqlStackDB.register("primary", createPgDb(poolLike)).setDefault("primary");

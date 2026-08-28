@@ -103,7 +103,10 @@ export default class ConnectExecutorService {
       if (!claim || !executor) throw new Error("Claim persistence invariant failed");
       return { outcome: "created", challenge: this.challenge(claim, executor, token) };
     } catch (error) {
-      if (error instanceof Error && error.message.toLowerCase().includes("unique constraint failed")) {
+      const uniqueViolation = error instanceof Error
+        && (error.message.toLowerCase().includes("unique constraint failed")
+          || error.message.toLowerCase().includes("duplicate key value violates unique constraint"));
+      if (uniqueViolation) {
         currentTransaction()?.rollbackOnly(error);
         return { outcome: "conflict" };
       }
@@ -351,7 +354,11 @@ export default class ConnectExecutorService {
   }
   private failed(action: string, correlationId: string, error: unknown): void {
     const context = { route: "/v1/connect/executors", action, correlationId, outcome: "failed",
-      errorType: error instanceof Error ? error.name : "unknown" };
+      errorType: error instanceof Error ? error.name : "unknown",
+      errorMessage: error instanceof Error ? error.message.slice(0, 300) : String(error).slice(0, 300),
+      errorCause: error instanceof Error && error.cause instanceof Error
+        ? `${error.cause.name}: ${error.cause.message.slice(0, 300)}`
+        : undefined };
     this.logger.error("connect.executors.failed", context);
     this.trace.error("failed", context);
   }

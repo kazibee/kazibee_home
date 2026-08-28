@@ -26,6 +26,7 @@
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1042.0",
     "@aws-sdk/s3-request-presigner": "^3.1042.0",
+    "@neondatabase/serverless": "^1.1.0",
     "@noego/app": "^2.2.4",
     "@noego/ioc": "^0.3.2",
     "@noego/logger": "^0.0.2",

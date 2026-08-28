@@ -65,21 +65,22 @@ export async function worker({ env }: { env?: Record<string, unknown> } = {}) {
     return hooks;
   }
   try {
+    // Neon serverless driver in stateless HTTP mode (kazidoc's proven worker
+    // recipe): each query is one fetch to Neon's SQL-over-HTTP endpoint — no
+    // TCP/TLS handshake, and no live connection object. Workers forbid
+    // sharing I/O objects across requests, which rules out pg Pool/Client
+    // here. fullResults gives pg-shaped { rows, rowCount, fields } for
+    // sqlstack.
     const { SqlStackDB, createPgDb } = await dynamicImport("sqlstack");
-    const pg = (await dynamicImport("pg")).default;
+    const { neon } = await dynamicImport("@neondatabase/serverless");
+    const httpQuery = neon(connectionString, { fullResults: true });
     const poolLike = {
       async query(sql: string, params?: unknown[]) {
-        const client = new pg.Client({ connectionString });
-        await client.connect();
-        try {
-          return await client.query(sql, params);
-        } finally {
-          client.end().catch(() => {});
-        }
+        return httpQuery.query(sql, (params ?? []) as unknown[]);
       },
     };
     SqlStackDB.register("primary", createPgDb(poolLike)).setDefault("primary");
-    baseLogger.info("[kazibee] worker boot: postgres via sqlstack");
+    baseLogger.info("[kazibee] worker boot: postgres via neon serverless http");
   } catch (error) {
     baseLogger.error("[kazibee] worker boot: postgres registration failed", error);
   }

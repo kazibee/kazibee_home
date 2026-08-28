@@ -311,6 +311,13 @@ export default class ConnectAuthService {
       outcome: "failed",
       correlationId,
       errorType: error instanceof Error ? error.name : "unknown",
+      // Bounded diagnostic detail; DB errors carry table/constraint names,
+      // not credentials. Cause chains (sqlstack wraps driver errors) are the
+      // part that actually identifies the failing query.
+      errorMessage: error instanceof Error ? error.message.slice(0, 300) : String(error).slice(0, 300),
+      errorCause: error instanceof Error && error.cause instanceof Error
+        ? `${error.cause.name}: ${error.cause.message.slice(0, 300)}`
+        : undefined,
     };
     this.logger.error("connect.auth.failed", context);
     this.trace.error("failed", context);

@@ -86,12 +86,27 @@ export default class ConnectExecutorService {
       const createdAt = now.toISOString();
       const expiresAt = new Date(now.getTime() + this.policy.claimLifetimeMs).toISOString();
       const shortCode = this.shortCode(token, input.claimId);
-      await this.executors.createExecutor({
-        executor_id: input.executorId, device_id: input.deviceId, display_name: input.displayName,
-        platform: input.platform, architecture: input.architecture,
-        executor_version: input.executorVersion, key_fingerprint: input.keyFingerprint,
-        created_at: createdAt, updated_at: createdAt, last_seen_at: createdAt,
-      });
+      // A machine that registered but was never accepted may legitimately
+      // restart and claim again: refresh its row and replace the stale
+      // pending claim. Owned or revoked executors cannot be re-claimed.
+      const registered = await this.executors.findByExecutorId({ executor_id: input.executorId });
+      if (registered) {
+        if (registered.state !== "pending") return { outcome: "conflict" };
+        await this.executors.refreshPending({
+          executor_id: input.executorId, device_id: input.deviceId, display_name: input.displayName,
+          platform: input.platform, architecture: input.architecture,
+          executor_version: input.executorVersion, key_fingerprint: input.keyFingerprint,
+          updated_at: createdAt, last_seen_at: createdAt,
+        });
+        await this.claims.deletePendingByExecutorId({ executor_id: input.executorId });
+      } else {
+        await this.executors.createExecutor({
+          executor_id: input.executorId, device_id: input.deviceId, display_name: input.displayName,
+          platform: input.platform, architecture: input.architecture,
+          executor_version: input.executorVersion, key_fingerprint: input.keyFingerprint,
+          created_at: createdAt, updated_at: createdAt, last_seen_at: createdAt,
+        });
+      }
       await this.claims.createClaim({
         claim_id: input.claimId, executor_id: input.executorId, bootstrap_token_hash: tokenHash,
         short_code_hash: this.hash(shortCode), idempotency_key: input.idempotencyKey,

@@ -25,6 +25,11 @@ export default class ConnectExecutorClaimRepo {
     throw new SqlStackError("Not implemented");
   }
 
+  @Query()
+  deletePendingByExecutorId(_params: { executor_id: string }): Promise<void> {
+    throw new SqlStackError("Not implemented");
+  }
+
   @Single
   @Query()
   findByClaimId(_params: { claim_id: string }): Promise<ConnectExecutorClaim | null> {

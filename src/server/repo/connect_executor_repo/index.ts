@@ -27,6 +27,11 @@ export default class ConnectExecutorRepo {
     throw new SqlStackError("Not implemented");
   }
 
+  @Query()
+  refreshPending(_params: Omit<ConnectExecutor, "owner_user_id" | "claimed_at" | "credential_generation" | "state" | "created_at">): Promise<void> {
+    throw new SqlStackError("Not implemented");
+  }
+
   @Single
   @Query()
   findByExecutorId(_params: { executor_id: string }): Promise<ConnectExecutor | null> {

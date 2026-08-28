@@ -324,6 +324,10 @@ module:
               type: string
               pattern: '^wdp_[A-Za-z0-9]{32}$'
               description: Required exactly when status is accepted.
+            executorId: { $ref: '#/components/schemas/ExecutorId' }
+            deviceId: { $ref: '#/components/schemas/ExecutorDeviceId' }
+            credentialGeneration: { type: integer, minimum: 1 }
+            websiteAccountId: { type: string, pattern: '^usr_[A-Za-z0-9]{8,64}$', maxLength: 68 }
             correlationId: { $ref: '#/components/schemas/ExecutorCorrelationId' }
         ConnectClaimReview:
           type: object

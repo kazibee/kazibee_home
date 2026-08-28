@@ -25,7 +25,10 @@ export type ClaimCreateResult =
   | { outcome: "failed" };
 export type ClaimStatusResult =
   | { outcome: "status"; status: "pending" | "denied" | "expired" }
-  | { outcome: "status"; status: "accepted"; websiteDeploymentId: string }
+  | {
+      outcome: "status"; status: "accepted"; websiteDeploymentId: string;
+      executorId: string; deviceId: string; credentialGeneration: number; websiteAccountId: string;
+    }
   | { outcome: "unauthorized" }
   | { outcome: "not-found" }
   | { outcome: "failed" };
@@ -149,10 +152,15 @@ export default class ConnectExecutorService {
           || credential.generation !== executor.credential_generation) {
           return { outcome: "unauthorized" };
         }
+        if (!executor.owner_user_id) return { outcome: "unauthorized" };
         return {
           outcome: "status",
           status: "accepted",
           websiteDeploymentId: await this.deploymentIdentity.get(),
+          executorId: executor.executor_id,
+          deviceId: executor.device_id,
+          credentialGeneration: credential.generation,
+          websiteAccountId: executor.owner_user_id,
         };
       }
       const status = this.claimStatus(claim);

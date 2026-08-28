@@ -66,6 +66,10 @@ export default class ConnectExecutorController {
     };
     if (result.status === "accepted") {
       response.websiteDeploymentId = result.websiteDeploymentId;
+      response.executorId = result.executorId;
+      response.deviceId = result.deviceId;
+      response.credentialGeneration = result.credentialGeneration;
+      response.websiteAccountId = result.websiteAccountId;
     }
     return res.json(response);
   }

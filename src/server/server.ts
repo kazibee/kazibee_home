@@ -4,6 +4,8 @@ import { initDatabase } from "./repo/boot";
 import TraceAdapter from "./observability/trace_adapter";
 import container from "./container";
 import { connectRequestError } from "./middleware/connect_request_error";
+import Env from "./services/env";
+import RawRequest from "./services/raw_request";
 
 const baseLogger = getLogger("kazibee");
 const dynamicImport = (specifier: string) => import(`${specifier}`);
@@ -15,14 +17,20 @@ export async function configureLogging(): Promise<void> {
   configureNoegoLogging({});
 }
 
-export async function bootBackendV1(_options: { root?: string } = {}) {
+export async function node(_options: { root?: string } = {}) {
   await configureLogging();
   TraceAdapter.configureWebsiteProcess();
   await initDatabase();
 
+  (container.get(Env) as Env).load(process.env as Record<string, unknown>);
+
   return {
-    contextBuilder: () => {
+    contextBuilder: async (requestContext?: { request?: Request }) => {
       const scoped = container.extend();
+      // Captured so controllers can forward the untouched Request (e.g. a
+      // WebSocket upgrade) rather than a reconstructed one.
+      const rawRequest = (await scoped.get(RawRequest)) as RawRequest;
+      rawRequest.set(requestContext?.request ?? null);
       return { container: scoped };
     },
     controllerBuilder: async (Controller: any, context: any) => {
@@ -33,9 +41,24 @@ export async function bootBackendV1(_options: { root?: string } = {}) {
   };
 }
 
-export async function bootWorkerV1({ env }: { env?: Record<string, unknown> } = {}) {
+export async function worker({ env }: { env?: Record<string, unknown> } = {}) {
   TraceAdapter.configureWebsiteProcess();
-  const hooks = { onRequestError: connectRequestError };
+  // Worker bindings (EXECUTOR_COORDINATOR, secrets) live on `env`, not
+  // process.env, so they must be published before any request is served.
+  (container.get(Env) as Env).load(env ?? {});
+  const hooks = {
+    onRequestError: connectRequestError,
+    contextBuilder: async (requestContext?: { request?: Request }) => {
+      const scoped = container.extend();
+      const rawRequest = (await scoped.get(RawRequest)) as RawRequest;
+      rawRequest.set(requestContext?.request ?? null);
+      return { container: scoped };
+    },
+    controllerBuilder: async (Controller: any, context: any) => {
+      if (context?.container) return context.container.get(Controller);
+      return container.get(Controller);
+    },
+  };
   const connectionString = typeof env?.DATABASE_URL === "string" ? env.DATABASE_URL : null;
   if (!connectionString) {
     baseLogger.warn("[kazibee] worker boot: no DATABASE_URL bound — DB-backed routes will fail");

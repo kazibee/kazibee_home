@@ -1,0 +1,1 @@
+{"additionalProperties":true,"properties":{"bytes":{"type":"integer"},"content":{"type":"string"},"contentTrust":{"enum":["untrusted"],"type":"string"},"contentType":{"type":"string"},"fetchId":{"type":"string"},"status":{"type":"integer"},"truncated":{"type":"boolean"}},"required":["status","contentTrust"],"type":"object"}

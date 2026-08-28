@@ -1,0 +1,1 @@
+{"additionalProperties":false,"properties":{"command":{"maxLength":65536,"minLength":1,"type":"string"},"summary":{"description":"3-5 word present-participle description.","maxLength":120,"type":"string"}},"required":["command"],"type":"object"}

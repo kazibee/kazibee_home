@@ -1,0 +1,1 @@
+{"additionalProperties":false,"properties":{"taskId":{"description":"Owner-bound process id from bash.","maxLength":128,"minLength":1,"type":"string"}},"required":["taskId"],"type":"object"}

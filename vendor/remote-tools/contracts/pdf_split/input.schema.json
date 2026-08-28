@@ -1,0 +1,1 @@
+{"additionalProperties":false,"properties":{"burst":{"type":"boolean"},"path":{"description":"Source PDF file. Workspace-relative; absolute paths and symlink escapes are rejected.","maxLength":1024,"minLength":1,"type":"string"},"ranges":{"description":"Comma-separated page ranges, e.g. \"1-3,4,5-8\".","maxLength":256,"type":"string"}},"required":["path"],"type":"object"}

@@ -1,0 +1,56 @@
+version: 1
+# Remote Tool MCP worker (mcp.kazibee.com). Shares server services with the
+# web app but builds/deploys independently — same satellite-worker pattern as
+# kazidoc's apps/mcp. Backend-only: no client section.
+root: ../..
+output: apps/mcp/dist
+target: node
+
+development:
+  # 3100: the web app runs on 3000; keep the satellite in kazibee's 3xxx range.
+  port: 3100
+
+server:
+  main: src/mcp/server.ts
+  # Reuses the main site's controllers (remote_tools.controller); the stitch
+  # below selects only the /mcp surface, so nothing else is routable here.
+  controllers: src/server/controller
+  middleware: src/middleware
+  openapi: src/mcp/stitch.yaml
+
+assets:
+  - migrations/**/*.sql
+
+# Secrets discipline matches the main site: SSM is the source of truth,
+# synced to GitHub environment secrets; workflows read ${{ secrets.* }} only.
+deploy:
+  cloudflare:
+    # Raw wrangler fragment merged into every [env.*] section. The
+    # ExecutorCoordinator Durable Object is owned and exported by the main
+    # `kazibee` worker; this satellite binds the same class by script_name so
+    # both route through the one live channel per executor.
+    wrangler:
+      workers_dev: false
+    environments:
+      dev:
+        name: kazibee-mcp-dev
+        routes:
+          - pattern: mcp-dev.kazibee.com
+            customDomain: true
+        wrangler:
+          durable_objects:
+            bindings:
+              - name: EXECUTOR_COORDINATOR
+                class_name: ExecutorCoordinator
+                script_name: kazibee-dev
+      production:
+        name: kazibee-mcp
+        routes:
+          - pattern: mcp.kazibee.com
+            customDomain: true
+        wrangler:
+          durable_objects:
+            bindings:
+              - name: EXECUTOR_COORDINATOR
+                class_name: ExecutorCoordinator
+                script_name: kazibee

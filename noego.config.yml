@@ -11,6 +11,9 @@ server:
   controllers: src/server/controller
   middleware: src/middleware
   openapi: src/server/stitch.yaml
+  # Re-exported from the generated worker entry (cloudflare builds only):
+  # Durable Object classes must be named exports of wrangler's main module.
+  workerExports: src/server/durable-objects.ts
 
 client:
   main: src/ui/main.ts
@@ -29,18 +32,32 @@ assets:
 # environment (wrangler-action accountId input / shell export).
 deploy:
   cloudflare:
-    # Top level = the default (dev) environment: dev.kazibee.com serves
-    # the FULL site (SSR pages + API) from the worker.
-    name: kazibee-dev
-    routes:
-      - pattern: dev.kazibee.com
-        customDomain: true
-    # Named environments become wrangler [env.<name>] sections in the
-    # generated dist/cloudflare/wrangler.toml (one build artifact; pick
-    # the env at deploy time with `wrangler deploy --env <name>`).
-    # name and routes are required per env — wrangler inherits top-level
-    # routes otherwise, which would serve dev's routes.
+    # Shared settings only at this level (e.g. accountId) — nothing
+    # deployable here. Every deployment, including dev, is a named
+    # environment below; the generator (@noego/app >= 2.1.6) merges
+    # shared + env settings into one fully self-contained wrangler
+    # [env.<name>] section per env. The generated toml still carries a
+    # top-level placeholder section (wrangler requires a top-level
+    # name) — never deploy it; always `wrangler deploy --env <name>`.
+    #
+    # Raw wrangler fragment merged into every [env.*] section. The
+    # ExecutorCoordinator Durable Object owns the single active Connect
+    # channel per executor; the MCP satellite worker binds this same class
+    # by script_name rather than declaring its own.
+    wrangler:
+      durable_objects:
+        bindings:
+          - name: EXECUTOR_COORDINATOR
+            class_name: ExecutorCoordinator
+      migrations:
+        - tag: v1
+          new_sqlite_classes: [ExecutorCoordinator]
     environments:
+      dev:
+        name: kazibee-dev
+        routes:
+          - pattern: dev.kazibee.com
+            customDomain: true
       production:
         name: kazibee
         routes:

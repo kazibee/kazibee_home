@@ -1,0 +1,1 @@
+{"additionalProperties":true,"properties":{"content":{"type":"string"},"outputId":{"type":"string"},"totalLines":{"type":"integer"}},"required":["outputId","content"],"type":"object"}

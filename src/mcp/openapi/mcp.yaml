@@ -1,0 +1,38 @@
+module:
+  mcp:
+    basePath: '/'
+    paths:
+      '/mcp':
+        post:
+          # MCP over Streamable HTTP (JSON response mode). Bearer = remote
+          # tool grant. Same controller as the main site's
+          # /v1/remote-tools/mcp; this satellite exposes it at the canonical
+          # public path.
+          x-controller: remote_tools.controller
+          x-action: mcp
+          requestBody:
+            required: true
+            content:
+              application/json:
+                schema:
+                  type: object
+          responses:
+            '200':
+              description: JSON-RPC response
+              content:
+                application/json:
+                  schema: { type: object }
+            '202': { description: Notification acknowledged }
+            '400': { $ref: '#/components/responses/McpErrorResult' }
+            '401': { $ref: '#/components/responses/McpErrorResult' }
+    components:
+      responses:
+        McpErrorResult:
+          description: Error
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error: { type: boolean }
+                  message: { type: string }

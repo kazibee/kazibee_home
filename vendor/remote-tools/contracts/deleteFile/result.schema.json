@@ -1,0 +1,1 @@
+{"additionalProperties":true,"properties":{"deleted":{"type":"integer"},"effectState":{"description":"Truthful mutation effect state.","enum":["none","started","committed","partial","unknown"],"type":"string"},"path":{"type":"string"}},"required":["effectState"],"type":"object"}

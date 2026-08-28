@@ -1,0 +1,1 @@
+{"additionalProperties":true,"properties":{"help":{"type":"string"},"toolName":{"type":"string"}},"required":["toolName","help"],"type":"object"}

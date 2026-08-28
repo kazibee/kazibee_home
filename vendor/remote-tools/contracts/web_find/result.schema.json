@@ -1,0 +1,1 @@
+{"additionalProperties":true,"properties":{"fetchId":{"type":"string"},"matches":{"type":"array"}},"required":["fetchId","matches"],"type":"object"}

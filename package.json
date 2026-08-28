@@ -19,12 +19,14 @@
     "reset": "proper reset",
     "migrate": "proper -c proper.durable.json up",
     "migrate:down": "proper -c proper.durable.json down",
-    "migrate:status": "proper -c proper.durable.json status"
+    "migrate:status": "proper -c proper.durable.json status",
+    "mcp:dev": "noego dev --config apps/mcp/noego.config.yml",
+    "mcp:build": "noego build --config apps/mcp/noego.config.yml --target cloudflare --nodejs-compat --backend-only"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1042.0",
     "@aws-sdk/s3-request-presigner": "^3.1042.0",
-    "@noego/app": "^2.1.5",
+    "@noego/app": "^2.2.4",
     "@noego/ioc": "^0.3.2",
     "@noego/logger": "^0.0.2",
     "@noego/proper": "^0.1.0",

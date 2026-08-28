@@ -1,0 +1,1 @@
+{"additionalProperties":true,"properties":{"pages":{"items":{"additionalProperties":true,"properties":{"assetId":{"type":"string"},"height":{"type":"integer"},"page":{"type":"integer"},"width":{"type":"integer"}},"required":["page","assetId"],"type":"object"},"type":"array"},"path":{"type":"string"}},"required":["pages"],"type":"object"}

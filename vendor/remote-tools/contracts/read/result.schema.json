@@ -1,0 +1,1 @@
+{"additionalProperties":true,"properties":{"content":{"type":"string"},"entries":{"type":"array"},"lines":{"type":"integer"},"mode":{"enum":["full","directory"],"type":"string"},"path":{"type":"string"},"truncated":{"type":"boolean"}},"required":["path"],"type":"object"}

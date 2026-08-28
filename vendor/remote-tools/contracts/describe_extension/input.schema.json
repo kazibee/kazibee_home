@@ -1,0 +1,1 @@
+{"additionalProperties":false,"properties":{"extensionId":{"maxLength":128,"minLength":1,"type":"string"},"part":{"enum":["api","manual","all"],"type":"string"}},"required":["extensionId"],"type":"object"}

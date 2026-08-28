@@ -1,0 +1,1 @@
+{"opaqueIdPattern":"^[a-z]+_[A-Za-z0-9_-]{8,64}$","prefixes":{"asset":"ast_","capture":"fch_","command":"cmd_","correlation":"cor_","device":"dev_","executor":"exe_","grant":"rtg_","idempotency":"idem_","incident":"inc_","operation":"rto_","signingKey":"rtk_","toolSession":"rts_","workspace":"wrk_"}}

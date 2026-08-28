@@ -1,0 +1,1 @@
+{"additionalProperties":false,"properties":{"anchorText":{"maxLength":10000,"minLength":1,"type":"string"},"newlines":{"maximum":20,"minimum":0,"type":"integer"},"path":{"description":"File to edit. Workspace-relative; absolute paths and symlink escapes are rejected.","maxLength":1024,"minLength":1,"type":"string"}},"required":["path","anchorText","newlines"],"type":"object"}

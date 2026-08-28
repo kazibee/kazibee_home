@@ -1,0 +1,1 @@
+{"additionalProperties":true,"properties":{"extensions":{"type":"array"}},"required":["extensions"],"type":"object"}

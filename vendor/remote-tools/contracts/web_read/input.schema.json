@@ -1,0 +1,1 @@
+{"additionalProperties":false,"properties":{"fetchId":{"description":"Same-session capture id (fch_...).","maxLength":128,"minLength":1,"type":"string"},"nodeId":{"maxLength":64,"minLength":1,"type":"string"}},"required":["fetchId"],"type":"object"}

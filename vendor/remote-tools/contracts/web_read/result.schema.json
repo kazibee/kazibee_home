@@ -1,0 +1,1 @@
+{"additionalProperties":true,"properties":{"content":{"type":"string"},"fetchId":{"type":"string"},"nodeId":{"type":"string"},"truncated":{"type":"boolean"}},"required":["fetchId","content"],"type":"object"}

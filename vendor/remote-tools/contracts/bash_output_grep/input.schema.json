@@ -1,0 +1,1 @@
+{"additionalProperties":false,"properties":{"outputId":{"description":"Owner-bound output id from bash.","maxLength":128,"minLength":1,"type":"string"},"pattern":{"maxLength":1024,"minLength":1,"type":"string"},"stream":{"enum":["both","stdout","stderr"],"type":"string"}},"required":["outputId","pattern"],"type":"object"}

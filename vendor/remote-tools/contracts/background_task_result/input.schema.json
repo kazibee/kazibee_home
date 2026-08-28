@@ -1,0 +1,1 @@
+{"additionalProperties":false,"properties":{"processId":{"description":"Owner-bound durable process id.","maxLength":128,"minLength":1,"type":"string"}},"required":["processId"],"type":"object"}

@@ -1,0 +1,1 @@
+{"additionalProperties":true,"properties":{"pages":{"type":"array"},"path":{"type":"string"},"truncated":{"type":"boolean"}},"required":["path","pages"],"type":"object"}

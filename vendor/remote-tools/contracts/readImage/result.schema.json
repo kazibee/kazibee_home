@@ -1,0 +1,1 @@
+{"additionalProperties":true,"properties":{"assetId":{"type":"string"},"bytes":{"type":"integer"},"height":{"type":"integer"},"mediaType":{"type":"string"},"path":{"type":"string"},"width":{"type":"integer"}},"required":["mediaType"],"type":"object"}

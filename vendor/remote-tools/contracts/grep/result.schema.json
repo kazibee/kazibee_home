@@ -1,0 +1,1 @@
+{"additionalProperties":true,"properties":{"fileCount":{"type":"integer"},"files":{"type":"array"},"matchCount":{"type":"integer"},"truncated":{"type":"boolean"}},"required":["matchCount","fileCount"],"type":"object"}

@@ -1,0 +1,1 @@
+{"additionalProperties":false,"properties":{"toolName":{"maxLength":128,"minLength":1,"type":"string"}},"required":["toolName"],"type":"object"}

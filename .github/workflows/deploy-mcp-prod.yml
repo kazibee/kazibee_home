@@ -1,0 +1,80 @@
+name: Deploy MCP Worker Production (Cloudflare)
+
+# Remote Tool MCP worker (mcp.kazibee.com). Built from apps/mcp/noego.config.yml
+# with the same artifact discipline as deploy-worker-prod. Backend-only;
+# DATABASE_URL is its only worker secret (grant lookups). The
+# ExecutorCoordinator Durable Object is owned by the main `kazibee` worker —
+# deploy that first when the DO class or its migrations change.
+#
+# Required configuration (GitHub `production` environment):
+#   CLOUDFLARE_API_TOKEN   — environment secret (Workers deploy, prod)
+#   DATABASE_URL           — environment secret: prod Postgres, used by the
+#                            migrate step and uploaded as a Worker secret
+#   CLOUDFLARE_ACCOUNT_ID  — repository secret
+
+# Production deploys are MANUAL ONLY, matching deploy-worker-prod.yml:
+# release pushes auto-deploy dev; a human dispatches prod after verifying
+# dev (mcp-dev.kazibee.com).
+on:
+  workflow_dispatch:
+
+jobs:
+  deploy-mcp-production:
+    runs-on: self-hosted
+    environment: production
+
+    steps:
+      - name: Checkout website
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install dependencies
+        run: npm ci
+
+      # Durable Object binding (script_name: kazibee) comes from the
+      # `wrangler` fragments in apps/mcp/noego.config.yml.
+      - name: Build Cloudflare MCP worker
+        run: npm run mcp:build
+
+      # Idempotent; the web deploy also runs this, but the MCP deploy must
+      # not depend on that ordering.
+      - name: Migrate database (durable)
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: |
+          npx proper -c proper.durable.json status
+          npx proper -c proper.durable.json up
+
+      # Deploy BEFORE uploading secrets: Cloudflare rejects secret edits
+      # (error 10215) whenever the worker has an uploaded-but-undeployed
+      # version. Deploying first clears any version drift, then the secrets
+      # step below re-applies DATABASE_URL.
+      - name: "Deploy with wrangler (env: production)"
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          wranglerVersion: "4.126.0"
+          workingDirectory: apps/mcp/dist/cloudflare
+          environment: production
+          command: deploy --env production
+
+      # Secret changes on a fully-deployed worker create and deploy a new
+      # version automatically, so this lands after the code deploy.
+      - name: "Upload worker secrets (env: production)"
+        uses: cloudflare/wrangler-action@v3
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          wranglerVersion: "4.126.0"
+          workingDirectory: apps/mcp/dist/cloudflare
+          environment: production
+          command: versions list --env production
+          secrets: |
+            DATABASE_URL

@@ -1,0 +1,1 @@
+{"additionalProperties":false,"properties":{"fetchId":{"description":"Same-session capture id (fch_...).","maxLength":128,"minLength":1,"type":"string"},"limit":{"maximum":20,"minimum":1,"type":"integer"},"query":{"maxLength":1024,"minLength":1,"type":"string"}},"required":["fetchId","query"],"type":"object"}

@@ -1,0 +1,1 @@
+{"additionalProperties":true,"properties":{"effectState":{"description":"Truthful mutation effect state.","enum":["none","started","committed","partial","unknown"],"type":"string"},"output":{"type":"string"},"pageCount":{"type":"integer"}},"required":["effectState"],"type":"object"}

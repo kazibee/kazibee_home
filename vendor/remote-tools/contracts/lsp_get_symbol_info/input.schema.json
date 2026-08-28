@@ -1,0 +1,1 @@
+{"additionalProperties":false,"properties":{"path":{"description":"File containing the symbol. Workspace-relative; absolute paths and symlink escapes are rejected.","maxLength":1024,"minLength":1,"type":"string"},"symbolName":{"description":"Exact identifier name.","maxLength":512,"minLength":1,"type":"string"}},"required":["path","symbolName"],"type":"object"}

@@ -1,0 +1,1 @@
+{"additionalProperties":true,"properties":{"exitCode":{"type":"integer"},"processId":{"type":"string"},"status":{"type":"string"}},"required":["processId","status"],"type":"object"}

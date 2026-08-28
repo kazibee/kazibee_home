@@ -1,0 +1,1 @@
+{"additionalProperties":true,"properties":{"definition":{"type":"object"},"symbolName":{"type":"string"},"usages":{"type":"array"}},"required":["symbolName"],"type":"object"}

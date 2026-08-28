@@ -1,0 +1,1 @@
+{"additionalProperties":true,"properties":{"fields":{"type":"array"},"path":{"type":"string"}},"required":["path","fields"],"type":"object"}

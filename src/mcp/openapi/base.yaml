@@ -1,0 +1,8 @@
+openapi: 3.0.0
+info:
+  title: Kazibee Remote Tool MCP
+  version: '1.0.0'
+  description: Grant-protected MCP endpoint routing tool calls to the user's executor.
+servers:
+  - url: http://localhost:3100
+    description: Local development server

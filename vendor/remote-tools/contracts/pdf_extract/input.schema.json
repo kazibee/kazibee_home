@@ -1,0 +1,1 @@
+{"additionalProperties":false,"properties":{"pages":{"items":{"minimum":1,"type":"integer"},"maxItems":100,"type":"array"},"path":{"description":"Source PDF file. Workspace-relative; absolute paths and symlink escapes are rejected.","maxLength":1024,"minLength":1,"type":"string"}},"required":["path"],"type":"object"}

@@ -10,7 +10,9 @@ name: Deploy Worker Production (Cloudflare)
 # retired and prod cutover is verified; then add the `release` push
 # trigger and delete deploy.yml.
 #
-# Requires @noego/app >= 2.2.0 (deploy.cloudflare.environments support).
+# Requires @noego/app >= 2.1.6 (self-contained [env.<name>] sections in
+# the generated wrangler.toml; earlier versions relied on wrangler
+# inheritance that does not exist and shipped broken prod deploys).
 #
 # Required configuration (GitHub `production` environment):
 #   CLOUDFLARE_API_TOKEN   — environment secret (Workers deploy, prod)
@@ -58,26 +60,10 @@ jobs:
           npx proper -c proper.durable.json status
           npx proper -c proper.durable.json up
 
-      # App secrets live in AWS SSM Parameter Store (us-east-1, SecureString)
-      # under /kazibee/prod/... — pulled here and handed to wrangler as
-      # Worker secrets below.
-      - name: Load app secrets from SSM
-        id: ssm
-        env:
-          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          AWS_DEFAULT_REGION: us-east-1
-          SSM_PREFIX: /kazibee/prod
-        run: |
-          get() { aws ssm get-parameter --name "$SSM_PREFIX/$1" --with-decryption --query Parameter.Value --output text; }
-          GOOGLE_CLIENT_ID=$(get google/client_id)
-          GOOGLE_CLIENT_SECRET=$(get google/client_secret)
-          echo "::add-mask::$GOOGLE_CLIENT_SECRET"
-          {
-            echo "GOOGLE_CLIENT_ID=$GOOGLE_CLIENT_ID"
-            echo "GOOGLE_CLIENT_SECRET=$GOOGLE_CLIENT_SECRET"
-          } >> "$GITHUB_ENV"
-
+      # App secrets: SSM (us-east-1, /kazibee_web/prod/...) is the source of
+      # truth; scripts/sync-secrets-from-ssm.sh copies them into the GitHub
+      # `production` environment. Deploys read only GitHub secrets — no AWS
+      # lookups at deploy time.
       - name: "Deploy with wrangler (env: production)"
         uses: cloudflare/wrangler-action@v3
         # --env production on the command selects the [env.production]
@@ -88,6 +74,8 @@ jobs:
           AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          GOOGLE_CLIENT_ID: ${{ secrets.GOOGLE_CLIENT_ID }}
+          GOOGLE_CLIENT_SECRET: ${{ secrets.GOOGLE_CLIENT_SECRET }}
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}

@@ -1,0 +1,104 @@
+module:
+  remoteTools:
+    basePath: '/v1/remote-tools'
+    paths:
+      '/mcp':
+        post:
+          # MCP over Streamable HTTP (JSON response mode). Bearer = remote
+          # tool grant token; every request is independently authenticated.
+          x-controller: remote_tools.controller
+          x-action: mcp
+          requestBody:
+            required: true
+            content:
+              application/json:
+                schema:
+                  # JSON-RPC envelope; method-level validation happens in the
+                  # controller because params vary per method.
+                  type: object
+          responses:
+            '200':
+              description: JSON-RPC response
+              content:
+                application/json:
+                  schema: { type: object }
+            '202': { description: Notification acknowledged }
+            '400': { $ref: '#/components/responses/RemoteToolsErrorResult' }
+            '401': { $ref: '#/components/responses/RemoteToolsErrorResult' }
+      '/grants':
+        post:
+          x-controller: remote_tools.controller
+          x-action: createGrant
+          parameters:
+            - $ref: '#/components/parameters/RemoteToolsSessionQuery'
+          requestBody:
+            required: true
+            content:
+              application/json:
+                schema:
+                  type: object
+                  additionalProperties: false
+                  required: [executorId, workspaceId, scopes]
+                  properties:
+                    executorId: { type: string, pattern: '^exe_[A-Za-z0-9]{8,64}$' }
+                    workspaceId: { type: string, pattern: '^wrk_[A-Za-z0-9]{8,64}$' }
+                    scopes:
+                      type: array
+                      minItems: 1
+                      maxItems: 6
+                      items: { type: string, maxLength: 32 }
+          responses:
+            '201':
+              description: Grant created; raw token returned exactly once
+              content:
+                application/json:
+                  schema: { type: object }
+            '400': { $ref: '#/components/responses/RemoteToolsErrorResult' }
+            '401': { $ref: '#/components/responses/RemoteToolsErrorResult' }
+        get:
+          x-controller: remote_tools.controller
+          x-action: listGrants
+          parameters:
+            - $ref: '#/components/parameters/RemoteToolsSessionQuery'
+          responses:
+            '200':
+              description: Owner grant list (no tokens)
+              content:
+                application/json:
+                  schema: { type: object }
+            '401': { $ref: '#/components/responses/RemoteToolsErrorResult' }
+      '/grants/{grantId}/revoke':
+        post:
+          x-controller: remote_tools.controller
+          x-action: revokeGrant
+          parameters:
+            - in: path
+              name: grantId
+              required: true
+              schema: { type: string, pattern: '^rtg_[A-Za-z0-9]{8,64}$' }
+            - $ref: '#/components/parameters/RemoteToolsSessionQuery'
+          responses:
+            '200':
+              description: Grant revoked
+              content:
+                application/json:
+                  schema: { type: object }
+            '400': { $ref: '#/components/responses/RemoteToolsErrorResult' }
+            '401': { $ref: '#/components/responses/RemoteToolsErrorResult' }
+    components:
+      parameters:
+        RemoteToolsSessionQuery:
+          in: query
+          name: sessionId
+          required: true
+          schema: { type: string, maxLength: 128 }
+      responses:
+        RemoteToolsErrorResult:
+          description: Error
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error: { type: boolean }
+                  message: { type: string }

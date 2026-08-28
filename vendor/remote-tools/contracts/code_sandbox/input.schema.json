@@ -1,0 +1,1 @@
+{"additionalProperties":false,"properties":{"allowNet":{"items":{"description":"Hostname (no wildcards).","maxLength":256,"type":"string"},"maxItems":32,"type":"array"},"code":{"maxLength":200000,"minLength":1,"type":"string"},"tools":{"items":{"maxLength":128,"type":"string"},"maxItems":16,"type":"array"}},"required":["code"],"type":"object"}

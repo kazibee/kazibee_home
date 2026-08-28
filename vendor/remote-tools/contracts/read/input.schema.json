@@ -1,0 +1,1 @@
+{"additionalProperties":false,"properties":{"path":{"description":"Path to the file or directory to read. Workspace-relative; absolute paths and symlink escapes are rejected.","maxLength":1024,"minLength":1,"type":"string"}},"required":["path"],"type":"object"}

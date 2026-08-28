@@ -1,0 +1,1 @@
+{"additionalProperties":true,"properties":{"api":{"type":"string"},"manual":{"type":"string"},"name":{"type":"string"}},"required":["name"],"type":"object"}

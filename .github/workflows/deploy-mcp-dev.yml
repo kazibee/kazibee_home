@@ -1,0 +1,78 @@
+name: Deploy MCP Worker Dev (Cloudflare)
+
+# Remote Tool MCP worker, dev environment (mcp-dev.kazibee.com). Same
+# discipline as deploy-mcp-prod but bound to the dev site worker
+# (script_name: kazibee-dev) and the GitHub `dev` environment secrets.
+#
+# Required configuration (GitHub `dev` environment):
+#   CLOUDFLARE_API_TOKEN   — environment secret (Workers deploy, dev)
+#   DATABASE_URL           — environment secret: dev Postgres
+#   CLOUDFLARE_ACCOUNT_ID  — repository secret
+
+on:
+  push:
+    branches:
+      - release
+    paths:
+      - src/mcp/**
+      - src/server/**
+      - apps/mcp/**
+      - migrations/**
+      - package.json
+      - package-lock.json
+      - .github/workflows/deploy-mcp-dev.yml
+  workflow_dispatch:
+
+jobs:
+  deploy-mcp-dev:
+    runs-on: self-hosted
+    environment: dev
+
+    steps:
+      - name: Checkout website
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install dependencies
+        run: npm ci
+
+      # Durable Object binding (script_name: kazibee-dev) comes from the
+      # `wrangler` fragments in apps/mcp/noego.config.yml.
+      - name: Build Cloudflare MCP worker
+        run: npm run mcp:build
+
+      - name: Migrate database (durable)
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: |
+          npx proper -c proper.durable.json status
+          npx proper -c proper.durable.json up
+
+      # Deploy BEFORE uploading secrets (Cloudflare error 10215 otherwise).
+      - name: "Deploy with wrangler (env: dev)"
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          wranglerVersion: "4.126.0"
+          workingDirectory: apps/mcp/dist/cloudflare
+          environment: dev
+          command: deploy --env dev
+
+      - name: "Upload worker secrets (env: dev)"
+        uses: cloudflare/wrangler-action@v3
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          wranglerVersion: "4.126.0"
+          workingDirectory: apps/mcp/dist/cloudflare
+          environment: dev
+          command: versions list --env dev
+          secrets: |
+            DATABASE_URL

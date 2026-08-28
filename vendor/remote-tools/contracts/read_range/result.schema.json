@@ -1,0 +1,1 @@
+{"additionalProperties":true,"properties":{"content":{"type":"string"},"endLine":{"type":"integer"},"handleId":{"type":"string"},"path":{"type":"string"},"startLine":{"type":"integer"},"totalLines":{"type":"integer"}},"required":["path","content"],"type":"object"}

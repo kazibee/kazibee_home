@@ -1,0 +1,1 @@
+{"additionalProperties":false,"properties":{"alignTo":{"maximum":40,"minimum":0,"type":"integer"},"id":{"description":"Owner-bound span handleId from read_range.","maxLength":128,"minLength":1,"type":"string"}},"required":["id","alignTo"],"type":"object"}

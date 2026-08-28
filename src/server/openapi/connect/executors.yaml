@@ -106,6 +106,50 @@ module:
             '400': { $ref: '#/components/responses/ConnectExecutorErrorResult' }
             '401': { $ref: '#/components/responses/ConnectExecutorErrorResult' }
             '500': { $ref: '#/components/responses/ConnectExecutorErrorResult' }
+      '/channel-auth':
+        post:
+          # Credential verification for the local dev coordinator; shares the
+          # production verification service. Reveals only ok / not ok.
+          x-controller: connect_channel.controller
+          x-action: authenticate
+          requestBody:
+            required: true
+            content:
+              application/json:
+                schema:
+                  type: object
+                  additionalProperties: false
+                  required: [authorization, executorId, deviceId, generation, audience, protocolVersion]
+                  properties:
+                    authorization: { type: string, maxLength: 256 }
+                    executorId: { type: string, maxLength: 68 }
+                    deviceId: { type: string, maxLength: 68 }
+                    generation: { type: string, maxLength: 16 }
+                    audience: { type: string, maxLength: 32 }
+                    protocolVersion: { type: string, maxLength: 8 }
+          responses:
+            '200':
+              description: Credential is valid
+              content:
+                application/json:
+                  schema: { type: object }
+            '401': { $ref: '#/components/responses/ConnectExecutorErrorResult' }
+      '/{executorId}/channel':
+        get:
+          # WebSocket upgrade for the executor's outbound Connect channel
+          # (transport `websocket_v1`). Authenticated by channel credential
+          # headers, then forwarded to the ExecutorCoordinator Durable Object.
+          x-controller: connect_channel.controller
+          x-action: connect
+          parameters:
+            - $ref: '#/components/parameters/ConnectExecutorPath'
+          responses:
+            '101':
+              description: Channel established
+            '400': { $ref: '#/components/responses/ConnectExecutorErrorResult' }
+            '401': { $ref: '#/components/responses/ConnectExecutorErrorResult' }
+            '426': { $ref: '#/components/responses/ConnectExecutorErrorResult' }
+            '503': { $ref: '#/components/responses/ConnectExecutorErrorResult' }
       '/{executorId}':
         get:
           x-controller: connect_executor.controller

@@ -1,0 +1,1 @@
+{"additionalProperties":true,"properties":{"matchCount":{"type":"integer"},"matches":{"type":"array"},"outputId":{"type":"string"}},"required":["outputId"],"type":"object"}

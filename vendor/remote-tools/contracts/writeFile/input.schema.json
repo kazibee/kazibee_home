@@ -1,0 +1,1 @@
+{"additionalProperties":false,"properties":{"content":{"maxLength":1000000,"type":"string"},"path":{"description":"File to create or replace. Workspace-relative; absolute paths and symlink escapes are rejected.","maxLength":1024,"minLength":1,"type":"string"}},"required":["path","content"],"type":"object"}

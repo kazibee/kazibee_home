@@ -1,0 +1,1 @@
+{"additionalProperties":false,"properties":{"paths":{"items":{"description":"Input PDF. Workspace-relative; absolute paths and symlink escapes are rejected.","maxLength":1024,"minLength":1,"type":"string"},"maxItems":20,"minItems":2,"type":"array"}},"required":["paths"],"type":"object"}

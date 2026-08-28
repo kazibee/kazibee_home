@@ -45,6 +45,7 @@ interface CoordinatorState {
   acceptWebSocket(ws: CoordinatorSocket): void;
   getWebSockets(): CoordinatorSocket[];
   setWebSocketAutoResponse(pair: WebSocketRequestResponsePair): void;
+  getWebSocketAutoResponseTimestamp(ws: CoordinatorSocket): Date | null;
   storage: CoordinatorStorage;
 }
 
@@ -345,8 +346,24 @@ export class ExecutorCoordinator {
 
   // ------------------------------------------------------------ internal binding
 
+  /**
+   * Heartbeat pings are answered by the runtime's auto-response without
+   * waking this object, so the stored lastSeenAt goes quiet on an idle but
+   * healthy channel. Fold the runtime's auto-response timestamp back in
+   * before judging staleness.
+   */
+  private liveRecord(record: PresenceRecord | undefined): PresenceRecord | undefined {
+    if (!record) return undefined;
+    let lastSeenAt = record.lastSeenAt;
+    for (const socket of this.state.getWebSockets()) {
+      const answeredAt = this.state.getWebSocketAutoResponseTimestamp(socket);
+      if (answeredAt) lastSeenAt = Math.max(lastSeenAt, answeredAt.getTime());
+    }
+    return { ...record, lastSeenAt };
+  }
+
   private async presence(): Promise<Response> {
-    const record = await this.state.storage.get<PresenceRecord>(PRESENCE_KEY);
+    const record = this.liveRecord(await this.state.storage.get<PresenceRecord>(PRESENCE_KEY));
     const hasSocket = this.state.getWebSockets().length > 0;
     return Response.json({
       state: presenceState(record, hasSocket),
@@ -368,7 +385,7 @@ export class ExecutorCoordinator {
       return Response.json({ code: "INVALID_FRAME", message: "invalid json" }, { status: 400 });
     }
 
-    const record = await this.state.storage.get<PresenceRecord>(PRESENCE_KEY);
+    const record = this.liveRecord(await this.state.storage.get<PresenceRecord>(PRESENCE_KEY));
     const sockets = this.state.getWebSockets();
     const socket = sockets[0];
     if (!socket || !record || presenceState(record, true) !== "online") {

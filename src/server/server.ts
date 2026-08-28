@@ -1,5 +1,11 @@
 import path from "node:path";
 import { configureLogging as configureNoegoLogging, getLogger } from "@noego/logger";
+// Static imports only: the old template-literal dynamicImport defeated the
+// bundler's module graph, so on workerd's unbundled tree `import("sqlstack")`
+// resolved as a relative path and failed — no worker DB registration ever
+// succeeded. Kazidoc imports these statically for exactly this reason.
+import { SqlStackDB, createPgDb } from "sqlstack";
+import { neon } from "@neondatabase/serverless";
 import { initDatabase } from "./repo/boot";
 import TraceAdapter from "./observability/trace_adapter";
 import container from "./container";
@@ -8,7 +14,6 @@ import Env from "./services/env";
 import RawRequest from "./services/raw_request";
 
 const baseLogger = getLogger("kazibee");
-const dynamicImport = (specifier: string) => import(`${specifier}`);
 
 const SERVER_ROOT = path.resolve(process.cwd(), "server");
 export const STITCH_PATH = path.join(SERVER_ROOT, "stitch.yaml");
@@ -71,8 +76,6 @@ export async function worker({ env }: { env?: Record<string, unknown> } = {}) {
     // sharing I/O objects across requests, which rules out pg Pool/Client
     // here. fullResults gives pg-shaped { rows, rowCount, fields } for
     // sqlstack.
-    const { SqlStackDB, createPgDb } = await dynamicImport("sqlstack");
-    const { neon } = await dynamicImport("@neondatabase/serverless");
     const httpQuery = neon(connectionString, { fullResults: true });
     const poolLike = {
       async query(sql: string, params?: unknown[]) {

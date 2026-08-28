@@ -12,10 +12,19 @@ name: Deploy MCP Worker Production (Cloudflare)
 #                            migrate step and uploaded as a Worker secret
 #   CLOUDFLARE_ACCOUNT_ID  — repository secret
 
-# Production deploys are MANUAL ONLY, matching deploy-worker-prod.yml:
-# release pushes auto-deploy dev; a human dispatches prod after verifying
-# dev (mcp-dev.kazibee.com).
+# Release model: release-candidate pushes deploy dev; release pushes deploy
+# production. workflow_dispatch remains for out-of-band deploys.
 on:
+  push:
+    branches:
+      - release
+    paths:
+      - src/mcp/**
+      - src/server/**
+      - apps/mcp/**
+      - package.json
+      - package-lock.json
+      - .github/workflows/deploy-mcp-prod.yml
   workflow_dispatch:
 
 jobs:
@@ -40,14 +49,9 @@ jobs:
       - name: Build Cloudflare MCP worker
         run: npm run mcp:build
 
-      # Idempotent; the web deploy also runs this, but the MCP deploy must
-      # not depend on that ordering.
-      - name: Migrate database (durable)
-        env:
-          DATABASE_URL: ${{ secrets.DATABASE_URL }}
-        run: |
-          npx proper -c proper.durable.json status
-          npx proper -c proper.durable.json up
+      # Migrations are NOT run here: they are manual-only via the
+      # migrate-db-* workflows (workflow_dispatch). Deploys assume the
+      # schema is already in place.
 
       # Deploy BEFORE uploading secrets: Cloudflare rejects secret edits
       # (error 10215) whenever the worker has an uploaded-but-undeployed

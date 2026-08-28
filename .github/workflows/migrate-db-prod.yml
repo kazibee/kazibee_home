@@ -1,0 +1,46 @@
+name: Migrate Database Production
+
+# Database migrations are MANUAL ONLY — never run on a push. A human
+# dispatches this before (or independently of) a deploy. Deploy workflows do
+# not migrate; they assume the schema is already in place.
+#
+# Runs both Postgres migration sets against the prod database:
+#   proper.durable.json — worker-owned tables (connect, remote tools, auth)
+#   proper.relay.json   — node relay tables
+#
+# Required configuration (GitHub `production` environment):
+#   DATABASE_URL — prod Postgres, reachable from the self-hosted runner
+
+on:
+  workflow_dispatch:
+
+jobs:
+  migrate-production:
+    runs-on: self-hosted
+    environment: production
+
+    steps:
+      - name: Checkout website
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Migrate (durable)
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: |
+          npx proper -c proper.durable.json status
+          npx proper -c proper.durable.json up
+
+      - name: Migrate (relay)
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: |
+          npx proper -c proper.relay.json status
+          npx proper -c proper.relay.json up

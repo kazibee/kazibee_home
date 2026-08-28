@@ -25,6 +25,9 @@ name: Deploy Worker Production (Cloudflare)
 #                            (kazibee_deploy IAM user: SSM + S3 downloads)
 
 on:
+  push:
+    branches:
+      - release
   workflow_dispatch:
 
 jobs:
@@ -50,15 +53,9 @@ jobs:
       - name: Build Cloudflare worker (SSR pages + API)
         run: npx noego build --target cloudflare --nodejs-compat
 
-      # Migrate the PROD Postgres before deploying. Worker owns only the
-      # durable set (proper.durable.json); relay is Node-only. `proper up`
-      # is idempotent and exits 1 on error, stopping the deploy.
-      - name: Migrate database (durable)
-        env:
-          DATABASE_URL: ${{ secrets.DATABASE_URL }}
-        run: |
-          npx proper -c proper.durable.json status
-          npx proper -c proper.durable.json up
+      # Migrations are NOT run here: they are manual-only via the
+      # migrate-db-* workflows (workflow_dispatch). Deploys assume the
+      # schema is already in place.
 
       # App secrets: SSM (us-east-1, /kazibee_web/prod/...) is the source of
       # truth; scripts/sync-secrets-from-ssm.sh copies them into the GitHub

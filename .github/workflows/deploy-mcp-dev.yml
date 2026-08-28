@@ -12,7 +12,7 @@ name: Deploy MCP Worker Dev (Cloudflare)
 on:
   push:
     branches:
-      - release
+      - release-candidate
     paths:
       - src/mcp/**
       - src/server/**
@@ -45,12 +45,9 @@ jobs:
       - name: Build Cloudflare MCP worker
         run: npm run mcp:build
 
-      - name: Migrate database (durable)
-        env:
-          DATABASE_URL: ${{ secrets.DATABASE_URL }}
-        run: |
-          npx proper -c proper.durable.json status
-          npx proper -c proper.durable.json up
+      # Migrations are NOT run here: they are manual-only via the
+      # migrate-db-* workflows (workflow_dispatch). Deploys assume the
+      # schema is already in place.
 
       # Deploy BEFORE uploading secrets (Cloudflare error 10215 otherwise).
       - name: "Deploy with wrangler (env: dev)"

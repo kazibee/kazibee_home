@@ -84,7 +84,23 @@ interface InflightRoute {
   resolve(frame: Record<string, unknown>): void;
   reject(code: string, message: string): void;
   acceptTimer: ReturnType<typeof setTimeout> | null;
+  /** Whole-route budget; fires DEADLINE_EXCEEDED if no result arrives. */
+  resultTimer: ReturnType<typeof setTimeout> | null;
   accepted: boolean;
+}
+
+const DEFAULT_ROUTE_DEADLINE_MS = 50_000;
+const MAX_ROUTE_DEADLINE_MS = 55_000;
+const ROUTE_DEADLINE_GRACE_MS = 2_000;
+
+/**
+ * Route lifetime = the command's deadlineAt plus a small grace, clamped so a
+ * route can never outlive the web MCP client's 60-second request timeout.
+ */
+function routeDeadlineMs(payload: Record<string, unknown> | undefined): number {
+  const raw = typeof payload?.deadlineAt === "string" ? Date.parse(payload.deadlineAt) : NaN;
+  const remaining = Number.isFinite(raw) ? raw - now() : DEFAULT_ROUTE_DEADLINE_MS;
+  return Math.min(Math.max(remaining, 1_000), MAX_ROUTE_DEADLINE_MS) + ROUTE_DEADLINE_GRACE_MS;
 }
 
 function now(): number {
@@ -235,8 +251,11 @@ export class ExecutorCoordinator {
     if (record?.fence === attachment.fence) {
       await this.state.storage.delete(PRESENCE_KEY);
     }
-    for (const route of this.routes.values()) {
+    for (const [operationId, route] of this.routes) {
       if (route.fence === attachment.fence) {
+        this.routes.delete(operationId);
+        if (route.acceptTimer) clearTimeout(route.acceptTimer);
+        if (route.resultTimer) clearTimeout(route.resultTimer);
         route.reject(
           route.accepted ? "RESULT_ROUTE_LOST" : "EXECUTOR_OFFLINE",
           route.accepted
@@ -295,6 +314,7 @@ export class ExecutorCoordinator {
     if (!route || route.fence !== attachment.fence) return;
     this.routes.delete(operationId);
     if (route.acceptTimer) clearTimeout(route.acceptTimer);
+    if (route.resultTimer) clearTimeout(route.resultTimer);
     route.resolve(frame);
   }
 
@@ -383,16 +403,27 @@ export class ExecutorCoordinator {
         fence: record.fence,
         accepted: false,
         acceptTimer: null,
+        resultTimer: null,
         resolve: (frame) => resolve(Response.json(frame)),
         reject: (code, message) => resolve(
           Response.json({ code, message }, { status: 502 }),
         ),
       };
+      const removeRoute = () => {
+        this.routes.delete(operationId);
+        if (route.acceptTimer) clearTimeout(route.acceptTimer);
+        if (route.resultTimer) clearTimeout(route.resultTimer);
+      };
       route.acceptTimer = setTimeout(() => {
         if (this.routes.get(operationId) !== route) return;
-        this.routes.delete(operationId);
+        removeRoute();
         route.reject("EXECUTOR_ACCEPT_TIMEOUT", "The executor did not accept in time.");
       }, ACCEPT_TIMEOUT_MS);
+      route.resultTimer = setTimeout(() => {
+        if (this.routes.get(operationId) !== route) return;
+        removeRoute();
+        route.reject("DEADLINE_EXCEEDED", "The executor did not return a result before the deadline.");
+      }, routeDeadlineMs(payload));
       this.routes.set(operationId, route);
 
       try {

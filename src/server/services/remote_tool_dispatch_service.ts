@@ -30,7 +30,11 @@ export type DispatchResult =
       effectState?: string;
     };
 
-const DEFAULT_DEADLINE_MS = 120_000;
+// Web MCP clients time out at 60s per request; the whole dispatch must
+// resolve inside that. 45s leaves headroom for edge/proxy latency, and the
+// coordinator enforces it as a route deadline (spec doc 01 §17's 120s default
+// applies to native hosts; the web budget is the binding one here).
+const DEFAULT_DEADLINE_MS = 45_000;
 
 /**
  * Routes one authorized tool call to the grant-bound executor through its

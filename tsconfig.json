@@ -5,6 +5,7 @@
     "moduleResolution": "bundler",
     "rootDir": ".",
     "outDir": "dist",
+    "apps/**/dist",
     "resolveJsonModule": true,
     "esModuleInterop": true,
     "verbatimModuleSyntax": true,

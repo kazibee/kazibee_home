@@ -44,15 +44,24 @@ describe('ConnectDashboardController', () => {
   });
 
   it('covers loading to empty and populated list states', async () => {
-    const fetchMock = vi.fn()
-      .mockResolvedValueOnce(jsonResponse(200, { executors: [] }))
-      .mockResolvedValueOnce(jsonResponse(200, {
-        executors: [
-          online,
-          { ...online, executorId: 'exe_abcdefgh', displayName: 'Linux', online: false, presence: 'offline' },
-          { ...online, executorId: 'exe_stale123', displayName: 'Stale', online: false, presence: 'stale' },
-        ],
-      }));
+    // refresh() loads executors then connections; route by URL, with the
+    // executors payload changing between the first and second refresh.
+    let executorCalls = 0;
+    const fetchMock = vi.fn(async (url: string) => {
+      if (String(url).includes('/v1/remote-tools/connections')) {
+        return jsonResponse(200, { connections: [] });
+      }
+      executorCalls += 1;
+      return executorCalls === 1
+        ? jsonResponse(200, { executors: [] })
+        : jsonResponse(200, {
+            executors: [
+              online,
+              { ...online, executorId: 'exe_abcdefgh', displayName: 'Linux', online: false, presence: 'offline' },
+              { ...online, executorId: 'exe_stale123', displayName: 'Stale', online: false, presence: 'stale' },
+            ],
+          });
+    });
     const controller = new ConnectDashboardController(dependencies(fetchMock));
     controller.initialize({ skipInitialLoad: true });
     const first = controller.input.refresh();

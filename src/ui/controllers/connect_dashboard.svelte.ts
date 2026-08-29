@@ -27,6 +27,29 @@ export interface ExecutorCard extends ExecutorSummary {
   canManage: boolean;
 }
 
+export interface ConnectionMember {
+  executorId: string;
+  displayName: string;
+  workspaceId: string;
+  scope: 'read' | 'read_write';
+}
+
+export interface ConnectionCard {
+  connectionId: string;
+  clientName: string;
+  approvedScope: 'read' | 'read_write';
+  allowShell: boolean;
+  allowWeb: boolean;
+  status: string;
+  members: ConnectionMember[];
+}
+
+interface ConnectionEdit {
+  access: 'read' | 'read_write';
+  allowShell: boolean;
+  allowWeb: boolean;
+}
+
 interface DashboardData {
   status: 'loading' | 'ready' | 'error' | 'signed-out';
   executors: ExecutorCard[];
@@ -36,10 +59,23 @@ interface DashboardData {
   renameValue: string;
   revokeId: string | null;
   busyId: string | null;
+  connections: ConnectionCard[];
+  connectionsError: string | null;
+  editConnectionId: string | null;
+  connectionEdit: ConnectionEdit;
+  revokeConnectionId: string | null;
+  connectionBusyId: string | null;
 }
 
 interface DashboardInput {
   refresh(): Promise<void>;
+  openConnectionEdit(connectionId: string): void;
+  setConnectionEdit(patch: Partial<ConnectionEdit>): void;
+  cancelConnectionEdit(): void;
+  saveConnection(): Promise<void>;
+  openConnectionRevoke(connectionId: string): void;
+  cancelConnectionRevoke(): void;
+  revokeConnection(): Promise<void>;
   openRename(executorId: string): void;
   setRenameValue(value: string): void;
   cancelRename(): void;
@@ -76,6 +112,12 @@ export default class ConnectDashboardController implements PageController<Dashbo
     renameValue: '',
     revokeId: null,
     busyId: null,
+    connections: [],
+    connectionsError: null,
+    editConnectionId: null,
+    connectionEdit: { access: 'read', allowShell: false, allowWeb: false },
+    revokeConnectionId: null,
+    connectionBusyId: null,
   });
 
   private readonly deps: ConnectControllerDependencies;
@@ -112,6 +154,69 @@ export default class ConnectDashboardController implements PageController<Dashbo
         this.data.status = 'error';
         this.data.error = error instanceof Error ? error.message : 'Unable to load your executors.';
       }
+      await this.loadConnections();
+    },
+    openConnectionEdit: (connectionId) => {
+      const connection = this.data.connections.find((item) => item.connectionId === connectionId);
+      if (!connection || connection.status !== 'active') return;
+      this.data.editConnectionId = connectionId;
+      this.data.connectionEdit = {
+        access: connection.approvedScope,
+        allowShell: connection.allowShell,
+        allowWeb: connection.allowWeb,
+      };
+      this.data.revokeConnectionId = null;
+      this.data.connectionsError = null;
+    },
+    setConnectionEdit: (patch) => {
+      this.data.connectionEdit = { ...this.data.connectionEdit, ...patch };
+      this.data.connectionsError = null;
+    },
+    cancelConnectionEdit: () => {
+      this.data.editConnectionId = null;
+    },
+    saveConnection: async () => {
+      const connectionId = this.data.editConnectionId;
+      if (!connectionId || this.data.connectionBusyId) return;
+      const edit = this.data.connectionEdit;
+      await this.mutateConnection(connectionId, 'update', {
+        access: edit.access,
+        allowShell: edit.allowShell,
+        allowWeb: edit.allowWeb,
+      }, async () => {
+        this.data.connections = this.data.connections.map((item) =>
+          item.connectionId === connectionId
+            ? {
+                ...item,
+                approvedScope: edit.access,
+                allowShell: edit.allowShell,
+                allowWeb: edit.allowWeb,
+                members: edit.access === 'read'
+                  ? item.members.map((member) => ({ ...member, scope: 'read' as const }))
+                  : item.members,
+              }
+            : item);
+        this.input.cancelConnectionEdit();
+      });
+    },
+    openConnectionRevoke: (connectionId) => {
+      const connection = this.data.connections.find((item) => item.connectionId === connectionId);
+      if (!connection || connection.status !== 'active') return;
+      this.data.revokeConnectionId = connectionId;
+      this.data.editConnectionId = null;
+      this.data.connectionsError = null;
+    },
+    cancelConnectionRevoke: () => {
+      this.data.revokeConnectionId = null;
+    },
+    revokeConnection: async () => {
+      const connectionId = this.data.revokeConnectionId;
+      if (!connectionId || this.data.connectionBusyId) return;
+      await this.mutateConnection(connectionId, 'revoke', {}, async () => {
+        this.data.connections = this.data.connections.map((item) =>
+          item.connectionId === connectionId ? { ...item, status: 'revoked' } : item);
+        this.input.cancelConnectionRevoke();
+      });
     },
     openRename: (executorId) => {
       const executor = this.data.executors.find((item) => item.executorId === executorId);
@@ -248,6 +353,60 @@ export default class ConnectDashboardController implements PageController<Dashbo
       this.data.actionError = error instanceof Error ? error.message : `Unable to ${action} this executor.`;
     } finally {
       this.data.busyId = null;
+    }
+  }
+
+  private async loadConnections() {
+    const sessionId = this.sessionId ?? this.deps.getSessionId();
+    if (!sessionId) return;
+    try {
+      const query = new URLSearchParams({ sessionId });
+      const response = await this.deps.fetch(`/v1/remote-tools/connections?${query}`, {
+        credentials: 'same-origin',
+      });
+      if (!response.ok) throw new Error(await responseMessage(response, 'Unable to load your MCP connections.'));
+      const body = await response.json() as { connections?: ConnectionCard[] };
+      this.data.connections = Array.isArray(body.connections) ? body.connections : [];
+      this.data.connectionsError = null;
+    } catch (error) {
+      this.data.connectionsError = error instanceof Error ? error.message : 'Unable to load your MCP connections.';
+    }
+  }
+
+  private async mutateConnection(
+    connectionId: string,
+    action: 'update' | 'revoke',
+    body: object,
+    onSuccess: () => Promise<void>,
+  ) {
+    const sessionId = this.sessionId ?? this.deps.getSessionId();
+    const csrf = this.deps.getCsrfToken();
+    if (!sessionId) {
+      this.signedOut();
+      return;
+    }
+    if (!csrf) {
+      this.data.connectionsError = 'Your security token is unavailable. Sign in again.';
+      return;
+    }
+    this.data.connectionBusyId = connectionId;
+    this.data.connectionsError = null;
+    try {
+      const query = new URLSearchParams({ sessionId });
+      const response = await this.deps.fetch(
+        `/v1/remote-tools/connections/${encodeURIComponent(connectionId)}/${action}?${query}`,
+        requestInit(body, csrf),
+      );
+      if (response.status === 401) {
+        this.signedOut();
+        return;
+      }
+      if (!response.ok) throw new Error(await responseMessage(response, `Unable to ${action} this connection.`));
+      await onSuccess();
+    } catch (error) {
+      this.data.connectionsError = error instanceof Error ? error.message : `Unable to ${action} this connection.`;
+    } finally {
+      this.data.connectionBusyId = null;
     }
   }
 

@@ -118,6 +118,99 @@
         </article>
       {/each}
     </div>
+
+    <div class="mt-14 border-t border-neutral-200 pt-10" data-test-id="connect-connections">
+      <h2 class="text-2xl font-black tracking-tight text-ink">MCP connections</h2>
+      <p class="mt-2 max-w-2xl text-sm leading-6 text-ink-muted">
+        Apps connected through OAuth. Edit one to change what it can do — changes apply to its very next call, no reconnect needed.
+      </p>
+
+      {#if data.connectionsError}
+        <div class="mt-5 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800" role="alert" data-test-id="connections-error">
+          {data.connectionsError}
+        </div>
+      {/if}
+
+      {#if data.connections.length === 0}
+        <p class="mt-6 text-sm text-ink-faint" data-test-id="connections-empty">No MCP connections yet. Connect an app (like ChatGPT) to see it here.</p>
+      {:else}
+        <div class="mt-6 grid gap-4 sm:grid-cols-2" data-test-id="connections-list">
+          {#each data.connections as connection (connection.connectionId)}
+            <article class="rounded-2xl border border-neutral-200 bg-white p-5 shadow-sm" data-test-id="connection-card">
+              <div class="flex items-start justify-between gap-4">
+                <div class="min-w-0">
+                  <h3 class="truncate text-lg font-bold text-ink" data-test-id="connection-name">{connection.clientName}</h3>
+                  <p class="mt-1 truncate font-mono text-xs text-ink-faint">{connection.connectionId}</p>
+                </div>
+                {#if connection.status === 'active'}
+                  <span class="inline-flex shrink-0 items-center gap-1.5 rounded-full bg-green-50 px-2.5 py-1 text-xs font-bold text-green-700"><span class="h-2 w-2 rounded-full bg-green-500"></span>Active</span>
+                {:else}
+                  <span class="inline-flex shrink-0 items-center gap-1.5 rounded-full bg-red-50 px-2.5 py-1 text-xs font-bold text-red-700"><span class="h-2 w-2 rounded-full bg-red-500"></span>Revoked</span>
+                {/if}
+              </div>
+
+              <div class="mt-3 flex flex-wrap gap-1.5" data-test-id="connection-capabilities">
+                <span class="rounded-full bg-neutral-100 px-2.5 py-1 text-xs font-bold text-neutral-700">{connection.approvedScope === 'read_write' ? 'Read & write' : 'Read only'}</span>
+                {#if connection.allowShell}<span class="rounded-full bg-amber-50 px-2.5 py-1 text-xs font-bold text-amber-700">Shell</span>{/if}
+                {#if connection.allowWeb}<span class="rounded-full bg-blue-50 px-2.5 py-1 text-xs font-bold text-blue-700">Web & browser</span>{/if}
+              </div>
+
+              {#if connection.members.length > 0}
+                <p class="mt-3 text-xs text-ink-faint">
+                  Machines: {connection.members.map((member) => member.displayName).join(', ')}
+                </p>
+              {/if}
+
+              {#if data.editConnectionId === connection.connectionId}
+                <form class="mt-5 border-t border-neutral-100 pt-5" onsubmit={(event) => { event.preventDefault(); input.saveConnection(); }} data-test-id="connection-edit-form">
+                  <fieldset>
+                    <legend class="text-sm font-semibold text-ink">Workspace access</legend>
+                    <div class="mt-2 flex gap-2">
+                      <label class="flex items-center gap-2 rounded-lg border border-neutral-300 px-3 py-2 text-xs font-bold text-ink">
+                        <input type="radio" name={"access-" + connection.connectionId} checked={data.connectionEdit.access === 'read'} onchange={() => input.setConnectionEdit({ access: 'read' })} />
+                        Read only
+                      </label>
+                      <label class="flex items-center gap-2 rounded-lg border border-neutral-300 px-3 py-2 text-xs font-bold text-ink">
+                        <input type="radio" name={"access-" + connection.connectionId} checked={data.connectionEdit.access === 'read_write'} onchange={() => input.setConnectionEdit({ access: 'read_write' })} />
+                        Read &amp; write
+                      </label>
+                    </div>
+                  </fieldset>
+                  <div class="mt-3 flex flex-col gap-2">
+                    <label class="flex items-center gap-2 text-sm text-ink">
+                      <input type="checkbox" checked={data.connectionEdit.allowShell} onchange={(event) => input.setConnectionEdit({ allowShell: event.currentTarget.checked })} data-test-id="connection-edit-shell" />
+                      Allow shell commands
+                    </label>
+                    <label class="flex items-center gap-2 text-sm text-ink">
+                      <input type="checkbox" checked={data.connectionEdit.allowWeb} onchange={(event) => input.setConnectionEdit({ allowWeb: event.currentTarget.checked })} data-test-id="connection-edit-web" />
+                      Allow web fetch &amp; browser
+                    </label>
+                  </div>
+                  <div class="mt-4 flex gap-2">
+                    <button type="submit" disabled={data.connectionBusyId === connection.connectionId} class="rounded-lg bg-ink px-3 py-2 text-xs font-bold text-white">Save</button>
+                    <button type="button" onclick={() => input.cancelConnectionEdit()} class="rounded-lg border border-neutral-300 px-3 py-2 text-xs font-bold text-ink">Cancel</button>
+                  </div>
+                </form>
+              {:else if data.revokeConnectionId === connection.connectionId}
+                <div class="mt-5 border-t border-red-100 pt-5" data-test-id="connection-revoke-confirm">
+                  <p class="text-sm font-semibold text-red-900">Revoke this connection?</p>
+                  <p class="mt-1 text-xs leading-5 text-red-700">The app's tokens stop working immediately. It can reconnect later through OAuth.</p>
+                  <div class="mt-3 flex gap-2">
+                    <button type="button" onclick={() => input.revokeConnection()} disabled={data.connectionBusyId === connection.connectionId} class="rounded-lg bg-red-700 px-3 py-2 text-xs font-bold text-white">Revoke connection</button>
+                    <button type="button" onclick={() => input.cancelConnectionRevoke()} class="rounded-lg border border-neutral-300 px-3 py-2 text-xs font-bold text-ink">Cancel</button>
+                  </div>
+                </div>
+              {:else if connection.status === 'active'}
+                <div class="mt-5 flex gap-2 border-t border-neutral-100 pt-4">
+                  <button type="button" onclick={() => input.openConnectionEdit(connection.connectionId)} class="rounded-lg border border-neutral-300 px-3 py-2 text-xs font-bold text-ink transition hover:bg-neutral-50" data-test-id="connection-edit">Edit</button>
+                  <button type="button" onclick={() => input.openConnectionRevoke(connection.connectionId)} class="rounded-lg border border-red-200 px-3 py-2 text-xs font-bold text-red-700 transition hover:bg-red-50" data-test-id="connection-revoke">Revoke</button>
+                </div>
+              {/if}
+            </article>
+          {/each}
+        </div>
+      {/if}
+    </div>
   {/if}
 </section>
 

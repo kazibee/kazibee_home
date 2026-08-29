@@ -150,6 +150,23 @@ export default class OAuthRepo {
     throw new SqlStackError("Not implemented");
   }
 
+  /** Owner-driven capability edit; no-op for revoked connections. */
+  @Query()
+  updateConnectionCapabilities(_params: {
+    connection_id: string;
+    approved_scope: OAuthConnectionScope;
+    allow_shell: boolean;
+    allow_web: boolean;
+  }): Promise<void> {
+    throw new SqlStackError("Not implemented");
+  }
+
+  /** Clamps member scopes after the connection's access drops to read. */
+  @Query()
+  demoteConnectionMemberScopes(_params: { connection_id: string }): Promise<void> {
+    throw new SqlStackError("Not implemented");
+  }
+
   @Query()
   addConnectionExecutor(_params: {
     connection_id: string;

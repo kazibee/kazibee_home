@@ -98,6 +98,36 @@ module:
                 application/json:
                   schema: { type: object }
             '401': { $ref: '#/components/responses/RemoteToolsErrorResult' }
+      '/connections/{connectionId}/update':
+        post:
+          x-controller: remote_tools.controller
+          x-action: updateConnection
+          parameters:
+            - in: path
+              name: connectionId
+              required: true
+              schema: { type: string, pattern: '^ocn_[a-f0-9]{32}$' }
+            - $ref: '#/components/parameters/RemoteToolsSessionQuery'
+          requestBody:
+            required: true
+            content:
+              application/json:
+                schema:
+                  type: object
+                  additionalProperties: false
+                  properties:
+                    access: { type: string, enum: [read, read_write] }
+                    allowShell: { type: boolean }
+                    allowWeb: { type: boolean }
+          responses:
+            '200':
+              description: Connection settings updated
+              content:
+                application/json:
+                  schema: { type: object }
+            '400': { $ref: '#/components/responses/RemoteToolsErrorResult' }
+            '401': { $ref: '#/components/responses/RemoteToolsErrorResult' }
+            '404': { $ref: '#/components/responses/RemoteToolsErrorResult' }
       '/connections/{connectionId}/members':
         post:
           x-controller: remote_tools.controller

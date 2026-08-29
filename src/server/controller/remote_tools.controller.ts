@@ -499,6 +499,48 @@ export default class RemoteToolsController {
     return res.json({ ok: true });
   }
 
+  /**
+   * Owner-driven settings edit: access level and the shell/web families can
+   * change after consent (the owner outranks the client's original request;
+   * doc 06 tool scopes are recomputed from these flags on every MCP call).
+   * Dropping access to read also clamps every member's scope.
+   */
+  async updateConnection({ req, res }: Context) {
+    const sessionId = typeof req.query.sessionId === "string" ? req.query.sessionId : "";
+    const actor = await this.actors.browser(req, sessionId, true);
+    if (!actor.ok) return res.status(401).json({ error: true, message: "Not signed in." });
+    const userId = (actor.actor as { userId: string }).userId;
+
+    const connection = await this.ownedConnection(req.params?.connectionId, userId);
+    if (!connection) return res.status(404).json({ error: true, message: "Connection not found." });
+
+    const body = req.body as { access?: string; allowShell?: boolean; allowWeb?: boolean } | undefined;
+    const access = body?.access === "read" || body?.access === "read_write"
+      ? body.access
+      : connection.approved_scope;
+    const allowShell = typeof body?.allowShell === "boolean" ? body.allowShell : connection.allow_shell;
+    const allowWeb = typeof body?.allowWeb === "boolean" ? body.allowWeb : connection.allow_web;
+
+    await this.oauth.updateConnectionCapabilities({
+      connection_id: connection.connection_id,
+      approved_scope: access,
+      allow_shell: allowShell,
+      allow_web: allowWeb,
+    });
+    if (access === "read" && connection.approved_scope === "read_write") {
+      await this.oauth.demoteConnectionMemberScopes({ connection_id: connection.connection_id });
+    }
+    return res.json({
+      ok: true,
+      connection: {
+        connectionId: connection.connection_id,
+        approvedScope: access,
+        allowShell,
+        allowWeb,
+      },
+    });
+  }
+
   async revokeConnection({ req, res }: Context) {
     const sessionId = typeof req.query.sessionId === "string" ? req.query.sessionId : "";
     const actor = await this.actors.browser(req, sessionId, true);

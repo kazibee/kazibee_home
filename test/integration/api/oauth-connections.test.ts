@@ -230,6 +230,22 @@ describe("OAuth connections end to end", () => {
     expect(dispatchedPayload.scopes).toEqual(["workspace.read", "workspace.write"]);
     expect(dispatchedPayload.workspaceId).toBe(WORKSPACE_ID);
 
+    // Gateway tools: the connection lists its machines with live presence,
+    // and tools/list advertises list_machines alongside the executor set.
+    const machines = await testApp.agent.post("/v1/remote-tools/mcp")
+      .set("authorization", `Bearer ${tokens.access_token}`)
+      .send({ jsonrpc: "2.0", id: 3, method: "tools/call", params: { name: "list_machines", arguments: {} } });
+    expect(machines.status).toBe(200);
+    expect(machines.body.result.structuredContent.machines).toHaveLength(1);
+    expect(machines.body.result.structuredContent.machines[0].machineId).toBe(claim.executorId);
+    expect(machines.body.result.structuredContent.machines[0].presence).toBe("online");
+
+    const toolList = await testApp.agent.post("/v1/remote-tools/mcp")
+      .set("authorization", `Bearer ${tokens.access_token}`)
+      .send({ jsonrpc: "2.0", id: 4, method: "tools/list", params: {} });
+    expect(toolList.status).toBe(200);
+    expect((toolList.body.result.tools as Array<{ name: string }>).map((t) => t.name)).toContain("list_machines");
+
     // Refresh rotation works and the old refresh token dies.
     const refreshed = await flow.refresh({
       refreshToken: tokens.refresh_token, clientId, resource: RESOURCE,

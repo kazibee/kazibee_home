@@ -68,7 +68,7 @@ export default class RemoteToolsController {
    * keep their original static binding.
    */
   private async resolveCaller(req: Request): Promise<
-    | { ok: true; route(toolName: string, args: Record<string, unknown>) : Promise<DispatchResult>; routedTo?: { executorId: string; displayName: string; workspaceId: string } }
+    | { ok: true; principal?: OAuthPrincipal; route(toolName: string, args: Record<string, unknown>) : Promise<DispatchResult> }
     | { ok: false }
   > {
     const header = typeof req.headers.authorization === "string" ? req.headers.authorization : null;
@@ -80,31 +80,10 @@ export default class RemoteToolsController {
         if (error instanceof InvalidOAuthTokenError) return { ok: false };
         throw error;
       }
-      const member = await this.pickMember(principal);
-      if (!member) {
-        return {
-          ok: true,
-          route: async () => ({
-            ok: false,
-            code: "EXECUTOR_OFFLINE",
-            message: "No machine on this connection is online.",
-          }),
-        };
-      }
-      const target = {
-        executorId: member.executor_id,
-        workspaceId: member.workspace_id,
-        scopes: connectionScopeToToolScopes(member.scope),
-        grantId: principal.connection_id,
-        toolSessionId: `rts_${principal.connection_id.slice(4)}`,
-      };
       return {
         ok: true,
-        route: (toolName, args) => this.dispatch.callTarget(target, toolName, args),
-        // Multi-member connections disclose which machine served the call.
-        ...(principal.members.length > 1
-          ? { routedTo: { executorId: member.executor_id, displayName: member.display_name, workspaceId: member.workspace_id } }
-          : {}),
+        principal,
+        route: (toolName, args) => this.routeConnection(principal, toolName, args),
       };
     }
 
@@ -117,18 +96,93 @@ export default class RemoteToolsController {
   }
 
   /**
-   * Deterministic routing: members in added_at order, first one whose
-   * coordinator presence is online. A single member routes directly — the
-   * dispatch itself reports EXECUTOR_OFFLINE.
+   * Connection routing. Machine identity is only ever needed to enumerate
+   * workspaces: list_workspaces takes an optional machineId; every other
+   * call is addressed by workspaceId alone and the gateway finds the online
+   * member hosting that workspace from live coordinator presence.
    */
-  private async pickMember(principal: OAuthPrincipal) {
-    if (principal.members.length === 0) return null;
-    if (principal.members.length === 1) return principal.members[0];
-    for (const member of principal.members) {
+  private async routeConnection(
+    principal: OAuthPrincipal,
+    toolName: string,
+    args: Record<string, unknown>,
+  ): Promise<DispatchResult> {
+    let member = null;
+    if (toolName === "list_workspaces" && typeof args.machineId === "string" && args.machineId) {
+      member = principal.members.find((candidate) => candidate.executor_id === args.machineId) ?? null;
+      if (!member) {
+        return { ok: false, code: "WORKSPACE_UNAVAILABLE", message: "That machine is not on this connection. Call list_machines." };
+      }
+      // Routing-only argument; the executor tool does not take it.
+      args = Object.fromEntries(Object.entries(args).filter(([key]) => key !== "machineId"));
+    } else if (typeof args.workspaceId === "string" && args.workspaceId && principal.members.length > 1) {
+      member = await this.memberForWorkspace(principal.members, args.workspaceId);
+      if (!member) {
+        return {
+          ok: false,
+          code: "EXECUTOR_OFFLINE",
+          message: "No online machine on this connection hosts that workspace. Call list_machines and list_workspaces.",
+        };
+      }
+    } else {
+      member = await this.pickMember(principal.members);
+      if (!member) {
+        return { ok: false, code: "EXECUTOR_OFFLINE", message: "No machine on this connection is online." };
+      }
+    }
+
+    // The membership must cover the addressed workspace.
+    if (typeof args.workspaceId === "string" && args.workspaceId
+      && member.workspace_id !== "*" && member.workspace_id !== args.workspaceId) {
+      return { ok: false, code: "WORKSPACE_UNAVAILABLE", message: "That workspace is not covered by this connection." };
+    }
+
+    return this.dispatch.callTarget({
+      executorId: member.executor_id,
+      workspaceId: member.workspace_id,
+      scopes: connectionScopeToToolScopes(member.scope),
+      grantId: principal.connection_id,
+      toolSessionId: `rts_${principal.connection_id.slice(4)}`,
+    }, toolName, args);
+  }
+
+  /** First member (added_at order) whose live presence hosts the workspace. */
+  private async memberForWorkspace(members: OAuthPrincipal["members"], workspaceId: string) {
+    for (const member of members) {
+      if (member.workspace_id !== "*" && member.workspace_id !== workspaceId) continue;
+      const detail = await this.dispatch.presenceDetail(member.executor_id);
+      if (detail?.state !== "online") continue;
+      if (member.workspace_id === workspaceId) return member;
+      if (detail.workspaces.some((workspace) => workspace.workspaceId === workspaceId)) return member;
+    }
+    return null;
+  }
+
+  /**
+   * Deterministic default: members in added_at order, first one online. A
+   * single member routes directly — dispatch itself reports EXECUTOR_OFFLINE.
+   */
+  private async pickMember(members: OAuthPrincipal["members"]) {
+    if (members.length === 0) return null;
+    if (members.length === 1) return members[0];
+    for (const member of members) {
       const presence = await this.dispatch.presence(member.executor_id);
       if (presence === "online") return member;
     }
     return null;
+  }
+
+  /** Gateway-level tool: the connection's machines with live presence. */
+  private async listMachines(principal: OAuthPrincipal) {
+    return {
+      ok: true,
+      machines: await Promise.all(principal.members.map(async (member) => ({
+        machineId: member.executor_id,
+        name: member.display_name,
+        presence: (await this.dispatch.presence(member.executor_id)) ?? "offline",
+        workspaceAccess: member.workspace_id === "*" ? "all" : member.workspace_id,
+        scope: member.scope,
+      }))),
+    };
   }
 
   async mcp({ req, res }: Context) {
@@ -178,13 +232,34 @@ export default class RemoteToolsController {
           return rpcError(res, body.id, -32603, `${outcome.code}: ${outcome.message}`);
         }
         const payload = outcome.payload as { tools?: Array<{ name: string; description: string; inputSchema: unknown }> };
-        return rpcResult(res, body.id, {
-          tools: (payload.tools ?? []).map((tool) => ({
-            name: tool.name,
-            description: tool.description,
-            inputSchema: tool.inputSchema ?? { type: "object" },
-          })),
-        });
+        const tools = (payload.tools ?? []).map((tool) => ({
+          name: tool.name,
+          description: tool.description,
+          inputSchema: tool.inputSchema ?? { type: "object" },
+        }));
+        if (caller.principal) {
+          // Gateway-level tools: machines belong to the connection, not to
+          // any one executor. machineId exists only to enumerate workspaces;
+          // after that, workspaceId alone addresses every operation.
+          for (const tool of tools) {
+            if (tool.name !== "list_workspaces") continue;
+            const schema = tool.inputSchema as { properties?: Record<string, unknown> };
+            if (schema?.properties) {
+              schema.properties.machineId = {
+                type: "string",
+                pattern: "^exe_[A-Za-z0-9]{8,64}$",
+                description: "Optional machine id from list_machines; lists that machine's workspaces.",
+              };
+            }
+          }
+          tools.push({
+            name: "list_machines",
+            description: "List the machines on this connection with live presence. Use a machineId with list_workspaces; after that, workspaceId alone addresses every operation.",
+            inputSchema: { type: "object", additionalProperties: false, properties: {} },
+          });
+          tools.sort((a, b) => (a.name < b.name ? -1 : 1));
+        }
+        return rpcResult(res, body.id, { tools });
       }
 
       case "tools/call": {
@@ -192,6 +267,14 @@ export default class RemoteToolsController {
         const args = body.params?.arguments;
         if (typeof name !== "string" || name.length === 0) {
           return rpcError(res, body.id, -32602, "params.name is required.");
+        }
+        if (name === "list_machines" && caller.principal) {
+          const machines = await this.listMachines(caller.principal);
+          return rpcResult(res, body.id, {
+            content: [{ type: "text", text: JSON.stringify(machines, null, 2) }],
+            structuredContent: machines,
+            isError: false,
+          });
         }
         const outcome = await caller.route(
           name,
@@ -202,7 +285,6 @@ export default class RemoteToolsController {
             content: [{ type: "text", text: JSON.stringify(outcome.payload, null, 2) }],
             structuredContent: outcome.payload,
             isError: false,
-            ...(caller.routedTo ? { _meta: { "kazibee/routedTo": caller.routedTo } } : {}),
           });
         }
         // Tool-domain failures are successful JSON-RPC envelopes with

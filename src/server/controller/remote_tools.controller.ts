@@ -16,7 +16,10 @@ import { randomBytes } from "node:crypto";
 
 type Context = { req: Request; res: Response };
 
-const SERVER_INFO = { name: "Kazibee Remote Tool Service", version: "0.1.0" };
+// Bump the version whenever the executor tool manifest changes shape: MCP
+// clients (ChatGPT in particular) cache a connector's tool list against the
+// server identity and will not re-run tools/list until it looks different.
+const SERVER_INFO = { name: "Kazibee Remote Tool Service", version: "0.2.0" };
 const SUPPORTED_PROTOCOL_VERSIONS = ["2025-06-18", "2025-03-26", "2024-11-05"];
 
 function bearer(req: Request): string | null {

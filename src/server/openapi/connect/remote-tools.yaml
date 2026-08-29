@@ -118,7 +118,9 @@ module:
                   required: [executorId, workspaceId]
                   properties:
                     executorId: { type: string, pattern: '^exe_[A-Za-z0-9]{8,64}$' }
-                    workspaceId: { type: string, pattern: '^wrk_[A-Za-z0-9]{8,64}$' }
+                    # '*' grants every workspace the machine exposes; tools
+                    # then require an explicit workspaceId per call.
+                    workspaceId: { type: string, pattern: '^(wrk_[A-Za-z0-9]{8,64}|[*])$' }
                     scope: { type: string, enum: [read, read_write] }
           responses:
             '201':

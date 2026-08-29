@@ -89,7 +89,9 @@ implements PageController<OAuthConsentData, OAuthConsentInput> {
       const executor = this.data.executors.find(
         (candidate) => candidate.executor_id === executorId,
       );
-      if (!executor || !executor.workspaces.some((workspace) => workspace.workspace_id === workspaceId)) {
+      if (!executor) return;
+      if (workspaceId !== '*'
+        && !executor.workspaces.some((workspace) => workspace.workspace_id === workspaceId)) {
         return;
       }
       this.data.workspaceChoices = {
@@ -195,12 +197,12 @@ implements PageController<OAuthConsentData, OAuthConsentInput> {
       const scopes: Record<string, 'read' | 'read_write'> = {};
       for (const executor of context.executors) {
         const kept = this.data.workspaceChoices[executor.executor_id];
-        const first = executor.workspaces.find((workspace) => workspace.state === 'enabled')
-          ?? executor.workspaces[0];
-        workspaces[executor.executor_id] = kept
-          && executor.workspaces.some((workspace) => workspace.workspace_id === kept)
+        // '*' (all workspaces) is always offered — it also covers machines
+        // that are offline and cannot report their workspace list yet.
+        workspaces[executor.executor_id] = kept === '*'
+          || (kept && executor.workspaces.some((workspace) => workspace.workspace_id === kept))
           ? kept
-          : first?.workspace_id ?? '';
+          : '*';
         const keptScope = this.data.executorScopes[executor.executor_id];
         scopes[executor.executor_id] = keptScope === 'read' ? 'read' : context.requested_access;
       }

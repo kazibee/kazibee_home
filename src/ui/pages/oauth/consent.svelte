@@ -106,9 +106,7 @@
                       class="rounded-lg border border-neutral-300 bg-white px-2.5 py-1.5 text-sm text-ink"
                       data-test-id={`oauth-consent-workspace-${executor.executor_id}`}
                     >
-                      {#if executor.workspaces.length === 0}
-                        <option value="" disabled>No workspaces reported (machine offline?)</option>
-                      {/if}
+                      <option value="*">All workspaces</option>
                       {#each executor.workspaces as workspace (workspace.workspace_id)}
                         <option value={workspace.workspace_id}>{workspace.display_name}</option>
                       {/each}

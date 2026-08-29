@@ -12,7 +12,7 @@ describe("PostgreSQL test database templates", () => {
       const relayHistory = await first.pool.query(
         "SELECT count(*)::int AS count FROM proper_migrations_relay",
       );
-      expect(durableHistory.rows[0]?.count).toBe(12); // +remote_tool_grants +oauth_provider
+      expect(durableHistory.rows[0]?.count).toBe(13); // +remote_tool_grants +oauth_provider +remote_workspaces
       expect(relayHistory.rows[0]?.count).toBe(8);
 
       await first.pool.query(
@@ -44,7 +44,7 @@ describe("PostgreSQL test database templates", () => {
       const relayTable = await database.pool.query(
         "SELECT to_regclass('public.sessions') AS table_name",
       );
-      expect(durableHistory.rows[0]?.count).toBe(12); // +remote_tool_grants +oauth_provider
+      expect(durableHistory.rows[0]?.count).toBe(13); // +remote_tool_grants +oauth_provider +remote_workspaces
       expect(relayTable.rows[0]?.table_name).toBeNull();
     } finally {
       await database.close();

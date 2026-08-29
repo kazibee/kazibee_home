@@ -11,6 +11,8 @@ import OAuthTokenAuthService, {
 import { connectionScopeToToolScopes } from "../services/oauth_scopes";
 import OAuthRepo from "../repo/oauth_repo";
 import ConnectExecutorRepo from "../repo/connect_executor_repo";
+import RemoteWorkspaceRepo from "../repo/remote_workspace_repo";
+import { randomBytes } from "node:crypto";
 
 type Context = { req: Request; res: Response };
 
@@ -57,6 +59,7 @@ export default class RemoteToolsController {
     @Inject(OAuthOrigins) private readonly origins: OAuthOrigins,
     @Inject(OAuthRepo) private readonly oauth: OAuthRepo,
     @Inject(ConnectExecutorRepo) private readonly executors: ConnectExecutorRepo,
+    @Inject(RemoteWorkspaceRepo) private readonly remoteWorkspaces: RemoteWorkspaceRepo,
   ) {}
 
   // ------------------------------------------------------------ MCP
@@ -106,7 +109,11 @@ export default class RemoteToolsController {
     toolName: string,
     args: Record<string, unknown>,
   ): Promise<DispatchResult> {
+    // The MCP surface speaks server-minted rws_ ids only; executors never
+    // learn them and clients never see machine-local wrk_ ids, so two
+    // machines can never collide or spoof each other's workspaces.
     let member = null;
+    let remoteWorkspaceId: string | null = null;
     if (toolName === "list_workspaces" && typeof args.machineId === "string" && args.machineId) {
       member = principal.members.find((candidate) => candidate.executor_id === args.machineId) ?? null;
       if (!member) {
@@ -114,47 +121,73 @@ export default class RemoteToolsController {
       }
       // Routing-only argument; the executor tool does not take it.
       args = Object.fromEntries(Object.entries(args).filter(([key]) => key !== "machineId"));
-    } else if (typeof args.workspaceId === "string" && args.workspaceId && principal.members.length > 1) {
-      member = await this.memberForWorkspace(principal.members, args.workspaceId);
-      if (!member) {
-        return {
-          ok: false,
-          code: "EXECUTOR_OFFLINE",
-          message: "No online machine on this connection hosts that workspace. Call list_machines and list_workspaces.",
-        };
+    } else if (typeof args.workspaceId === "string" && args.workspaceId.startsWith("rws_")) {
+      remoteWorkspaceId = args.workspaceId;
+      const row = await this.remoteWorkspaces.findRemoteWorkspace({
+        remote_workspace_id: args.workspaceId,
+      });
+      if (!row || row.user_id !== principal.user_id) {
+        return { ok: false, code: "WORKSPACE_UNAVAILABLE", message: "Unknown workspace id. Call list_workspaces." };
       }
+      member = principal.members.find((candidate) =>
+        candidate.executor_id === row.executor_id
+        && (candidate.workspace_id === "*" || candidate.workspace_id === row.local_workspace_id)) ?? null;
+      if (!member) {
+        return { ok: false, code: "WORKSPACE_UNAVAILABLE", message: "That workspace is not covered by this connection." };
+      }
+      args = { ...args, workspaceId: row.local_workspace_id };
     } else {
       member = await this.pickMember(principal.members);
       if (!member) {
         return { ok: false, code: "EXECUTOR_OFFLINE", message: "No machine on this connection is online." };
       }
+      if (typeof args.workspaceId === "string" && args.workspaceId
+        && member.workspace_id !== "*" && member.workspace_id !== args.workspaceId) {
+        return { ok: false, code: "WORKSPACE_UNAVAILABLE", message: "Unknown workspace id. Call list_workspaces." };
+      }
     }
 
-    // The membership must cover the addressed workspace.
-    if (typeof args.workspaceId === "string" && args.workspaceId
-      && member.workspace_id !== "*" && member.workspace_id !== args.workspaceId) {
-      return { ok: false, code: "WORKSPACE_UNAVAILABLE", message: "That workspace is not covered by this connection." };
-    }
-
-    return this.dispatch.callTarget({
+    const outcome = await this.dispatch.callTarget({
       executorId: member.executor_id,
       workspaceId: member.workspace_id,
       scopes: connectionScopeToToolScopes(member.scope),
       grantId: principal.connection_id,
       toolSessionId: `rts_${principal.connection_id.slice(4)}`,
     }, toolName, args);
+    if (!outcome.ok) return outcome;
+    return this.translateResult(principal, member.executor_id, toolName, remoteWorkspaceId, outcome);
   }
 
-  /** First member (added_at order) whose live presence hosts the workspace. */
-  private async memberForWorkspace(members: OAuthPrincipal["members"], workspaceId: string) {
-    for (const member of members) {
-      if (member.workspace_id !== "*" && member.workspace_id !== workspaceId) continue;
-      const detail = await this.dispatch.presenceDetail(member.executor_id);
-      if (detail?.state !== "online") continue;
-      if (member.workspace_id === workspaceId) return member;
-      if (detail.workspaces.some((workspace) => workspace.workspaceId === workspaceId)) return member;
+  /** Rewrites machine-local workspace ids in results to server-minted ones. */
+  private async translateResult(
+    principal: OAuthPrincipal,
+    executorId: string,
+    toolName: string,
+    remoteWorkspaceId: string | null,
+    outcome: Extract<DispatchResult, { ok: true }>,
+  ): Promise<DispatchResult> {
+    const payload = outcome.payload as Record<string, unknown> | null;
+    if (!payload || typeof payload !== "object") return outcome;
+    if (toolName === "list_workspaces" && Array.isArray(payload.workspaces)) {
+      const workspaces = await Promise.all(payload.workspaces.map(async (entry) => {
+        const workspace = entry as { workspaceId?: unknown; name?: unknown };
+        if (typeof workspace.workspaceId !== "string") return entry;
+        const row = await this.remoteWorkspaces.upsertRemoteWorkspace({
+          remote_workspace_id: `rws_${randomBytes(16).toString("hex")}`,
+          user_id: principal.user_id,
+          executor_id: executorId,
+          local_workspace_id: workspace.workspaceId,
+          display_name: typeof workspace.name === "string" ? workspace.name : workspace.workspaceId,
+          now: new Date().toISOString(),
+        });
+        return row ? { ...workspace, workspaceId: row.remote_workspace_id } : entry;
+      }));
+      return { ...outcome, payload: { ...payload, workspaces } };
     }
-    return null;
+    if (remoteWorkspaceId && typeof payload.workspaceId === "string") {
+      return { ...outcome, payload: { ...payload, workspaceId: remoteWorkspaceId } };
+    }
+    return outcome;
   }
 
   /**
@@ -242,9 +275,17 @@ export default class RemoteToolsController {
           // any one executor. machineId exists only to enumerate workspaces;
           // after that, workspaceId alone addresses every operation.
           for (const tool of tools) {
-            if (tool.name !== "list_workspaces") continue;
             const schema = tool.inputSchema as { properties?: Record<string, unknown> };
-            if (schema?.properties) {
+            if (!schema?.properties) continue;
+            if (schema.properties.workspaceId) {
+              // Clients address workspaces by server-minted id.
+              schema.properties.workspaceId = {
+                type: "string",
+                pattern: "^rws_[a-f0-9]{32}$",
+                description: "Workspace id from list_workspaces. Required for every file operation.",
+              };
+            }
+            if (tool.name === "list_workspaces") {
               schema.properties.machineId = {
                 type: "string",
                 pattern: "^exe_[A-Za-z0-9]{8,64}$",

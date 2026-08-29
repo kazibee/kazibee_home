@@ -61,7 +61,9 @@ function startCoordinatorStub(): Promise<{
       const { operationId, toolName } = frame.payload;
       const result = toolName === "read"
         ? { status: "succeeded", payload: { ok: true, path: "readme.md", content: "# OAuth demo" }, effectState: "none" }
-        : { status: "succeeded", payload: { ok: true, tools: [] }, effectState: "none" };
+        : toolName === "list_workspaces"
+          ? { status: "succeeded", payload: { ok: true, workspaces: [{ workspaceId: WORKSPACE_ID, name: "demo" }] }, effectState: "none" }
+          : { status: "succeeded", payload: { ok: true, tools: [] }, effectState: "none" };
       response.end(JSON.stringify({
         kind: "command.result", protocolVersion: "1.1",
         operation: "remote_tool.call", operationId, result,
@@ -229,6 +231,32 @@ describe("OAuth connections end to end", () => {
     const dispatchedPayload = (coordinator.dispatched.at(-1) as { payload: { scopes: string[]; workspaceId: string } }).payload;
     expect(dispatchedPayload.scopes).toEqual(["workspace.read", "workspace.write"]);
     expect(dispatchedPayload.workspaceId).toBe(WORKSPACE_ID);
+
+    // Workspace identity is server-minted: list_workspaces returns rws_ ids,
+    // and addressing by that id dispatches with the machine-local id.
+    const wsList = await testApp.agent.post("/v1/remote-tools/mcp")
+      .set("authorization", `Bearer ${tokens.access_token}`)
+      .send({ jsonrpc: "2.0", id: 5, method: "tools/call", params: { name: "list_workspaces", arguments: {} } });
+    expect(wsList.status).toBe(200);
+    const remoteWorkspace = wsList.body.result.structuredContent.workspaces[0] as { workspaceId: string; name: string };
+    expect(remoteWorkspace.workspaceId).toMatch(/^rws_[a-f0-9]{32}$/);
+
+    const remoteRead = await testApp.agent.post("/v1/remote-tools/mcp")
+      .set("authorization", `Bearer ${tokens.access_token}`)
+      .send({
+        jsonrpc: "2.0", id: 6, method: "tools/call",
+        params: { name: "read", arguments: { workspaceId: remoteWorkspace.workspaceId, path: "readme.md" } },
+      });
+    expect(remoteRead.status).toBe(200);
+    expect(remoteRead.body.result.isError).toBe(false);
+    const remoteDispatch = (coordinator.dispatched.at(-1) as { payload: { arguments: { workspaceId: string } } }).payload;
+    expect(remoteDispatch.arguments.workspaceId).toBe(WORKSPACE_ID);
+
+    // A second listing returns the same remote id (stable identity).
+    const wsList2 = await testApp.agent.post("/v1/remote-tools/mcp")
+      .set("authorization", `Bearer ${tokens.access_token}`)
+      .send({ jsonrpc: "2.0", id: 7, method: "tools/call", params: { name: "list_workspaces", arguments: {} } });
+    expect(wsList2.body.result.structuredContent.workspaces[0].workspaceId).toBe(remoteWorkspace.workspaceId);
 
     // Gateway tools: the connection lists its machines with live presence,
     // and tools/list advertises list_machines alongside the executor set.

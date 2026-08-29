@@ -213,8 +213,9 @@ export default class ConnectDashboardController implements PageController<Dashbo
       const connectionId = this.data.revokeConnectionId;
       if (!connectionId || this.data.connectionBusyId) return;
       await this.mutateConnection(connectionId, 'revoke', {}, async () => {
-        this.data.connections = this.data.connections.map((item) =>
-          item.connectionId === connectionId ? { ...item, status: 'revoked' } : item);
+        // Revoked connections disappear (the listing is active-only).
+        this.data.connections = this.data.connections.filter((item) =>
+          item.connectionId !== connectionId);
         this.input.cancelConnectionRevoke();
       });
     },

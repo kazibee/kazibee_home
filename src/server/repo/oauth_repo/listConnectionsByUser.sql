@@ -15,5 +15,6 @@ JOIN oauth_clients AS client ON client.client_id = connection.client_id
 LEFT JOIN oauth_connection_executors AS member
   ON member.connection_id = connection.connection_id
 WHERE connection.user_id = :user_id
+  AND connection.status = 'active'
 GROUP BY connection.connection_id, client.client_name
 ORDER BY connection.created_at DESC;

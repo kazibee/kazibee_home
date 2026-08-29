@@ -70,6 +70,8 @@ export function connectionScopeToToolScopes(
     ? ["workspace.read", "workspace.write"]
     : ["workspace.read"];
   if (families?.allow_shell) scopes.push("shell.execute");
-  if (families?.allow_web) scopes.push("web.read");
+  // The web family covers both transports: plain fetch (web.read) and the
+  // rendered browser fetch (browser.fetch, which depends on web.read).
+  if (families?.allow_web) scopes.push("web.read", "browser.fetch");
   return scopes;
 }

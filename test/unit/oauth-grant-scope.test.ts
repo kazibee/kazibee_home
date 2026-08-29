@@ -35,9 +35,9 @@ describe("OAuth grant scope parsing (doc 06 §3)", () => {
   it("maps member scope plus connection families onto executor tool scopes", () => {
     expect(connectionScopeToToolScopes("read")).toEqual(["workspace.read"]);
     expect(connectionScopeToToolScopes("read_write", { allow_shell: true, allow_web: true }))
-      .toEqual(["workspace.read", "workspace.write", "shell.execute", "web.read"]);
+      .toEqual(["workspace.read", "workspace.write", "shell.execute", "web.read", "browser.fetch"]);
     expect(connectionScopeToToolScopes("read", { allow_shell: false, allow_web: true }))
-      .toEqual(["workspace.read", "web.read"]);
+      .toEqual(["workspace.read", "web.read", "browser.fetch"]);
   });
 
   it("only treats a pure workspace scope as a legacy connection scope", () => {

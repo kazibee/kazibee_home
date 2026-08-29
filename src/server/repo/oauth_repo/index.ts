@@ -167,6 +167,31 @@ export default class OAuthRepo {
     throw new SqlStackError("Not implemented");
   }
 
+  /**
+   * Supersede: kills tokens of the user's OTHER active connections whose
+   * client shares this display name (clients re-register per connect, so the
+   * name is the durable identity). Call before revokeSupersededConnections.
+   */
+  @Query()
+  revokeSupersededConnectionTokens(_params: {
+    user_id: string;
+    connection_id: string;
+    client_name: string;
+    revoked_at: string;
+  }): Promise<void> {
+    throw new SqlStackError("Not implemented");
+  }
+
+  @Query()
+  revokeSupersededConnections(_params: {
+    user_id: string;
+    connection_id: string;
+    client_name: string;
+    revoked_at: string;
+  }): Promise<void> {
+    throw new SqlStackError("Not implemented");
+  }
+
   @Query()
   addConnectionExecutor(_params: {
     connection_id: string;

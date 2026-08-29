@@ -323,6 +323,23 @@ export default class OAuthAuthorizeService {
       throw error;
     }
 
+    // New consent supersedes the user's older connections from the same app.
+    // Clients re-register a fresh client_id on every connect, so the display
+    // name is the durable identity; unnamed clients are never superseded.
+    // Best-effort: a failure here must not break the fresh authorization.
+    const clientName = validated.client.client_name?.trim();
+    if (clientName) {
+      const revokedAt = this.clock.now().toISOString();
+      const superseded = {
+        user_id: userId,
+        connection_id: connectionId,
+        client_name: clientName,
+        revoked_at: revokedAt,
+      };
+      await this.oauth.revokeSupersededConnectionTokens(superseded).catch(() => undefined);
+      await this.oauth.revokeSupersededConnections(superseded).catch(() => undefined);
+    }
+
     return {
       ok: true,
       redirectTo: oauthRedirect(validated.params.redirect_uri, {

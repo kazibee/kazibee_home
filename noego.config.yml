@@ -63,6 +63,10 @@ deploy:
             # Claim links printed by executors: ${base}/claim/:claimId maps
             # onto the website's /connect/claim/:claimId page.
             KAZI_CONNECT_ACCOUNT_URL: https://dev.kazibee.com/connect
+            # OAuth origins are deployment-pinned: issuer strings must be
+            # byte-stable per environment (clients cache AS metadata).
+            KAZI_MCP_ORIGIN: https://mcp-dev.kazibee.com
+            KAZI_WEBSITE_ORIGIN: https://dev.kazibee.com
       production:
         name: kazibee
         routes:
@@ -71,3 +75,5 @@ deploy:
         wrangler:
           vars:
             KAZI_CONNECT_ACCOUNT_URL: https://kazibee.com/connect
+            KAZI_MCP_ORIGIN: https://mcp.kazibee.com
+            KAZI_WEBSITE_ORIGIN: https://kazibee.com

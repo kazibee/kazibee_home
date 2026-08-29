@@ -51,6 +51,15 @@ export default class RemoteToolDispatchService {
    * deployment has no coordinator routing at all (pure in-process channels).
    */
   async presence(executorId: string): Promise<"online" | "stale" | "offline" | null> {
+    const detail = await this.presenceDetail(executorId);
+    return detail && detail.state;
+  }
+
+  /** Full coordinator presence: state plus the executor's live workspace projection. */
+  async presenceDetail(executorId: string): Promise<{
+    state: "online" | "stale" | "offline";
+    workspaces: Array<{ workspaceId: string; displayName: string; state: string }>;
+  } | null> {
     const coordinator = asCoordinator(this.env.get("EXECUTOR_COORDINATOR"));
     const devOrigin = this.env.string("KAZIBEE_DEV_COORDINATOR_ORIGIN");
     if (!coordinator && !devOrigin) return null;
@@ -63,15 +72,47 @@ export default class RemoteToolDispatchService {
       const response = coordinator
         ? await coordinator.get(coordinator.idFromName(executorId)).fetch(request)
         : await fetch(request);
-      if (!response.ok) return "offline";
-      const body = (await response.json()) as { state?: unknown };
-      return body.state === "online" || body.state === "stale" ? body.state : "offline";
+      if (!response.ok) return { state: "offline", workspaces: [] };
+      const body = (await response.json()) as {
+        state?: unknown;
+        workspaces?: { workspaces?: Array<{ workspaceId?: unknown; displayName?: unknown; state?: unknown }> } | null;
+      };
+      const state = body.state === "online" || body.state === "stale" ? body.state : "offline";
+      const workspaces = (body.workspaces?.workspaces ?? [])
+        .filter((entry) => typeof entry?.workspaceId === "string")
+        .map((entry) => ({
+          workspaceId: String(entry.workspaceId),
+          displayName: typeof entry.displayName === "string" ? entry.displayName : String(entry.workspaceId),
+          state: typeof entry.state === "string" ? entry.state : "unavailable",
+        }));
+      return { state, workspaces };
     } catch {
-      return "offline";
+      return { state: "offline", workspaces: [] };
     }
   }
 
   async call(grant: RemoteToolGrant, toolName: string, args: Record<string, unknown>): Promise<DispatchResult> {
+    return this.callTarget({
+      executorId: grant.executor_id,
+      workspaceId: grant.workspace_id,
+      scopes: JSON.parse(grant.scopes) as string[],
+      grantId: grant.grant_id,
+      toolSessionId: `rts_${grant.grant_id.slice(4)}`,
+    }, toolName, args);
+  }
+
+  /** Dispatches one tool call to an explicit target (grant- or connection-routed). */
+  async callTarget(
+    target: {
+      executorId: string;
+      workspaceId: string;
+      scopes: string[];
+      grantId: string;
+      toolSessionId: string;
+    },
+    toolName: string,
+    args: Record<string, unknown>,
+  ): Promise<DispatchResult> {
     const coordinator = asCoordinator(this.env.get("EXECUTOR_COORDINATOR"));
     // Node dev has no Durable Object runtime; a local dev coordinator speaks
     // the same /dispatch contract over plain HTTP.
@@ -92,16 +133,16 @@ export default class RemoteToolDispatchService {
       commandId: opaque("cmd"),
       correlationId: opaque("cor"),
       idempotencyKey: `idem_${randomBytes(18).toString("base64url")}`,
-      executorId: grant.executor_id,
+      executorId: target.executorId,
       actorRole: "remote_tool_gateway",
       payload: {
         operationId,
         toolName,
         arguments: args,
-        scopes: JSON.parse(grant.scopes) as string[],
-        workspaceId: grant.workspace_id,
-        toolSessionId: `rts_${grant.grant_id.slice(4)}`,
-        grantId: grant.grant_id,
+        scopes: target.scopes,
+        workspaceId: target.workspaceId,
+        toolSessionId: target.toolSessionId,
+        grantId: target.grantId,
         grantGeneration: 1,
         deadlineAt: new Date(Date.now() + DEFAULT_DEADLINE_MS).toISOString(),
       },
@@ -112,7 +153,7 @@ export default class RemoteToolDispatchService {
       const request = new Request(
         coordinator
           ? "https://coordinator/dispatch"
-          : `${devOrigin}/executors/${encodeURIComponent(grant.executor_id)}/dispatch`,
+          : `${devOrigin}/executors/${encodeURIComponent(target.executorId)}/dispatch`,
         {
           method: "POST",
           headers: { "content-type": "application/json" },
@@ -120,7 +161,7 @@ export default class RemoteToolDispatchService {
         },
       );
       response = coordinator
-        ? await coordinator.get(coordinator.idFromName(grant.executor_id)).fetch(request)
+        ? await coordinator.get(coordinator.idFromName(target.executorId)).fetch(request)
         : await fetch(request);
     } catch {
       return { ok: false, code: "EXECUTOR_OFFLINE", message: "Executor routing failed." };

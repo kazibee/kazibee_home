@@ -1,0 +1,7 @@
+paths:
+  /oauth/authorize:
+    get:
+      summary: OAuth authorization consent
+      description: Client-side consent UI after the server validates the OAuth request
+      x-view: pages/oauth/consent.svelte
+      x-controller: controllers/oauth_consent.svelte.ts

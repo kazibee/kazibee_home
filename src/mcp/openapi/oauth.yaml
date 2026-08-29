@@ -1,0 +1,89 @@
+module:
+  oauth:
+    paths:
+      /.well-known/oauth-protected-resource:
+        get:
+          summary: OAuth protected resource metadata
+          x-controller: oauth.controller
+          x-action: protectedResourceMetadata
+          responses:
+            '200':
+              description: Protected resource metadata
+      # Some client versions probe the RFC 9728 path-suffixed variant.
+      /.well-known/oauth-protected-resource/mcp:
+        get:
+          summary: OAuth protected resource metadata (path-suffixed alias)
+          x-controller: oauth.controller
+          x-action: protectedResourceMetadata
+          responses:
+            '200':
+              description: Protected resource metadata
+      /.well-known/oauth-authorization-server:
+        get:
+          summary: OAuth authorization server metadata
+          x-controller: oauth.controller
+          x-action: authorizationServerMetadata
+          responses:
+            '200':
+              description: Authorization server metadata
+      /oauth/token:
+        post:
+          summary: Exchange an authorization code or refresh token
+          x-controller: oauth.controller
+          x-action: token
+          x-middleware: [form_body]
+          requestBody:
+            required: true
+            content:
+              application/x-www-form-urlencoded:
+                schema:
+                  type: object
+                  required: [grant_type, client_id, resource]
+                  properties:
+                    grant_type:
+                      type: string
+                    code:
+                      type: string
+                    code_verifier:
+                      type: string
+                    client_id:
+                      type: string
+                    redirect_uri:
+                      type: string
+                    refresh_token:
+                      type: string
+                    resource:
+                      type: string
+          responses:
+            '200':
+              description: OAuth token response
+            '400':
+              description: OAuth protocol error
+            '401':
+              description: Invalid OAuth client
+      /oauth/register:
+        post:
+          summary: Dynamically register an OAuth client
+          x-controller: oauth.controller
+          x-action: register
+          requestBody:
+            required: true
+            content:
+              application/json:
+                schema:
+                  type: object
+                  required: [redirect_uris]
+                  properties:
+                    client_name:
+                      type: string
+                    redirect_uris:
+                      type: array
+                      items:
+                        type: string
+                    application_type:
+                      type: string
+          responses:
+            '201':
+              description: Registered client metadata
+            '400':
+              description: Invalid client metadata

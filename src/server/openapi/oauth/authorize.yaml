@@ -1,0 +1,73 @@
+module:
+  oauthAuthorization:
+    basePath: /oauth
+    paths:
+      /authorize:
+        get:
+          summary: Validate an OAuth authorization request and show consent
+          x-controller: oauth_authorize.controller
+          x-action: authorize
+          responses:
+            '200':
+              description: Consent application shell
+              content:
+                text/html:
+                  schema:
+                    type: string
+            '302':
+              description: Validated client redirect carrying an OAuth error
+            '400':
+              description: Plain error page when no safe redirect is available
+      /consent/context:
+        get:
+          summary: Return client and grantable-machine context for consent
+          x-controller: oauth_authorize.controller
+          x-action: context
+          responses:
+            '200':
+              description: Consent context
+            '400':
+              description: OAuth protocol error
+            '401':
+              description: Not signed in
+      /consent/approve:
+        post:
+          summary: Approve access for one or more machines
+          description: Re-validates OAuth parameters, exact redirect URI, resource, requested scope, and live executor ownership. Requires the CSRF cookie value in x-csrf-token and the browser sessionId in the body.
+          x-controller: oauth_authorize.controller
+          x-action: approve
+          requestBody:
+            required: true
+            content:
+              application/json:
+                schema:
+                  type: object
+          responses:
+            '200':
+              description: Redirect target carrying the authorization code
+            '400':
+              description: OAuth protocol error
+            '401':
+              description: Not signed in
+            '403':
+              description: CSRF validation failed
+      /consent/deny:
+        post:
+          summary: Deny the authorization request
+          x-controller: oauth_authorize.controller
+          x-action: deny
+          requestBody:
+            required: true
+            content:
+              application/json:
+                schema:
+                  type: object
+          responses:
+            '200':
+              description: Redirect target carrying access_denied
+            '400':
+              description: OAuth protocol error
+            '401':
+              description: Not signed in
+            '403':
+              description: CSRF validation failed

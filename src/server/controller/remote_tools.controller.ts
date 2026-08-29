@@ -1,8 +1,16 @@
 import { Component, Inject } from "@noego/ioc";
 import type { CompatRequest as Request, CompatResponse as Response } from "@noego/dinner";
 import ConnectExecutorActorResolver from "../services/connect_executor_actor_resolver";
-import RemoteToolDispatchService from "../services/remote_tool_dispatch_service";
+import RemoteToolDispatchService, { type DispatchResult } from "../services/remote_tool_dispatch_service";
 import RemoteToolGrantService from "../services/remote_tool_grant_service";
+import OAuthOrigins from "../services/oauth_origins";
+import OAuthTokenAuthService, {
+  InvalidOAuthTokenError,
+  type OAuthPrincipal,
+} from "../services/oauth_token_auth_service";
+import { connectionScopeToToolScopes } from "../services/oauth_scopes";
+import OAuthRepo from "../repo/oauth_repo";
+import ConnectExecutorRepo from "../repo/connect_executor_repo";
 
 type Context = { req: Request; res: Response };
 
@@ -45,15 +53,94 @@ export default class RemoteToolsController {
     @Inject(RemoteToolGrantService) private readonly grants: RemoteToolGrantService,
     @Inject(RemoteToolDispatchService) private readonly dispatch: RemoteToolDispatchService,
     @Inject(ConnectExecutorActorResolver) private readonly actors: ConnectExecutorActorResolver,
+    @Inject(OAuthTokenAuthService) private readonly oauthTokens: OAuthTokenAuthService,
+    @Inject(OAuthOrigins) private readonly origins: OAuthOrigins,
+    @Inject(OAuthRepo) private readonly oauth: OAuthRepo,
+    @Inject(ConnectExecutorRepo) private readonly executors: ConnectExecutorRepo,
   ) {}
 
   // ------------------------------------------------------------ MCP
 
-  async mcp({ req, res }: Context) {
+  /**
+   * Resolves the bearer into a dispatch route. OAuth access tokens (resource-
+   * tagged, minted for a connection) resolve their membership live — adding
+   * or removing machines takes effect on the next call; legacy PAT grants
+   * keep their original static binding.
+   */
+  private async resolveCaller(req: Request): Promise<
+    | { ok: true; route(toolName: string, args: Record<string, unknown>) : Promise<DispatchResult>; routedTo?: { executorId: string; displayName: string; workspaceId: string } }
+    | { ok: false }
+  > {
+    const header = typeof req.headers.authorization === "string" ? req.headers.authorization : null;
+    if (this.oauthTokens.looksLikeOAuthToken(header, this.origins.resource)) {
+      let principal: OAuthPrincipal;
+      try {
+        principal = await this.oauthTokens.authenticate(header, this.origins.resource);
+      } catch (error) {
+        if (error instanceof InvalidOAuthTokenError) return { ok: false };
+        throw error;
+      }
+      const member = await this.pickMember(principal);
+      if (!member) {
+        return {
+          ok: true,
+          route: async () => ({
+            ok: false,
+            code: "EXECUTOR_OFFLINE",
+            message: "No machine on this connection is online.",
+          }),
+        };
+      }
+      const target = {
+        executorId: member.executor_id,
+        workspaceId: member.workspace_id,
+        scopes: connectionScopeToToolScopes(member.scope),
+        grantId: principal.connection_id,
+        toolSessionId: `rts_${principal.connection_id.slice(4)}`,
+      };
+      return {
+        ok: true,
+        route: (toolName, args) => this.dispatch.callTarget(target, toolName, args),
+        // Multi-member connections disclose which machine served the call.
+        ...(principal.members.length > 1
+          ? { routedTo: { executorId: member.executor_id, displayName: member.display_name, workspaceId: member.workspace_id } }
+          : {}),
+      };
+    }
+
     const grant = await this.grants.authenticate(bearer(req));
-    if (!grant) {
-      res.setHeader("WWW-Authenticate", 'Bearer realm="kazibee-remote-tools"');
-      return res.status(401).json({ error: true, message: "A valid remote tool grant bearer is required." });
+    if (!grant) return { ok: false };
+    return {
+      ok: true,
+      route: (toolName, args) => this.dispatch.call(grant, toolName, args),
+    };
+  }
+
+  /**
+   * Deterministic routing: members in added_at order, first one whose
+   * coordinator presence is online. A single member routes directly — the
+   * dispatch itself reports EXECUTOR_OFFLINE.
+   */
+  private async pickMember(principal: OAuthPrincipal) {
+    if (principal.members.length === 0) return null;
+    if (principal.members.length === 1) return principal.members[0];
+    for (const member of principal.members) {
+      const presence = await this.dispatch.presence(member.executor_id);
+      if (presence === "online") return member;
+    }
+    return null;
+  }
+
+  async mcp({ req, res }: Context) {
+    const caller = await this.resolveCaller(req);
+    if (!caller.ok) {
+      // RFC 9728: point OAuth-capable clients at the protected-resource
+      // metadata; PAT holders just see the 401.
+      res.setHeader(
+        "WWW-Authenticate",
+        `Bearer resource_metadata="${this.origins.issuer}/.well-known/oauth-protected-resource"`,
+      );
+      return res.status(401).json({ error: true, message: "A valid remote tool bearer is required." });
     }
 
     const body = req.body as { jsonrpc?: string; id?: unknown; method?: string; params?: Record<string, unknown> } | undefined;
@@ -86,7 +173,7 @@ export default class RemoteToolsController {
       case "tools/list": {
         // The executor is the manifest authority: tool_help returns exactly
         // the tools visible to this grant's scopes, schemas included.
-        const outcome = await this.dispatch.call(grant, "tool_help", {});
+        const outcome = await caller.route("tool_help", {});
         if (!outcome.ok) {
           return rpcError(res, body.id, -32603, `${outcome.code}: ${outcome.message}`);
         }
@@ -106,8 +193,7 @@ export default class RemoteToolsController {
         if (typeof name !== "string" || name.length === 0) {
           return rpcError(res, body.id, -32602, "params.name is required.");
         }
-        const outcome = await this.dispatch.call(
-          grant,
+        const outcome = await caller.route(
           name,
           (args && typeof args === "object" && !Array.isArray(args) ? args : {}) as Record<string, unknown>,
         );
@@ -116,6 +202,7 @@ export default class RemoteToolsController {
             content: [{ type: "text", text: JSON.stringify(outcome.payload, null, 2) }],
             structuredContent: outcome.payload,
             isError: false,
+            ...(caller.routedTo ? { _meta: { "kazibee/routedTo": caller.routedTo } } : {}),
           });
         }
         // Tool-domain failures are successful JSON-RPC envelopes with
@@ -198,5 +285,118 @@ export default class RemoteToolsController {
     }
     await this.grants.revoke((actor.actor as { userId: string }).userId, grantId);
     return res.json({ ok: true });
+  }
+
+  // ------------------------------------------------------------ connections
+  // OAuth connections are living objects: machines can be added and removed
+  // after consent; MCP calls resolve the membership live on every request.
+
+  async listConnections({ req, res }: Context) {
+    const sessionId = typeof req.query.sessionId === "string" ? req.query.sessionId : "";
+    const actor = await this.actors.browser(req, sessionId, false);
+    if (!actor.ok) return res.status(401).json({ error: true, message: "Not signed in." });
+    const userId = (actor.actor as { userId: string }).userId;
+
+    const connections = await this.oauth.listConnectionsByUser({ user_id: userId });
+    const withMembers = await Promise.all(connections.map(async (connection) => ({
+      connectionId: connection.connection_id,
+      clientId: connection.client_id,
+      clientName: connection.client_name,
+      approvedScope: connection.approved_scope,
+      status: connection.status,
+      createdAt: connection.created_at,
+      members: (await this.oauth.listConnectionExecutors({
+        connection_id: connection.connection_id,
+      })).map((member) => ({
+        executorId: member.executor_id,
+        displayName: member.executor_display_name,
+        workspaceId: member.workspace_id,
+        scope: member.scope,
+        addedAt: member.added_at,
+      })),
+    })));
+    return res.json({ connections: withMembers });
+  }
+
+  async addConnectionMember({ req, res }: Context) {
+    const sessionId = typeof req.query.sessionId === "string" ? req.query.sessionId : "";
+    const actor = await this.actors.browser(req, sessionId, true);
+    if (!actor.ok) return res.status(401).json({ error: true, message: "Not signed in." });
+    const userId = (actor.actor as { userId: string }).userId;
+
+    const connection = await this.ownedConnection(req.params?.connectionId, userId);
+    if (!connection) return res.status(404).json({ error: true, message: "Connection not found." });
+
+    const body = req.body as { executorId?: string; workspaceId?: string; scope?: string } | undefined;
+    if (!body || typeof body.executorId !== "string" || typeof body.workspaceId !== "string") {
+      return res.status(400).json({ error: true, message: "executorId and workspaceId are required." });
+    }
+    const scope = body.scope === "read" || body.scope === "read_write"
+      ? body.scope
+      : connection.approved_scope;
+    if (scope === "read_write" && connection.approved_scope !== "read_write") {
+      return res.status(400).json({ error: true, message: "Member scope exceeds the connection's approved scope." });
+    }
+    const executor = await this.executors.findByExecutorId({ executor_id: body.executorId });
+    if (!executor || executor.state !== "active" || executor.owner_user_id !== userId) {
+      return res.status(404).json({ error: true, message: "Machine not found." });
+    }
+    try {
+      await this.oauth.addConnectionExecutor({
+        connection_id: connection.connection_id,
+        executor_id: body.executorId,
+        workspace_id: body.workspaceId,
+        scope,
+        added_at: new Date().toISOString(),
+      });
+    } catch {
+      return res.status(409).json({ error: true, message: "That machine is already on this connection." });
+    }
+    return res.status(201).json({ ok: true });
+  }
+
+  async removeConnectionMember({ req, res }: Context) {
+    const sessionId = typeof req.query.sessionId === "string" ? req.query.sessionId : "";
+    const actor = await this.actors.browser(req, sessionId, true);
+    if (!actor.ok) return res.status(401).json({ error: true, message: "Not signed in." });
+    const userId = (actor.actor as { userId: string }).userId;
+
+    const connection = await this.ownedConnection(req.params?.connectionId, userId);
+    if (!connection) return res.status(404).json({ error: true, message: "Connection not found." });
+    const executorId = req.params?.executorId;
+    if (typeof executorId !== "string" || !/^exe_[A-Za-z0-9]{8,64}$/.test(executorId)) {
+      return res.status(400).json({ error: true, message: "Invalid executor id." });
+    }
+    await this.oauth.removeConnectionExecutor({
+      connection_id: connection.connection_id,
+      executor_id: executorId,
+    });
+    return res.json({ ok: true });
+  }
+
+  async revokeConnection({ req, res }: Context) {
+    const sessionId = typeof req.query.sessionId === "string" ? req.query.sessionId : "";
+    const actor = await this.actors.browser(req, sessionId, true);
+    if (!actor.ok) return res.status(401).json({ error: true, message: "Not signed in." });
+    const userId = (actor.actor as { userId: string }).userId;
+
+    const connection = await this.ownedConnection(req.params?.connectionId, userId);
+    if (!connection) return res.status(404).json({ error: true, message: "Connection not found." });
+    const revokedAt = new Date().toISOString();
+    await this.oauth.revokeTokensByConnection({
+      connection_id: connection.connection_id,
+      revoked_at: revokedAt,
+    });
+    await this.oauth.revokeConnection({
+      connection_id: connection.connection_id,
+      revoked_at: revokedAt,
+    });
+    return res.json({ ok: true });
+  }
+
+  private async ownedConnection(connectionId: unknown, userId: string) {
+    if (typeof connectionId !== "string" || !/^ocn_[a-f0-9]{32}$/.test(connectionId)) return null;
+    const connection = await this.oauth.findActiveConnectionById({ connection_id: connectionId });
+    return connection && connection.user_id === userId ? connection : null;
   }
 }

@@ -6,3 +6,4 @@ stitch:
   - openapi/downloads/**/*.yaml
   - openapi/updates/**/*.yaml
   - openapi/connect/**/*.yaml
+  - openapi/oauth/**/*.yaml

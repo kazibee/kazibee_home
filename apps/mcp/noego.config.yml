@@ -38,6 +38,11 @@ deploy:
           - pattern: mcp-dev.kazibee.com
             customDomain: true
         wrangler:
+          vars:
+            # OAuth issuer/resource identity for this deployment — must be
+            # byte-stable (clients cache AS metadata and compare iss).
+            KAZI_MCP_ORIGIN: https://mcp-dev.kazibee.com
+            KAZI_WEBSITE_ORIGIN: https://dev.kazibee.com
           durable_objects:
             bindings:
               - name: EXECUTOR_COORDINATOR
@@ -49,6 +54,9 @@ deploy:
           - pattern: mcp.kazibee.com
             customDomain: true
         wrangler:
+          vars:
+            KAZI_MCP_ORIGIN: https://mcp.kazibee.com
+            KAZI_WEBSITE_ORIGIN: https://kazibee.com
           durable_objects:
             bindings:
               - name: EXECUTOR_COORDINATOR

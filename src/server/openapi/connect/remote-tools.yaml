@@ -85,6 +85,92 @@ module:
                   schema: { type: object }
             '400': { $ref: '#/components/responses/RemoteToolsErrorResult' }
             '401': { $ref: '#/components/responses/RemoteToolsErrorResult' }
+      '/connections':
+        get:
+          x-controller: remote_tools.controller
+          x-action: listConnections
+          parameters:
+            - $ref: '#/components/parameters/RemoteToolsSessionQuery'
+          responses:
+            '200':
+              description: OAuth connections with their machine memberships
+              content:
+                application/json:
+                  schema: { type: object }
+            '401': { $ref: '#/components/responses/RemoteToolsErrorResult' }
+      '/connections/{connectionId}/members':
+        post:
+          x-controller: remote_tools.controller
+          x-action: addConnectionMember
+          parameters:
+            - in: path
+              name: connectionId
+              required: true
+              schema: { type: string, pattern: '^ocn_[a-f0-9]{32}$' }
+            - $ref: '#/components/parameters/RemoteToolsSessionQuery'
+          requestBody:
+            required: true
+            content:
+              application/json:
+                schema:
+                  type: object
+                  additionalProperties: false
+                  required: [executorId, workspaceId]
+                  properties:
+                    executorId: { type: string, pattern: '^exe_[A-Za-z0-9]{8,64}$' }
+                    workspaceId: { type: string, pattern: '^wrk_[A-Za-z0-9]{8,64}$' }
+                    scope: { type: string, enum: [read, read_write] }
+          responses:
+            '201':
+              description: Machine added to the connection
+              content:
+                application/json:
+                  schema: { type: object }
+            '400': { $ref: '#/components/responses/RemoteToolsErrorResult' }
+            '401': { $ref: '#/components/responses/RemoteToolsErrorResult' }
+            '404': { $ref: '#/components/responses/RemoteToolsErrorResult' }
+            '409': { $ref: '#/components/responses/RemoteToolsErrorResult' }
+      '/connections/{connectionId}/members/{executorId}/remove':
+        post:
+          x-controller: remote_tools.controller
+          x-action: removeConnectionMember
+          parameters:
+            - in: path
+              name: connectionId
+              required: true
+              schema: { type: string, pattern: '^ocn_[a-f0-9]{32}$' }
+            - in: path
+              name: executorId
+              required: true
+              schema: { type: string, pattern: '^exe_[A-Za-z0-9]{8,64}$' }
+            - $ref: '#/components/parameters/RemoteToolsSessionQuery'
+          responses:
+            '200':
+              description: Machine removed from the connection
+              content:
+                application/json:
+                  schema: { type: object }
+            '400': { $ref: '#/components/responses/RemoteToolsErrorResult' }
+            '401': { $ref: '#/components/responses/RemoteToolsErrorResult' }
+            '404': { $ref: '#/components/responses/RemoteToolsErrorResult' }
+      '/connections/{connectionId}/revoke':
+        post:
+          x-controller: remote_tools.controller
+          x-action: revokeConnection
+          parameters:
+            - in: path
+              name: connectionId
+              required: true
+              schema: { type: string, pattern: '^ocn_[a-f0-9]{32}$' }
+            - $ref: '#/components/parameters/RemoteToolsSessionQuery'
+          responses:
+            '200':
+              description: Connection revoked; all its tokens are dead
+              content:
+                application/json:
+                  schema: { type: object }
+            '401': { $ref: '#/components/responses/RemoteToolsErrorResult' }
+            '404': { $ref: '#/components/responses/RemoteToolsErrorResult' }
     components:
       parameters:
         RemoteToolsSessionQuery:

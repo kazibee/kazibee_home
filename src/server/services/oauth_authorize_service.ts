@@ -11,8 +11,10 @@ import OAuthFlowService from "./oauth_flow_service";
 import OAuthOrigins from "./oauth_origins";
 import RemoteToolDispatchService from "./remote_tool_dispatch_service";
 import {
-  connectionScopeToOAuthScope,
-  oauthScopeToConnectionScope,
+  grantScopeAllows,
+  grantScopeToOAuthScope,
+  parseOAuthGrantScope,
+  type OAuthGrantScope,
 } from "./oauth_scopes";
 
 export interface OAuthAuthorizationParams {
@@ -44,7 +46,7 @@ export interface OAuthAuthorizationSuccess {
   ok: true;
   client: OAuthClientRecord;
   params: OAuthAuthorizationParams;
-  requestedScope: OAuthConnectionScope;
+  requestedScope: OAuthGrantScope;
 }
 
 export type OAuthAuthorizationValidation =
@@ -65,6 +67,8 @@ export interface OAuthConsentContext {
   };
   requested_scope: string;
   requested_access: OAuthConnectionScope;
+  requested_shell: boolean;
+  requested_web: boolean;
   executors: GrantableExecutor[];
 }
 
@@ -153,7 +157,7 @@ export default class OAuthAuthorizeService {
       return failure("invalid_request", "Invalid OAuth resource", safe);
     }
 
-    const requestedScope = oauthScopeToConnectionScope(params.scope);
+    const requestedScope = parseOAuthGrantScope(params.scope);
     if (!requestedScope) {
       return failure("invalid_scope", "Unsupported OAuth scope", safe);
     }
@@ -202,8 +206,10 @@ export default class OAuthAuthorizeService {
           name: validated.client.client_name?.trim()
             || validated.client.client_id,
         },
-        requested_scope: connectionScopeToOAuthScope(validated.requestedScope),
-        requested_access: validated.requestedScope,
+        requested_scope: grantScopeToOAuthScope(validated.requestedScope),
+        requested_access: validated.requestedScope.access,
+        requested_shell: validated.requestedScope.shell,
+        requested_web: validated.requestedScope.web,
         executors,
       },
     };
@@ -224,8 +230,8 @@ export default class OAuthAuthorizeService {
     const validated = await this.validate(params);
     if (!validated.ok) return validated;
 
-    const approvedScope = oauthScopeToConnectionScope(approvedScopeValue);
-    if (!approvedScope || !scopeAllows(validated.requestedScope, approvedScope)) {
+    const approvedScope = parseOAuthGrantScope(approvedScopeValue);
+    if (!approvedScope || !grantScopeAllows(validated.requestedScope, approvedScope)) {
       return failure(
         "invalid_scope",
         "Approved scope exceeds the requested scope",
@@ -264,7 +270,7 @@ export default class OAuthAuthorizeService {
       members.push({
         executor_id: selection.executor_id,
         workspace_id: selection.workspace_id,
-        scope: capScope(approvedScope, selection.scope ?? approvedScope),
+        scope: capScope(approvedScope.access, selection.scope ?? approvedScope.access),
       });
     }
 
@@ -274,7 +280,9 @@ export default class OAuthAuthorizeService {
       connection_id: connectionId,
       user_id: userId,
       client_id: validated.client.client_id,
-      approved_scope: approvedScope,
+      approved_scope: approvedScope.access,
+      allow_shell: approvedScope.shell,
+      allow_web: approvedScope.web,
       status: "active",
       created_at: createdAt,
       revoked_at: null,
@@ -380,13 +388,6 @@ function capScope(
   return ceiling === "read_write" && chosen === "read_write"
     ? "read_write"
     : "read";
-}
-
-function scopeAllows(
-  available: OAuthConnectionScope,
-  desired: OAuthConnectionScope,
-): boolean {
-  return available === "read_write" || desired === "read";
 }
 
 function validRedirectTarget(value: string): boolean {

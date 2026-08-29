@@ -160,7 +160,7 @@ describe("OAuth connections end to end", () => {
       state: "st_12345",
       code_challenge: challenge,
       code_challenge_method: "S256",
-      scope: "kazibee:read kazibee:write",
+      scope: "kazibee:read kazibee:write kazibee:shell kazibee:web",
       resource: RESOURCE,
     };
 
@@ -181,6 +181,8 @@ describe("OAuth connections end to end", () => {
     expect(context.body.executors).toHaveLength(1);
     expect(context.body.executors[0].presence).toBe("online");
     expect(context.body.executors[0].workspaces[0].workspace_id).toBe(WORKSPACE_ID);
+    expect(context.body.requested_shell).toBe(true);
+    expect(context.body.requested_web).toBe(true);
 
     // Approve creates the connection + membership + one-minute code.
     const approve = await testApp.agent.post("/oauth/consent/approve")
@@ -189,7 +191,7 @@ describe("OAuth connections end to end", () => {
         ...oauthParams,
         sessionId,
         machines: [{ executor_id: claim.executorId, workspace_id: WORKSPACE_ID, scope: "read_write" }],
-        approved_scope: "kazibee:read kazibee:write",
+        approved_scope: "kazibee:read kazibee:write kazibee:shell kazibee:web",
       });
     expect(approve.status, JSON.stringify(approve.body)).toBe(200);
     const redirect = new URL(approve.body.redirect_to as string);
@@ -210,7 +212,7 @@ describe("OAuth connections end to end", () => {
     });
     expect(tokens.ok, JSON.stringify(tokens)).toBe(true);
     if (!tokens.ok) return;
-    expect(tokens.scope).toBe("kazibee:read kazibee:write");
+    expect(tokens.scope).toBe("kazibee:read kazibee:write kazibee:shell kazibee:web");
 
     // Code replay dies.
     const replay = await flow.exchangeCode({
@@ -229,7 +231,7 @@ describe("OAuth connections end to end", () => {
     expect(call.body.result.isError).toBe(false);
     expect(call.body.result.structuredContent.content).toBe("# OAuth demo");
     const dispatchedPayload = (coordinator.dispatched.at(-1) as { payload: { scopes: string[]; workspaceId: string } }).payload;
-    expect(dispatchedPayload.scopes).toEqual(["workspace.read", "workspace.write"]);
+    expect(dispatchedPayload.scopes).toEqual(["workspace.read", "workspace.write", "shell.execute", "web.read"]);
     expect(dispatchedPayload.workspaceId).toBe(WORKSPACE_ID);
 
     // Workspace identity is server-minted: list_workspaces returns rws_ ids,

@@ -3,6 +3,8 @@ SELECT
   connection.user_id,
   connection.client_id,
   connection.approved_scope,
+  connection.allow_shell,
+  connection.allow_web,
   connection.status,
   connection.created_at,
   connection.revoked_at,

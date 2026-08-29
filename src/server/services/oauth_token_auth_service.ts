@@ -20,6 +20,8 @@ export interface OAuthPrincipal {
   client_id: string;
   connection_id: string;
   approved_scope: OAuthConnectionScope;
+  allow_shell: boolean;
+  allow_web: boolean;
   /** Ordered by added_at ASC — the deterministic routing order. */
   members: OAuthConnectionMember[];
 }
@@ -86,6 +88,8 @@ export default class OAuthTokenAuthService {
       client_id: record.client_id,
       connection_id: record.connection_id,
       approved_scope: record.approved_scope,
+      allow_shell: record.allow_shell,
+      allow_web: record.allow_web,
       members,
     };
   }

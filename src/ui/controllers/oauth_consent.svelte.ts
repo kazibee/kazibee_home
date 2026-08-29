@@ -36,6 +36,12 @@ export interface OAuthConsentData {
   client: ConsentClient | null;
   requestedAccess: 'read' | 'read_write';
   requestedScope: string;
+  /** Families the client asked for beyond workspace access. */
+  requestedShell: boolean;
+  requestedWeb: boolean;
+  /** User's toggles; capped by the requested families. */
+  allowShell: boolean;
+  allowWeb: boolean;
   executors: ConsentExecutor[];
   selectedExecutorIds: string[];
   /** Chosen workspace per executor; required to grant that machine. */
@@ -49,6 +55,7 @@ export interface OAuthConsentInput {
   toggleExecutor(executorId: string): void;
   setWorkspace(executorId: string, workspaceId: string): void;
   setExecutorScope(executorId: string, scope: 'read' | 'read_write'): void;
+  setFamily(family: 'shell' | 'web', enabled: boolean): void;
   approve(): Promise<void>;
   deny(): Promise<void>;
 }
@@ -61,6 +68,10 @@ implements PageController<OAuthConsentData, OAuthConsentInput> {
     client: null,
     requestedAccess: 'read',
     requestedScope: '',
+    requestedShell: false,
+    requestedWeb: false,
+    allowShell: false,
+    allowWeb: false,
     executors: [],
     selectedExecutorIds: [],
     workspaceChoices: {},
@@ -100,6 +111,14 @@ implements PageController<OAuthConsentData, OAuthConsentInput> {
       };
     },
 
+    setFamily: (family, enabled) => {
+      if (family === 'shell') {
+        this.data.allowShell = enabled && this.data.requestedShell;
+      } else {
+        this.data.allowWeb = enabled && this.data.requestedWeb;
+      }
+    },
+
     setExecutorScope: (executorId, scope) => {
       if (scope === 'read_write' && this.data.requestedAccess !== 'read_write') return;
       this.data.executorScopes = {
@@ -124,11 +143,13 @@ implements PageController<OAuthConsentData, OAuthConsentInput> {
       }
       const wantsWrite = this.data.requestedAccess === 'read_write'
         && machines.some((machine) => machine.scope === 'read_write');
+      const parts = ['kazibee:read'];
+      if (wantsWrite) parts.push('kazibee:write');
+      if (this.data.allowShell) parts.push('kazibee:shell');
+      if (this.data.allowWeb) parts.push('kazibee:web');
       await this.submit('/oauth/consent/approve', {
         machines,
-        approved_scope: wantsWrite
-          ? 'kazibee:read kazibee:write'
-          : 'kazibee:read',
+        approved_scope: parts.join(' '),
       });
     },
 
@@ -177,11 +198,17 @@ implements PageController<OAuthConsentData, OAuthConsentInput> {
         client: ConsentClient;
         requested_scope: string;
         requested_access: 'read' | 'read_write';
+        requested_shell?: boolean;
+        requested_web?: boolean;
         executors: ConsentExecutor[];
       };
       this.data.client = context.client;
       this.data.requestedScope = context.requested_scope;
       this.data.requestedAccess = context.requested_access;
+      this.data.requestedShell = context.requested_shell === true;
+      this.data.requestedWeb = context.requested_web === true;
+      this.data.allowShell = this.data.requestedShell;
+      this.data.allowWeb = this.data.requestedWeb;
       this.data.executors = context.executors;
 
       const online = context.executors.filter((executor) => executor.presence === 'online');

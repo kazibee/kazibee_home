@@ -150,7 +150,7 @@ export default class RemoteToolsController {
     const outcome = await this.dispatch.callTarget({
       executorId: member.executor_id,
       workspaceId: member.workspace_id,
-      scopes: connectionScopeToToolScopes(member.scope),
+      scopes: connectionScopeToToolScopes(member.scope, principal),
       grantId: principal.connection_id,
       toolSessionId: `rts_${principal.connection_id.slice(4)}`,
     }, toolName, args);
@@ -426,6 +426,8 @@ export default class RemoteToolsController {
       clientId: connection.client_id,
       clientName: connection.client_name,
       approvedScope: connection.approved_scope,
+      allowShell: connection.allow_shell,
+      allowWeb: connection.allow_web,
       status: connection.status,
       createdAt: connection.created_at,
       members: (await this.oauth.listConnectionExecutors({

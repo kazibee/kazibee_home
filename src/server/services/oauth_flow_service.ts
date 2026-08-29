@@ -6,7 +6,7 @@ import OAuthRepo, {
   type OAuthTokenRecord,
 } from "../repo/oauth_repo";
 import { ConnectClock, ConnectCredentials } from "./connect_auth_primitives";
-import { connectionScopeToOAuthScope } from "./oauth_scopes";
+import { grantScopeToOAuthScope, type OAuthGrantScope } from "./oauth_scopes";
 
 export const ACCESS_TOKEN_MS = 60 * 60 * 1000;
 export const REFRESH_TOKEN_MS = 30 * 24 * 60 * 60 * 1000;
@@ -129,7 +129,11 @@ export default class OAuthFlowService {
 
     return this.mintTokenPair(
       connection.connection_id,
-      connection.approved_scope,
+      {
+        access: connection.approved_scope,
+        shell: connection.allow_shell,
+        web: connection.allow_web,
+      },
       input.resource,
       now,
     );
@@ -188,12 +192,16 @@ export default class OAuthFlowService {
       this.credentials,
     ));
 
-    return success(accessToken, refreshToken, token.approved_scope);
+    return success(accessToken, refreshToken, {
+      access: token.approved_scope,
+      shell: token.allow_shell,
+      web: token.allow_web,
+    });
   }
 
   private async mintTokenPair(
     connectionId: string,
-    scope: OAuthConnectionScope,
+    scope: OAuthGrantScope,
     resource: string,
     now: Date,
   ): Promise<OAuthTokenSuccess> {
@@ -286,7 +294,7 @@ function tokenRecord(
 function success(
   accessToken: string,
   refreshToken: string,
-  scope: OAuthConnectionScope,
+  scope: OAuthGrantScope,
 ): OAuthTokenSuccess {
   return {
     ok: true,
@@ -294,7 +302,7 @@ function success(
     token_type: "Bearer",
     expires_in: ACCESS_TOKEN_MS / 1000,
     refresh_token: refreshToken,
-    scope: connectionScopeToOAuthScope(scope),
+    scope: grantScopeToOAuthScope(scope),
   };
 }
 

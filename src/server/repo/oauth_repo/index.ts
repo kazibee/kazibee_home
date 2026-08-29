@@ -47,6 +47,9 @@ export interface OAuthConnectionRecord {
   user_id: string;
   client_id: string;
   approved_scope: OAuthConnectionScope;
+  /** Doc 06 scope families beyond workspace access. */
+  allow_shell: boolean;
+  allow_web: boolean;
   status: OAuthConnectionStatus;
   created_at: string;
   revoked_at: string | null;
@@ -96,6 +99,8 @@ export interface ActiveTokenWithConnection extends OAuthTokenRecord {
   user_id: string;
   client_id: string;
   approved_scope: OAuthConnectionScope;
+  allow_shell: boolean;
+  allow_web: boolean;
   connection_status: OAuthConnectionStatus;
   connection_created_at: string;
   connection_revoked_at: string | null;

@@ -9,6 +9,8 @@ import OAuthFlowService, {
 import OAuthOrigins from "../services/oauth_origins";
 import {
   OAUTH_READ_SCOPE,
+  OAUTH_SHELL_SCOPE,
+  OAUTH_WEB_SCOPE,
   OAUTH_WRITE_SCOPE,
 } from "../services/oauth_scopes";
 
@@ -57,7 +59,7 @@ export default class OAuthController {
     return res.json({
       resource: this.origins.resource,
       authorization_servers: [this.origins.issuer],
-      scopes_supported: [OAUTH_READ_SCOPE, OAUTH_WRITE_SCOPE],
+      scopes_supported: [OAUTH_READ_SCOPE, OAUTH_WRITE_SCOPE, OAUTH_SHELL_SCOPE, OAUTH_WEB_SCOPE],
       bearer_methods_supported: ["header"],
     });
   }
@@ -72,7 +74,7 @@ export default class OAuthController {
       grant_types_supported: ["authorization_code", "refresh_token"],
       code_challenge_methods_supported: ["S256"],
       token_endpoint_auth_methods_supported: ["none"],
-      scopes_supported: [OAUTH_READ_SCOPE, OAUTH_WRITE_SCOPE],
+      scopes_supported: [OAUTH_READ_SCOPE, OAUTH_WRITE_SCOPE, OAUTH_SHELL_SCOPE, OAUTH_WEB_SCOPE],
       // RFC 9207: authorization responses carry an iss parameter. Required by
       // Codex >= 0.150 because our authorization_endpoint (kazibee.com) is on
       // a different origin than the issuer (mcp.kazibee.com).

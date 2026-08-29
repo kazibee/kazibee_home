@@ -10,6 +10,8 @@ SELECT
   connection.user_id,
   connection.client_id,
   connection.approved_scope,
+  connection.allow_shell,
+  connection.allow_web,
   connection.status AS connection_status,
   connection.created_at AS connection_created_at,
   connection.revoked_at AS connection_revoked_at

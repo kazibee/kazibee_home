@@ -140,6 +140,50 @@
           </div>
         </fieldset>
 
+        {#if data.requestedShell || data.requestedWeb}
+          <fieldset class="mt-6">
+            <legend class="text-sm font-semibold text-ink">Additional access</legend>
+            <div class="mt-3 flex flex-col gap-3">
+              {#if data.requestedShell}
+                <label class="flex items-start gap-3 rounded-2xl border border-neutral-200 bg-white p-4 transition has-checked:border-blue-400 has-checked:bg-blue-50/40">
+                  <input
+                    type="checkbox"
+                    checked={data.allowShell}
+                    onchange={(event) => input.setFamily('shell', (event.currentTarget as HTMLInputElement).checked)}
+                    class="mt-0.5 h-4 w-4 rounded border-neutral-300"
+                    data-test-id="oauth-consent-shell"
+                  />
+                  <span class="flex flex-col gap-0.5">
+                    <span class="font-semibold text-ink">Run shell commands</span>
+                    <span class="text-xs leading-5 text-ink-muted">
+                      Lets {data.client?.name} run commands as your user on the machines you pick.
+                      This is full command execution on the machine, not limited to a single folder.
+                    </span>
+                  </span>
+                </label>
+              {/if}
+              {#if data.requestedWeb}
+                <label class="flex items-start gap-3 rounded-2xl border border-neutral-200 bg-white p-4 transition has-checked:border-blue-400 has-checked:bg-blue-50/40">
+                  <input
+                    type="checkbox"
+                    checked={data.allowWeb}
+                    onchange={(event) => input.setFamily('web', (event.currentTarget as HTMLInputElement).checked)}
+                    class="mt-0.5 h-4 w-4 rounded border-neutral-300"
+                    data-test-id="oauth-consent-web"
+                  />
+                  <span class="flex flex-col gap-0.5">
+                    <span class="font-semibold text-ink">Fetch public web pages</span>
+                    <span class="text-xs leading-5 text-ink-muted">
+                      Lets {data.client?.name} fetch public http(s) URLs from the machine. Private and
+                      loopback addresses are always blocked.
+                    </span>
+                  </span>
+                </label>
+              {/if}
+            </div>
+          </fieldset>
+        {/if}
+
         {#if data.error}
           <p class="mt-5 rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-900" role="alert" data-test-id="oauth-consent-form-error">
             {data.error}

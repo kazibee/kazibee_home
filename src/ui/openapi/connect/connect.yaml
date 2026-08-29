@@ -6,7 +6,7 @@ paths:
       x-view: pages/connect/main.svelte
       x-controller: controllers/connect_dashboard.svelte.ts
       x-layout:
-        - layout/public_layout.svelte
+        - layout/app_layout.svelte
   /connect/login:
     get:
       summary: Connect sign in
@@ -37,4 +37,4 @@ paths:
       x-view: pages/connect/claim.svelte
       x-controller: controllers/connect_claim.svelte.ts
       x-layout:
-        - layout/public_layout.svelte
+        - layout/app_layout.svelte

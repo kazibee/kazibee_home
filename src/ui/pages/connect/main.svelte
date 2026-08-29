@@ -21,14 +21,6 @@
       >
         Refresh
       </button>
-      <button
-        type="button"
-        onclick={() => input.logout()}
-        class="rounded-xl bg-ink px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-neutral-800"
-        data-test-id="connect-logout"
-      >
-        Sign out
-      </button>
     </div>
   </header>
 

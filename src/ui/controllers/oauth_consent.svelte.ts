@@ -112,10 +112,12 @@ implements PageController<OAuthConsentData, OAuthConsentInput> {
     },
 
     setFamily: (family, enabled) => {
+      // The owner outranks the client's request: families can be granted even
+      // when the app did not ask for them (its next call simply gets more).
       if (family === 'shell') {
-        this.data.allowShell = enabled && this.data.requestedShell;
+        this.data.allowShell = enabled;
       } else {
-        this.data.allowWeb = enabled && this.data.requestedWeb;
+        this.data.allowWeb = enabled;
       }
     },
 

@@ -11,7 +11,6 @@ import OAuthFlowService from "./oauth_flow_service";
 import OAuthOrigins from "./oauth_origins";
 import RemoteToolDispatchService from "./remote_tool_dispatch_service";
 import {
-  grantScopeAllows,
   grantScopeToOAuthScope,
   parseOAuthGrantScope,
   type OAuthGrantScope,
@@ -231,7 +230,12 @@ export default class OAuthAuthorizeService {
     if (!validated.ok) return validated;
 
     const approvedScope = parseOAuthGrantScope(approvedScopeValue);
-    if (!approvedScope || !grantScopeAllows(validated.requestedScope, approvedScope)) {
+    // The signed-in owner outranks the client's request: the consent screen
+    // may grant shell/web families the app never asked for (the dashboard can
+    // add them post-consent anyway). Write access is still capped by the
+    // request — an app that asked to read should not silently gain writes.
+    if (!approvedScope
+      || (approvedScope.access === "read_write" && validated.requestedScope.access !== "read_write")) {
       return failure(
         "invalid_scope",
         "Approved scope exceeds the requested scope",

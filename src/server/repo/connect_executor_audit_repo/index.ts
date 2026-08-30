@@ -1,4 +1,4 @@
-import { Component } from "@noego/ioc";
+import { Component, LoadAs } from "@noego/ioc";
 import { Query, QueryBinder, SqlStackError } from "sqlstack";
 
 export type ConnectExecutorAuditKind =
@@ -6,7 +6,7 @@ export type ConnectExecutorAuditKind =
   | "executor.renamed" | "executor.revoked";
 
 @QueryBinder()
-@Component()
+@Component({ scope: LoadAs.Singleton })
 export default class ConnectExecutorAuditRepo {
   @Query()
   appendEvent(_params: {

@@ -43,6 +43,12 @@ export default class ConnectAccountRepo {
     throw new SqlStackError("Not implemented");
   }
 
+  @Single
+  @Query()
+  findPasswordlessByEmail(_params: { email: string }): Promise<ConnectAccount | null> {
+    throw new SqlStackError("Not implemented");
+  }
+
   @Query()
   setPassword(_params: {
     user_id: string;

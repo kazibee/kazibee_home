@@ -1,4 +1,4 @@
-import { Component } from "@noego/ioc";
+import { Component, LoadAs } from "@noego/ioc";
 import { Query, QueryBinder, Single, SqlStackError } from "sqlstack";
 
 export interface RemoteToolGrant {
@@ -17,7 +17,7 @@ export interface RemoteToolGrant {
 }
 
 @QueryBinder()
-@Component()
+@Component({ scope: LoadAs.Singleton })
 export default class RemoteToolGrantRepo {
   @Query()
   createGrant(_params: {

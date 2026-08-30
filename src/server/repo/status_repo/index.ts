@@ -9,8 +9,4 @@ export default class StatusRepo {
     throw new SqlStackError("Not implemented");
   }
 
-  @Query()
-  getFrameworkName(): Promise<{ name: string }> {
-    throw new SqlStackError("Not implemented");
-  }
 }

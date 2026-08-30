@@ -1,4 +1,4 @@
-import { Component } from "@noego/ioc";
+import { Component, LoadAs } from "@noego/ioc";
 import { Query, QueryBinder, Single, SqlStackError } from "sqlstack";
 
 export interface ConnectDesktopCredential {
@@ -14,7 +14,7 @@ export interface ConnectDesktopCredential {
 }
 
 @QueryBinder()
-@Component()
+@Component({ scope: LoadAs.Singleton })
 export default class ConnectDesktopCredentialRepo {
   @Query()
   createCredential(_params: Omit<ConnectDesktopCredential, "status" | "revoked_at" | "audience">): Promise<void> {

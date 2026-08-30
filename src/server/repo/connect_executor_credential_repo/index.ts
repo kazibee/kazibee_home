@@ -1,4 +1,4 @@
-import { Component } from "@noego/ioc";
+import { Component, LoadAs } from "@noego/ioc";
 import { Query, QueryBinder, Single, SqlStackError } from "sqlstack";
 
 export interface ConnectExecutorCredential {
@@ -12,7 +12,7 @@ export interface ConnectExecutorCredential {
 }
 
 @QueryBinder()
-@Component()
+@Component({ scope: LoadAs.Singleton })
 export default class ConnectExecutorCredentialRepo {
   @Query()
   createCredential(_params: Omit<ConnectExecutorCredential, "status" | "revoked_at">): Promise<void> {

@@ -55,7 +55,7 @@ export default class ConnectDesktopActorResolver {
       || credential.audience !== headers.audience
       || credential.device_id !== headers.deviceId
       || credential.generation !== headers.generation
-      || credential.expires_at <= this.clock.now().toISOString()) return { ok: false };
+      || new Date(credential.expires_at).getTime() <= this.clock.now().getTime()) return { ok: false };
     const device = await this.deviceRepo.findByDeviceId({ device_id: headers.deviceId });
     if (!device || device.owner_user_id === null || device.state !== "active"
       || device.credential_generation !== headers.generation) return { ok: false };

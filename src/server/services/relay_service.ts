@@ -1,4 +1,4 @@
-import { Component, Inject } from "@noego/ioc";
+import { Component, Inject, LoadAs } from "@noego/ioc";
 import bcrypt from "bcryptjs";
 import DeviceRepo from "../repo/device_repo";
 import MessageRepo from "../repo/message_repo";
@@ -9,7 +9,7 @@ import TraceAdapter, { type TracePort } from "../observability/trace_adapter";
 
 const logger = getLogger("kazibee:relay-service");
 
-@Component()
+@Component({ scope: LoadAs.Singleton })
 export default class RelayService {
   private readonly trace: TracePort;
 

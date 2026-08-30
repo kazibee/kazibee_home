@@ -1,4 +1,4 @@
-import { Component, Inject } from "@noego/ioc";
+import { Component, Inject, LoadAs } from "@noego/ioc";
 import { createHash } from "node:crypto";
 import { currentTransaction } from "sqlstack";
 import ConnectExecutorRepo, { type ConnectExecutor } from "../repo/connect_executor_repo";
@@ -49,7 +49,7 @@ export type OwnerMutationResult =
   | { outcome: "not-found" }
   | { outcome: "failed" };
 
-@Component()
+@Component({ scope: LoadAs.Singleton })
 export default class ConnectExecutorService {
   private readonly logger: WebsiteLoggerPort;
   private readonly trace: TracePort;
@@ -195,7 +195,7 @@ export default class ConnectExecutorService {
       if (!claim) return { outcome: "not-found" };
       if (claim.status !== "pending") return this.terminalDecision(claim, actor.userId, input);
       const now = this.clock.now().toISOString();
-      if (claim.expires_at <= now) return { outcome: "expired" };
+      if (new Date(claim.expires_at).getTime() <= this.clock.now().getTime()) return { outcome: "expired" };
       if (input.decision === "deny") return this.denyClaim(claim, actor.userId, input, now);
       return this.acceptClaim(claim, actor.userId, input, now);
     } catch (error) {
@@ -335,7 +335,8 @@ export default class ConnectExecutorService {
   }
 
   private claimStatus(claim: ConnectExecutorClaim): "pending" | "accepted" | "denied" | "expired" {
-    return claim.status === "pending" && claim.expires_at <= this.clock.now().toISOString()
+    return claim.status === "pending"
+      && new Date(claim.expires_at).getTime() <= this.clock.now().getTime()
       ? "expired" : claim.status;
   }
   private challenge(

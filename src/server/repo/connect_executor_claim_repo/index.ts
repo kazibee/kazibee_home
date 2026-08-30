@@ -1,4 +1,4 @@
-import { Component } from "@noego/ioc";
+import { Component, LoadAs } from "@noego/ioc";
 import { Query, QueryBinder, Single, SqlStackError } from "sqlstack";
 
 export type ConnectExecutorClaimStatus = "pending" | "accepted" | "denied";
@@ -18,7 +18,7 @@ export interface ConnectExecutorClaim {
 }
 
 @QueryBinder()
-@Component()
+@Component({ scope: LoadAs.Singleton })
 export default class ConnectExecutorClaimRepo {
   @Query()
   createClaim(_params: Omit<ConnectExecutorClaim, "status" | "decided_at" | "decided_by_user_id" | "decision_idempotency_key">): Promise<void> {

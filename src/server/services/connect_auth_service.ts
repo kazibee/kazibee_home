@@ -80,12 +80,8 @@ export default class ConnectAuthService {
     try {
       const passwordHash = await this.passwords.hash(input.password);
       const now = this.clock.now().toISOString();
-      const existing = await this.accountRepo.findByEmail({ email: input.email });
+      const existing = await this.accountRepo.findPasswordlessByEmail({ email: input.email });
       if (existing) {
-        if (existing.password_hash) {
-          this.skipped("signup", input.correlationId, "duplicate");
-          return { outcome: "duplicate" };
-        }
         await this.accountRepo.setPassword({
           user_id: existing.user_id,
           username: input.username,

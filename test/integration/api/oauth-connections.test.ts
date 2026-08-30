@@ -231,7 +231,7 @@ describe("OAuth connections end to end", () => {
     expect(call.body.result.isError).toBe(false);
     expect(call.body.result.structuredContent.content).toBe("# OAuth demo");
     const dispatchedPayload = (coordinator.dispatched.at(-1) as { payload: { scopes: string[]; workspaceId: string } }).payload;
-    expect(dispatchedPayload.scopes).toEqual(["workspace.read", "workspace.write", "shell.execute", "web.read"]);
+    expect(dispatchedPayload.scopes).toEqual(["workspace.read", "workspace.write", "shell.execute", "web.read", "browser.fetch"]);
     expect(dispatchedPayload.workspaceId).toBe(WORKSPACE_ID);
 
     // Workspace identity is server-minted: list_workspaces returns rws_ ids,

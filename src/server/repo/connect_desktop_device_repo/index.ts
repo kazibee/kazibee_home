@@ -1,4 +1,4 @@
-import { Component } from "@noego/ioc";
+import { Component, LoadAs } from "@noego/ioc";
 import { Query, QueryBinder, Single, SqlStackError } from "sqlstack";
 
 export type ConnectDesktopState = "pending" | "active" | "revoked";
@@ -19,7 +19,7 @@ export interface ConnectDesktopDevice {
 }
 
 @QueryBinder()
-@Component()
+@Component({ scope: LoadAs.Singleton })
 export default class ConnectDesktopDeviceRepo {
   @Query()
   createDevice(_params: Omit<ConnectDesktopDevice, "owner_user_id" | "claimed_at" | "credential_generation" | "state">): Promise<void> {

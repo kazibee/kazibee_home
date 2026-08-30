@@ -25,8 +25,4 @@ export default class StatusService {
     }
   }
 
-  async getFrameworkName(): Promise<string> {
-    const result = await this.statusRepo.getFrameworkName();
-    return result.name;
-  }
 }

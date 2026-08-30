@@ -1,4 +1,4 @@
-import { Component } from "@noego/ioc";
+import { Component, LoadAs } from "@noego/ioc";
 import { Query, QueryBinder, Single, SqlStackError } from "sqlstack";
 
 export type ConnectDesktopClaimStatus = "pending" | "accepted" | "denied";
@@ -18,7 +18,7 @@ export interface ConnectDesktopClaim {
 }
 
 @QueryBinder()
-@Component()
+@Component({ scope: LoadAs.Singleton })
 export default class ConnectDesktopClaimRepo {
   @Query()
   createClaim(_params: Omit<ConnectDesktopClaim, "status" | "decided_at" | "decided_by_user_id" | "decision_idempotency_key">): Promise<void> {

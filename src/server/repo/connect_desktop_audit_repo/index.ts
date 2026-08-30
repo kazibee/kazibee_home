@@ -1,4 +1,4 @@
-import { Component } from "@noego/ioc";
+import { Component, LoadAs } from "@noego/ioc";
 import { Query, QueryBinder, SqlStackError } from "sqlstack";
 
 export type ConnectDesktopAuditKind =
@@ -6,7 +6,7 @@ export type ConnectDesktopAuditKind =
   | "desktop.renamed" | "desktop.revoked";
 
 @QueryBinder()
-@Component()
+@Component({ scope: LoadAs.Singleton })
 export default class ConnectDesktopAuditRepo {
   @Query()
   appendEvent(_params: {

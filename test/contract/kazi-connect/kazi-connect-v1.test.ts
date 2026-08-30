@@ -414,14 +414,21 @@ describe('artifact safety and integrity', () => {
 
     const value = readJson<Json>(path);
     const forbiddenKeys = /^(?:path|filePath|baseFolderPath|worktreePath|metadata|image|images|settings|credentials|credentialToken|privateKey|authorization|authToken|secret|cookie|cookies|token|tokens|prompt|providerOutput|hostConfig)$/i;
+    // v1.1 remote_tool.call frames carry a `path` tool ARGUMENT (a
+    // workspace-relative file reference) inside the command payload — a
+    // protocol field, not leaked local state. The absolute-path regex above
+    // still screens the VALUES everywhere, so only the key-name ban is
+    // scoped out for those payload positions.
+    const protocolPathPositions = /\/(?:payload\/arguments|result\/payload)\/path$/;
     const found: string[] = [];
     const walk = (node: Json, pointer: string): void => {
       if (Array.isArray(node)) {
         node.forEach((item, index) => walk(item, `${pointer}/${index}`));
       } else if (node && typeof node === 'object') {
         Object.entries(node).forEach(([key, child]) => {
-          if (forbiddenKeys.test(key)) found.push(`${pointer}/${key}`);
-          walk(child, `${pointer}/${key}`);
+          const at = `${pointer}/${key}`;
+          if (forbiddenKeys.test(key) && !protocolPathPositions.test(at)) found.push(at);
+          walk(child, at);
         });
       }
     };

@@ -1,0 +1,23 @@
+# Disposable test PostgreSQL for the db tier (sqlstack testPostgres).
+# RAM-backed (tmpfs data dir) with durability off: every test database is
+# created fresh and dropped; nothing here must survive. Started/stopped by
+# test/global-pg-server.ts around the test run. Port 55433 so it never
+# collides with dev servers (5432) or sqlstack's own compose (55432).
+services:
+  postgres:
+    image: postgres:16
+    container_name: kazibee-test-postgres
+    environment:
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_USER: postgres
+      POSTGRES_DB: postgres
+    ports:
+      - "55433:5432"
+    command: postgres -c fsync=off -c synchronous_commit=off -c full_page_writes=off
+    tmpfs:
+      - /var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 2s
+      timeout: 5s
+      retries: 30

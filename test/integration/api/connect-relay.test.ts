@@ -284,13 +284,15 @@ function expectCanonicalRelayError(
     .toBeLessThanOrEqual(512);
 }
 
-async function sqliteDump(testApp: TestAppResult): Promise<string> {
+async function databaseDump(testApp: TestAppResult): Promise<string> {
   const rows = await testApp.database.query(
-    "SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name",
+    `SELECT table_name AS name FROM information_schema.tables
+     WHERE table_schema = 'public' AND table_type = 'BASE TABLE'
+     ORDER BY table_name`,
   ) as Array<{ name: string }>;
   const dump: Record<string, unknown> = {};
   for (const { name } of rows) {
-    if (!/^[A-Za-z0-9_]+$/.test(name)) throw new Error("Unsafe SQLite table name");
+    if (!/^[A-Za-z0-9_]+$/.test(name)) throw new Error("Unsafe table name");
     dump[name] = await testApp.database.query(`SELECT * FROM ${name}`);
   }
   return JSON.stringify(dump);
@@ -383,7 +385,7 @@ describe("Connect relay real stitched HTTP/SSE", () => {
 
     const trace = new TraceProbe();
     trace.start();
-    const beforeCanary = await sqliteDump(testApp);
+    const beforeCanary = await databaseDump(testApp);
     const canary = "CANARY_RELAY_PAYLOAD_MUST_NOT_PERSIST_7d16";
     const transient = await testApp.agent.post("/v1/connect/relay")
       .set(relayHeaders()).send({
@@ -399,7 +401,7 @@ describe("Connect relay real stitched HTTP/SSE", () => {
       });
     expect(transient.status).toBe(204);
     await trace.flush();
-    const afterCanary = await sqliteDump(testApp);
+    const afterCanary = await databaseDump(testApp);
     expect(afterCanary).toBe(beforeCanary);
     expect(afterCanary).not.toContain(canary);
     expect(JSON.stringify(trace.query())).not.toContain(canary);
@@ -435,7 +437,7 @@ describe("Connect relay real stitched HTTP/SSE", () => {
       correlationId: "cor_relayvalid001",
     };
     const initialRows = await testApp.database.query(
-      "SELECT last_seen_at FROM connect_executors WHERE executor_id = ?",
+      "SELECT last_seen_at FROM connect_executors WHERE executor_id = $1",
       [executorId],
     );
 
@@ -511,7 +513,7 @@ describe("Connect relay real stitched HTTP/SSE", () => {
     });
 
     const rowsAfterRejections = await testApp.database.query(
-      "SELECT last_seen_at FROM connect_executors WHERE executor_id = ?",
+      "SELECT last_seen_at FROM connect_executors WHERE executor_id = $1",
       [executorId],
     );
     expect(rowsAfterRejections).toEqual(initialRows);

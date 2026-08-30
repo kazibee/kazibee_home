@@ -1,4 +1,4 @@
-import { Component, Inject } from "@noego/ioc";
+import { Component, Inject, LoadAs } from "@noego/ioc";
 import { randomUUID } from "crypto";
 import jsonwebtoken from "jsonwebtoken";
 import SessionRepo from "../repo/session_repo";
@@ -27,7 +27,7 @@ export interface SessionBootstrapResponse {
   retryMaxMs: number;
 }
 
-@Component()
+@Component({ scope: LoadAs.Singleton })
 export default class SessionService {
   private readonly trace: TracePort;
 

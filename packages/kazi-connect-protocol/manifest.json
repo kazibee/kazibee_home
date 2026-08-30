@@ -110,6 +110,18 @@
       "sha256": "79b7a8be1338855681a3b5b5ce66e0c135eddf7c2a07bdaab96ca9552a3112ec"
     },
     {
+      "path": "schemas/v1.1/kazi-connect-v1.schema.json",
+      "sha256": "4e7e73ee6ab46afab5e1378002af39fafea7d34636b753fa85f6d5b78a8c6348"
+    },
+    {
+      "path": "schemas/v1.1/negative-fixtures.json",
+      "sha256": "38403f0c1b78f022f77f701d4a7101872234451710d1a2e6add018b5c1fc5052"
+    },
+    {
+      "path": "schemas/v1.1/positive-fixtures.json",
+      "sha256": "3440bd37f2debf5a92df630b2d832f1ff903f5df39364c90f0465700b1c010a1"
+    },
+    {
       "path": "types-by-schema.d.ts",
       "sha256": "7434b44649f4baf2db12fe273e162b22e3be5e3cf24c325cb728049e17ba6cbf"
     }

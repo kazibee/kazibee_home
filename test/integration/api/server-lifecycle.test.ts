@@ -3,7 +3,10 @@ import type { TestAppResult } from "../../helpers/test-app";
 import { cleanupTestApp, getTestApp } from "../../helpers/test-app";
 
 describe("test server lifecycle", () => {
-  it("does not accumulate process signal listeners across repeated app boots", async () => {
+  // 12 full app boots — the heaviest single test in the repo. Under the
+  // parallel integration tier it shares the machine with every other file,
+  // so it gets a proportionate timeout instead of the default 30s.
+  it("does not accumulate process signal listeners across repeated app boots", { timeout: 180_000 }, async () => {
     const initialSigtermListeners = process.listenerCount("SIGTERM");
     const initialSigintListeners = process.listenerCount("SIGINT");
     const warnings: Error[] = [];

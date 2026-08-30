@@ -1,4 +1,4 @@
-import { Component } from "@noego/ioc";
+import { Component, LoadAs } from "@noego/ioc";
 import { QueryBinder, Query, Single, SqlStackError } from "sqlstack";
 
 export interface Device {
@@ -14,7 +14,7 @@ export interface Device {
 }
 
 @QueryBinder()
-@Component()
+@Component({ scope: LoadAs.Singleton })
 export default class DeviceRepo {
   @Query()
   createDevice(_params: { device_id: string; user_id: string; device_name: string | null; device_type: string | null; auth_token_hash: string | null; pairing_code: string | null; pairing_expires_at: string | null }): Promise<void> {

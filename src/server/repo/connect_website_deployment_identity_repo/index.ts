@@ -1,4 +1,4 @@
-import { Component } from "@noego/ioc";
+import { Component, LoadAs } from "@noego/ioc";
 import { Query, QueryBinder, Single, SqlStackError } from "sqlstack";
 
 export interface ConnectWebsiteDeploymentIdentity {
@@ -8,7 +8,7 @@ export interface ConnectWebsiteDeploymentIdentity {
 }
 
 @QueryBinder()
-@Component()
+@Component({ scope: LoadAs.Singleton })
 export default class ConnectWebsiteDeploymentIdentityRepo {
   @Query()
   createIfMissing(_params: {

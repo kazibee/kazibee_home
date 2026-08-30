@@ -44,12 +44,4 @@ export default class StatusLogic {
     return this.statusService.getDatabaseStatus();
   }
 
-  /**
-   * Get the framework name
-   * Public endpoint - no authorization required
-   */
-  async getFrameworkName(actor: Actor): Promise<string> {
-    logger.debug("getFrameworkName called", { actorId: actor.id });
-    return this.statusService.getFrameworkName();
-  }
 }

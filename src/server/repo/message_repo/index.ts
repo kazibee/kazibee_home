@@ -1,4 +1,4 @@
-import { Component } from "@noego/ioc";
+import { Component, LoadAs } from "@noego/ioc";
 import { QueryBinder, Query, Single, SqlStackError } from "sqlstack";
 
 export interface Message {
@@ -16,7 +16,7 @@ export interface Message {
 }
 
 @QueryBinder()
-@Component()
+@Component({ scope: LoadAs.Singleton })
 export default class MessageRepo {
   @Query()
   createMessage(_params: {

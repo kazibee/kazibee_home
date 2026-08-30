@@ -58,7 +58,7 @@ export class ConnectIdGenerator {
   }
 
   identityId(): string {
-    return `idn_${randomBytes(18).toString("base64url")}`;
+    return `idn_${randomBytes(16).toString("hex")}`;
   }
 
   credentialId(): string {

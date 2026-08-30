@@ -1,4 +1,4 @@
-import { Component } from "@noego/ioc";
+import { Component, LoadAs } from "@noego/ioc";
 import { Query, QueryBinder, Single, SqlStackError } from "sqlstack";
 
 export type ConnectExecutorState = "pending" | "active" | "revoked";
@@ -20,7 +20,7 @@ export interface ConnectExecutor {
 }
 
 @QueryBinder()
-@Component()
+@Component({ scope: LoadAs.Singleton })
 export default class ConnectExecutorRepo {
   @Query()
   createExecutor(_params: Omit<ConnectExecutor, "owner_user_id" | "claimed_at" | "credential_generation" | "state">): Promise<void> {

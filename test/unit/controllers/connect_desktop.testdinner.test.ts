@@ -20,6 +20,9 @@ import { test as control } from '@noego/testing';
 import ConnectDesktopController from '../../../src/server/controller/connect_desktop.controller';
 import ConnectDesktopLogic from '../../../src/server/logic/connect_desktop.logic';
 import type { ConnectDesktopActor } from '../../../src/server/services/connect_desktop_actor_resolver';
+import ConnectDesktopClaimRepo from '../../../src/server/repo/connect_desktop_claim_repo';
+import ConnectDesktopDeviceRepo from '../../../src/server/repo/connect_desktop_device_repo';
+import { ConnectClock } from '../../../src/server/services/connect_auth_primitives';
 
 const desktopsSource = parseYaml(
   readFileSync(path.resolve(__dirname, '../../../src/server/openapi/connect/desktops.yaml'), 'utf8')
@@ -60,11 +63,11 @@ const base = () =>
 describe('connect desktop routes through testDinner (no server, no database)', () => {
   it('GET /claims/{claimId}/status for an unknown claim is 404 with the request correlation id', async () => {
     const env = await base()
-      .methods({
-        ConnectDesktopClaimRepo: {
+      .methods([
+        [ConnectDesktopClaimRepo, {
           findByClaimId: control.once(control.returns(Promise.resolve(null))),
-        },
-      })
+        }],
+      ])
       .build();
     const response = await env.dinner.request({
       method: 'GET', path: `/v1/connect/desktops/claims/${CLAIM_ID}/status`,
@@ -81,12 +84,12 @@ describe('connect desktop routes through testDinner (no server, no database)', (
 
   it('GET /claims/{claimId}/status with a wrong bootstrap token is a uniform 401', async () => {
     const env = await base()
-      .methods({
-        ConnectDesktopClaimRepo: {
+      .methods([
+        [ConnectDesktopClaimRepo, {
           findByClaimId: control.once(control.returns(Promise.resolve(claim))),
-        },
-        ConnectDesktopDeviceRepo: { findByDeviceId: control.never() },
-      })
+        }],
+        [ConnectDesktopDeviceRepo, { findByDeviceId: control.never() }],
+      ])
       .build();
     const response = await env.dinner.request({
       method: 'GET', path: `/v1/connect/desktops/claims/${CLAIM_ID}/status`,
@@ -101,12 +104,12 @@ describe('connect desktop routes through testDinner (no server, no database)', (
 
   it('GET /claims/{claimId}/status reports pending for a live claim with the right token', async () => {
     const env = await base()
-      .methods({
-        ConnectDesktopClaimRepo: {
+      .methods([
+        [ConnectDesktopClaimRepo, {
           findByClaimId: control.once(control.returns(Promise.resolve(claim))),
-        },
-        ConnectClock: { now: control.returns(NOW) },
-      })
+        }],
+        [ConnectClock, { now: control.returns(NOW) }],
+      ])
       .build();
     const response = await env.dinner.request({
       method: 'GET', path: `/v1/connect/desktops/claims/${CLAIM_ID}/status`,
@@ -124,12 +127,12 @@ describe('connect desktop routes through testDinner (no server, no database)', (
 
   it('an expired pending claim is reported as expired, straight from the clock', async () => {
     const env = await base()
-      .methods({
-        ConnectDesktopClaimRepo: {
+      .methods([
+        [ConnectDesktopClaimRepo, {
           findByClaimId: control.once(control.returns(Promise.resolve(claim))),
-        },
-        ConnectClock: { now: control.returns(new Date(NOW.getTime() + 3_600_000)) },
-      })
+        }],
+        [ConnectClock, { now: control.returns(new Date(NOW.getTime() + 3_600_000)) }],
+      ])
       .build();
     const response = await env.dinner.request({
       method: 'GET', path: `/v1/connect/desktops/claims/${CLAIM_ID}/status`,
@@ -144,13 +147,13 @@ describe('connect desktop routes through testDinner (no server, no database)', (
 
   it('POST /claims with a malformed envelope is a 400 that never reaches the repos', async () => {
     const env = await base()
-      .methods({
-        ConnectDesktopClaimRepo: {
+      .methods([
+        [ConnectDesktopClaimRepo, {
           findByIdempotencyKey: control.never(), findByClaimId: control.never(),
           createClaim: control.never(),
-        },
-        ConnectDesktopDeviceRepo: { createDevice: control.never() },
-      })
+        }],
+        [ConnectDesktopDeviceRepo, { createDevice: control.never() }],
+      ])
       .build();
     const response = await env.dinner.request({
       method: 'POST', path: '/v1/connect/desktops/claims',
@@ -170,11 +173,11 @@ describe('connect desktop routes through testDinner (no server, no database)', (
 
   it('logic-depth list: owners see their devices; no browser session means an empty list', async () => {
     const env = await base()
-      .methods({
-        ConnectDesktopDeviceRepo: {
+      .methods([
+        [ConnectDesktopDeviceRepo, {
           listByOwner: control.once(control.returns(Promise.resolve([device]))),
-        },
-      })
+        }],
+      ])
       .build();
     const logic = await env.get<ConnectDesktopLogic>(ConnectDesktopLogic);
     expect(await logic.list(browserActor)).toEqual([device]);
@@ -185,11 +188,11 @@ describe('connect desktop routes through testDinner (no server, no database)', (
 
   it('logic-depth detail: ownership is enforced on the device row', async () => {
     const env = await base()
-      .methods({
-        ConnectDesktopDeviceRepo: {
+      .methods([
+        [ConnectDesktopDeviceRepo, {
           findByDeviceId: control.returns(Promise.resolve(device)),
-        },
-      })
+        }],
+      ])
       .build();
     const logic = await env.get<ConnectDesktopLogic>(ConnectDesktopLogic);
     expect(await logic.detail(browserActor, DEVICE_ID)).toEqual({ outcome: 'found', device });
@@ -201,16 +204,16 @@ describe('connect desktop routes through testDinner (no server, no database)', (
 
   it('logic-depth review: a short code resolves through its hash to the claim and device', async () => {
     const env = await base()
-      .methods({
-        ConnectDesktopClaimRepo: {
+      .methods([
+        [ConnectDesktopClaimRepo, {
           findByCodeHash: control.once(control.returns(Promise.resolve(claim))),
           findByClaimId: control.never(),
-        },
-        ConnectDesktopDeviceRepo: {
+        }],
+        [ConnectDesktopDeviceRepo, {
           findByDeviceId: control.once(control.returns(Promise.resolve(device))),
-        },
-        ConnectClock: { now: control.returns(NOW) },
-      })
+        }],
+        [ConnectClock, { now: control.returns(NOW) }],
+      ])
       .build();
     const logic = await env.get<ConnectDesktopLogic>(ConnectDesktopLogic);
     const result = await logic.review(browserActor, { code: 'ABCD-EFGH' });

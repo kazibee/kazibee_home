@@ -17,6 +17,8 @@ import { load as parseYaml } from 'js-yaml';
 import { testDinner } from '@noego/dinner/testing';
 import { test as control } from '@noego/testing';
 import ConnectRelayController from '../../../src/server/controller/connect_relay.controller';
+import ConnectExecutorCredentialRepo from '../../../src/server/repo/connect_executor_credential_repo';
+import ConnectExecutorRepo from '../../../src/server/repo/connect_executor_repo';
 
 const relaySource = parseYaml(
   readFileSync(path.resolve(__dirname, '../../../src/server/openapi/connect/relay.yaml'), 'utf8')
@@ -66,15 +68,15 @@ const executorRow = () => ({
   last_seen_at: '2026-01-01T00:00:00.000Z',
 });
 
-const executorAuthMethods = () => ({
-  ConnectExecutorCredentialRepo: {
+const executorAuthMethods = () => ([
+  [ConnectExecutorCredentialRepo, {
     findByTokenHash: control.returns(Promise.resolve(credentialRow())),
-  },
-  ConnectExecutorRepo: {
+  }],
+  [ConnectExecutorRepo, {
     findByExecutorId: control.returns(Promise.resolve(executorRow())),
     updatePresence: control.returns(Promise.resolve(undefined)),
-  },
-});
+  }],
+] as const);
 
 const heartbeat = (overrides: Record<string, unknown> = {}) => ({
   kind: 'channel.heartbeat',
@@ -143,9 +145,9 @@ describe('connect relay routes through testDinner (no server, no database)', () 
 
   it('POST / answers 401 revoked when the audience header is wrong, without touching the repos', async () => {
     const env = await base()
-      .methods({
-        ConnectExecutorCredentialRepo: { findByTokenHash: control.never() },
-      })
+      .methods([
+        [ConnectExecutorCredentialRepo, { findByTokenHash: control.never() }],
+      ])
       .build();
     const response = await env.dinner.request({
       method: 'POST',
@@ -245,11 +247,11 @@ describe('connect relay routes through testDinner (no server, no database)', () 
 
   it('GET /events answers 401 revoked instead of opening a stream when authentication fails', async () => {
     const env = await base()
-      .methods({
-        ConnectExecutorCredentialRepo: {
+      .methods([
+        [ConnectExecutorCredentialRepo, {
           findByTokenHash: control.once(control.returns(Promise.resolve(null))),
-        },
-      })
+        }],
+      ])
       .build();
     const response = await env.dinner.request({
       method: 'GET',

@@ -18,6 +18,13 @@ import { testDinner } from '@noego/dinner/testing';
 import { test as control } from '@noego/testing';
 import ConnectExecutorController from '../../../src/server/controller/connect_executor.controller';
 import ConnectChannelController from '../../../src/server/controller/connect_channel.controller';
+import ConnectExecutorLogic from '../../../src/server/logic/connect_executor.logic';
+import ConnectExecutorClaimRepo from '../../../src/server/repo/connect_executor_claim_repo';
+import ConnectExecutorRepo from '../../../src/server/repo/connect_executor_repo';
+import ConnectExecutorCredentialRepo from '../../../src/server/repo/connect_executor_credential_repo';
+import ConnectWebsiteDeploymentIdentityRepo from '../../../src/server/repo/connect_website_deployment_identity_repo';
+import ConnectBrowserSessionRepo from '../../../src/server/repo/connect_browser_session_repo';
+import ConnectAccountRepo from '../../../src/server/repo/connect_account_repo';
 
 // Presence must resolve through the in-process registry, not a coordinator.
 delete process.env.KAZIBEE_DEV_COORDINATOR_ORIGIN;
@@ -78,13 +85,13 @@ const accountRow = () => ({
   updated_at: '2026-01-01T00:00:00.000Z',
 });
 
-const browserSessionMethods = () => ({
-  ConnectBrowserSessionRepo: {
+const browserSessionMethods = (): Methods => ([
+  [ConnectBrowserSessionRepo, {
     findByTokenHash: returns(sessionRow()),
     touchSession: returns(undefined),
-  },
-  ConnectAccountRepo: { findByUserId: returns(accountRow()) },
-});
+  }],
+  [ConnectAccountRepo, { findByUserId: returns(accountRow()) }],
+]);
 
 const ownerHeaders = () => ({
   cookie: `kazi_connect_session=${SESSION_TOKEN}; kazi_connect_csrf=${CSRF_TOKEN}`,
@@ -133,7 +140,7 @@ const base = () =>
     })
     .hooks({});
 
-type Methods = Record<string, Record<string, unknown>>;
+type Methods = readonly (readonly [unknown, Record<string, unknown>])[];
 
 async function request(
   methods: Methods,
@@ -155,11 +162,11 @@ describe('POST /claims (createClaim controller mapping over stubbed logic)', () 
     request(methods, { method: 'POST', path: '/v1/connect/executors/claims', headers, body });
 
   it('answers 201 with the full challenge for a created claim', async () => {
-    const { status, payload } = await post({
-      ConnectExecutorLogic: {
+    const { status, payload } = await post([
+      [ConnectExecutorLogic, {
         createClaim: control.once(returns({ outcome: 'created', challenge: challenge() })),
-      },
-    }, claimCreateBody());
+      }],
+    ], claimCreateBody());
     expect(status).toBe(201);
     expect(payload).toMatchObject({
       kind: 'executor.claim.challenge', protocolVersion: '1.0',
@@ -170,79 +177,79 @@ describe('POST /claims (createClaim controller mapping over stubbed logic)', () 
   });
 
   it('answers 200 for an idempotent retry', async () => {
-    const { status } = await post({
-      ConnectExecutorLogic: {
+    const { status } = await post([
+      [ConnectExecutorLogic, {
         createClaim: control.once(returns({ outcome: 'retry', challenge: challenge() })),
-      },
-    }, claimCreateBody());
+      }],
+    ], claimCreateBody());
     expect(status).toBe(200);
   });
 
   it('maps conflict, failed, and thrown unique violations onto 409/500/409', async () => {
-    const conflict = await post({
-      ConnectExecutorLogic: { createClaim: returns({ outcome: 'conflict' }) },
-    }, claimCreateBody());
+    const conflict = await post([
+      [ConnectExecutorLogic, { createClaim: returns({ outcome: 'conflict' }) }],
+    ], claimCreateBody());
     expect(conflict.status).toBe(409);
     expect(conflict.payload).toMatchObject({ kind: 'error', code: 'idempotency-conflict' });
 
-    const failed = await post({
-      ConnectExecutorLogic: { createClaim: returns({ outcome: 'failed' }) },
-    }, claimCreateBody());
+    const failed = await post([
+      [ConnectExecutorLogic, { createClaim: returns({ outcome: 'failed' }) }],
+    ], claimCreateBody());
     expect(failed.status).toBe(500);
     expect(failed.payload).toMatchObject({ kind: 'error', code: 'invalid-envelope' });
 
-    const unique = await post({
-      ConnectExecutorLogic: {
+    const unique = await post([
+      [ConnectExecutorLogic, {
         createClaim: control.throws(new Error('UNIQUE constraint failed: claims.claim_id')),
-      },
-    }, claimCreateBody());
+      }],
+    ], claimCreateBody());
     expect(unique.status).toBe(409);
 
-    const thrown = await post({
-      ConnectExecutorLogic: { createClaim: control.throws(new Error('boom')) },
-    }, claimCreateBody());
+    const thrown = await post([
+      [ConnectExecutorLogic, { createClaim: control.throws(new Error('boom')) }],
+    ], claimCreateBody());
     expect(thrown.status).toBe(500);
   });
 
   it('answers 401 revoked without a bootstrap token', async () => {
-    const { status, payload } = await post({
-      ConnectExecutorLogic: { createClaim: control.never() },
-    }, claimCreateBody(), {});
+    const { status, payload } = await post([
+      [ConnectExecutorLogic, { createClaim: control.never() }],
+    ], claimCreateBody(), {});
     expect(status).toBe(401);
     expect(payload).toMatchObject({ kind: 'error', code: 'revoked' });
   });
 
   it('answers 400 for an invalid envelope and 409 for a protocol mismatch', async () => {
-    const invalid = await post({
-      ConnectExecutorLogic: { createClaim: control.never() },
+    const invalid = await post([
+      [ConnectExecutorLogic, { createClaim: control.never() }],
     // windows/arm64 passes the OpenAPI schema but fails the parser's
     // platform/architecture pairing rule — reaching the controller branch.
-    }, claimCreateBody({ platform: 'windows', architecture: 'arm64' }));
+    ], claimCreateBody({ platform: 'windows', architecture: 'arm64' }));
     expect(invalid.status).toBe(400);
     expect(invalid.payload).toMatchObject({ code: 'invalid-envelope', correlationId: CORRELATION_ID });
 
     // The OpenAPI schema pins protocolVersion to '1.0', so a mismatch is
     // rejected as schema validation (400) before the parser's 409 mapping
     // (which is covered directly in the parser unit tests).
-    const mismatch = await post({
-      ConnectExecutorLogic: { createClaim: control.never() },
-    }, claimCreateBody({ protocolVersion: '2.0' }));
+    const mismatch = await post([
+      [ConnectExecutorLogic, { createClaim: control.never() }],
+    ], claimCreateBody({ protocolVersion: '2.0' }));
     expect(mismatch.status).toBe(400);
   });
 });
 
 describe('POST /claims/{claimId}/decision (decideClaim over stubbed logic)', () => {
   const post = (methods: Methods, body: unknown, headers = ownerHeaders()) =>
-    request({ ...browserSessionMethods(), ...methods }, {
+    request([ ...browserSessionMethods(), ...methods ], {
       method: 'POST', path: `/v1/connect/executors/claims/${CLAIM_ID}/decision`, headers, body,
     });
 
   it('answers accepted with the website deployment id', async () => {
-    const { status, payload } = await post({
-      ConnectExecutorLogic: {
+    const { status, payload } = await post([
+      [ConnectExecutorLogic, {
         decide: control.once(returns({ outcome: 'accepted', websiteDeploymentId: DEPLOYMENT_ID })),
-      },
-    }, decisionBody('accept'));
+      }],
+    ], decisionBody('accept'));
     expect(status).toBe(200);
     expect(payload).toEqual({
       kind: 'executor.claim.decision.response', protocolVersion: '1.0',
@@ -252,9 +259,9 @@ describe('POST /claims/{claimId}/decision (decideClaim over stubbed logic)', () 
   });
 
   it('answers denied without a deployment id', async () => {
-    const { status, payload } = await post({
-      ConnectExecutorLogic: { decide: control.once(returns({ outcome: 'denied' })) },
-    }, decisionBody('deny'));
+    const { status, payload } = await post([
+      [ConnectExecutorLogic, { decide: control.once(returns({ outcome: 'denied' })) }],
+    ], decisionBody('deny'));
     expect(status).toBe(200);
     expect(payload).toEqual({
       kind: 'executor.claim.decision.response', protocolVersion: '1.0',
@@ -263,18 +270,18 @@ describe('POST /claims/{claimId}/decision (decideClaim over stubbed logic)', () 
   });
 
   it('maps not-found, expired, replayed, failed, and throws onto 404/409/409/500/500', async () => {
-    expect((await post({ ConnectExecutorLogic: { decide: returns({ outcome: 'not-found' }) } }, decisionBody())).status).toBe(404);
-    const expired = await post({ ConnectExecutorLogic: { decide: returns({ outcome: 'expired' }) } }, decisionBody());
+    expect((await post([ [ConnectExecutorLogic, { decide: returns({ outcome: 'not-found' }) }] ], decisionBody())).status).toBe(404);
+    const expired = await post([ [ConnectExecutorLogic, { decide: returns({ outcome: 'expired' }) }] ], decisionBody());
     expect(expired.status).toBe(409);
     expect(expired.payload).toMatchObject({ code: 'revoked', message: 'Claim is no longer actionable' });
-    expect((await post({ ConnectExecutorLogic: { decide: returns({ outcome: 'replayed' }) } }, decisionBody())).status).toBe(409);
-    expect((await post({ ConnectExecutorLogic: { decide: returns({ outcome: 'failed' }) } }, decisionBody())).status).toBe(500);
-    expect((await post({ ConnectExecutorLogic: { decide: control.throws(new Error('boom')) } }, decisionBody())).status).toBe(500);
+    expect((await post([ [ConnectExecutorLogic, { decide: returns({ outcome: 'replayed' }) }] ], decisionBody())).status).toBe(409);
+    expect((await post([ [ConnectExecutorLogic, { decide: returns({ outcome: 'failed' }) }] ], decisionBody())).status).toBe(500);
+    expect((await post([ [ConnectExecutorLogic, { decide: control.throws(new Error('boom')) }] ], decisionBody())).status).toBe(500);
   });
 
   it('answers 403 CSRF for a mutation without the CSRF header', async () => {
     const { status, payload } = await post(
-      { ConnectExecutorLogic: { decide: control.never() } },
+      [ [ConnectExecutorLogic, { decide: control.never() }] ],
       decisionBody(),
       { cookie: `kazi_connect_session=${SESSION_TOKEN}; kazi_connect_csrf=${CSRF_TOKEN}` },
     );
@@ -284,7 +291,7 @@ describe('POST /claims/{claimId}/decision (decideClaim over stubbed logic)', () 
 
   it('answers 400 for a body/path claim id mismatch', async () => {
     const { status } = await post(
-      { ConnectExecutorLogic: { decide: control.never() } },
+      [ [ConnectExecutorLogic, { decide: control.never() }] ],
       { ...decisionBody(), claimId: 'clm_otherid1' },
     );
     expect(status).toBe(400);
@@ -293,17 +300,17 @@ describe('POST /claims/{claimId}/decision (decideClaim over stubbed logic)', () 
 
 describe('POST /{executorId}/rename (rename over stubbed logic)', () => {
   const post = (methods: Methods, body: unknown, query: Record<string, string> = { sessionId: SESSION_ID, correlationId: CORRELATION_ID }) =>
-    request({ ...browserSessionMethods(), ...methods }, {
+    request([ ...browserSessionMethods(), ...methods ], {
       method: 'POST', path: `/v1/connect/executors/${EXECUTOR_ID}/rename`,
       headers: ownerHeaders(), query, body,
     });
 
   it('answers the detail response for a successful rename', async () => {
-    const { status, payload } = await post({
-      ConnectExecutorLogic: {
+    const { status, payload } = await post([
+      [ConnectExecutorLogic, {
         rename: control.once(returns({ outcome: 'renamed', executor: executorRow({ display_name: 'New Name' }) })),
-      },
-    }, renameBody());
+      }],
+    ], renameBody());
     expect(status).toBe(200);
     expect(payload).toMatchObject({
       kind: 'executor.detail.response', protocolVersion: '1.0',
@@ -316,14 +323,14 @@ describe('POST /{executorId}/rename (rename over stubbed logic)', () => {
   });
 
   it('maps not-found, failed, and throws onto 404/500/500', async () => {
-    expect((await post({ ConnectExecutorLogic: { rename: returns({ outcome: 'not-found' }) } }, renameBody())).status).toBe(404);
-    expect((await post({ ConnectExecutorLogic: { rename: returns({ outcome: 'failed' }) } }, renameBody())).status).toBe(500);
-    expect((await post({ ConnectExecutorLogic: { rename: control.throws(new Error('boom')) } }, renameBody())).status).toBe(500);
+    expect((await post([ [ConnectExecutorLogic, { rename: returns({ outcome: 'not-found' }) }] ], renameBody())).status).toBe(404);
+    expect((await post([ [ConnectExecutorLogic, { rename: returns({ outcome: 'failed' }) }] ], renameBody())).status).toBe(500);
+    expect((await post([ [ConnectExecutorLogic, { rename: control.throws(new Error('boom')) }] ], renameBody())).status).toBe(500);
   });
 
   it('answers 400 when the body and query correlation ids disagree', async () => {
     const { status, payload } = await post(
-      { ConnectExecutorLogic: { rename: control.never() } },
+      [ [ConnectExecutorLogic, { rename: control.never() }] ],
       renameBody(),
       { sessionId: SESSION_ID, correlationId: 'cor_different' },
     );
@@ -333,7 +340,7 @@ describe('POST /{executorId}/rename (rename over stubbed logic)', () => {
 
   it('answers 400 for an invalid rename envelope', async () => {
     const { status } = await post(
-      { ConnectExecutorLogic: { rename: control.never() } },
+      [ [ConnectExecutorLogic, { rename: control.never() }] ],
       renameBody({ displayName: '' }),
     );
     expect(status).toBe(400);
@@ -342,18 +349,18 @@ describe('POST /{executorId}/rename (rename over stubbed logic)', () => {
 
 describe('POST /{executorId}/revoke (revoke over stubbed logic)', () => {
   const post = (methods: Methods, body: unknown) =>
-    request({ ...browserSessionMethods(), ...methods }, {
+    request([ ...browserSessionMethods(), ...methods ], {
       method: 'POST', path: `/v1/connect/executors/${EXECUTOR_ID}/revoke`,
       headers: ownerHeaders(),
       query: { sessionId: SESSION_ID, correlationId: CORRELATION_ID }, body,
     });
 
   it('answers the action response for a successful revoke', async () => {
-    const { status, payload } = await post({
-      ConnectExecutorLogic: {
+    const { status, payload } = await post([
+      [ConnectExecutorLogic, {
         revoke: control.once(returns({ outcome: 'revoked', executor: executorRow({ state: 'revoked' }) })),
-      },
-    }, revokeBody());
+      }],
+    ], revokeBody());
     expect(status).toBe(200);
     expect(payload).toEqual({
       kind: 'executor.action.response', protocolVersion: '1.0',
@@ -362,28 +369,28 @@ describe('POST /{executorId}/revoke (revoke over stubbed logic)', () => {
   });
 
   it('maps not-found, failed, and throws onto 404/500/500', async () => {
-    expect((await post({ ConnectExecutorLogic: { revoke: returns({ outcome: 'not-found' }) } }, revokeBody())).status).toBe(404);
-    expect((await post({ ConnectExecutorLogic: { revoke: returns({ outcome: 'failed' }) } }, revokeBody())).status).toBe(500);
-    expect((await post({ ConnectExecutorLogic: { revoke: control.throws(new Error('boom')) } }, revokeBody())).status).toBe(500);
+    expect((await post([ [ConnectExecutorLogic, { revoke: returns({ outcome: 'not-found' }) }] ], revokeBody())).status).toBe(404);
+    expect((await post([ [ConnectExecutorLogic, { revoke: returns({ outcome: 'failed' }) }] ], revokeBody())).status).toBe(500);
+    expect((await post([ [ConnectExecutorLogic, { revoke: control.throws(new Error('boom')) }] ], revokeBody())).status).toBe(500);
   });
 });
 
 describe('read paths over the real graph (repo stubs only)', () => {
   it('GET claim status reports the full acceptance identity', async () => {
-    const { status, payload } = await request({
-      ConnectExecutorClaimRepo: { findByClaimId: returns(claimRow({ status: 'accepted' })) },
-      ConnectExecutorRepo: { findByExecutorId: returns(executorRow()) },
-      ConnectExecutorCredentialRepo: {
+    const { status, payload } = await request([
+      [ConnectExecutorClaimRepo, { findByClaimId: returns(claimRow({ status: 'accepted' })) }],
+      [ConnectExecutorRepo, { findByExecutorId: returns(executorRow()) }],
+      [ConnectExecutorCredentialRepo, {
         findByTokenHash: returns({
           credential_id: 'crd_abcdefgh', executor_id: EXECUTOR_ID, generation: 1,
           token_hash: sha256(BOOTSTRAP_TOKEN), status: 'active',
           created_at: '2026-01-01T00:00:00.000Z', revoked_at: null,
         }),
-      },
-      ConnectWebsiteDeploymentIdentityRepo: {
+      }],
+      [ConnectWebsiteDeploymentIdentityRepo, {
         findSingleton: returns({ website_deployment_id: DEPLOYMENT_ID }),
-      },
-    }, {
+      }],
+    ], {
       method: 'GET',
       path: `/v1/connect/executors/claims/${CLAIM_ID}/status`,
       headers: { 'x-kazi-bootstrap-token': BOOTSTRAP_TOKEN },
@@ -399,9 +406,9 @@ describe('read paths over the real graph (repo stubs only)', () => {
   });
 
   it('GET claim status answers 400 for a malformed claim id', async () => {
-    const { status } = await request({
-      ConnectExecutorClaimRepo: { findByClaimId: control.never() },
-    }, {
+    const { status } = await request([
+      [ConnectExecutorClaimRepo, { findByClaimId: control.never() }],
+    ], {
       method: 'GET',
       path: '/v1/connect/executors/claims/not-a-claim/status',
       headers: { 'x-kazi-bootstrap-token': BOOTSTRAP_TOKEN },
@@ -411,11 +418,11 @@ describe('read paths over the real graph (repo stubs only)', () => {
   });
 
   it('GET claim review resolves a short code lookup', async () => {
-    const { status, payload } = await request({
+    const { status, payload } = await request([
       ...browserSessionMethods(),
-      ConnectExecutorClaimRepo: { findByCodeHash: control.once(returns(claimRow())) },
-      ConnectExecutorRepo: { findByExecutorId: returns(executorRow()) },
-    }, {
+      [ConnectExecutorClaimRepo, { findByCodeHash: control.once(returns(claimRow())) }],
+      [ConnectExecutorRepo, { findByExecutorId: returns(executorRow()) }],
+    ], {
       method: 'GET',
       path: '/v1/connect/executors/claims/review/ABCD-EFGH',
       headers: { cookie: `kazi_connect_session=${SESSION_TOKEN}` },
@@ -426,10 +433,10 @@ describe('read paths over the real graph (repo stubs only)', () => {
   });
 
   it('GET claim review answers 400 for a garbage lookup value', async () => {
-    const { status } = await request({
+    const { status } = await request([
       ...browserSessionMethods(),
-      ConnectExecutorClaimRepo: { findByClaimId: control.never(), findByCodeHash: control.never() },
-    }, {
+      [ConnectExecutorClaimRepo, { findByClaimId: control.never(), findByCodeHash: control.never() }],
+    ], {
       method: 'GET',
       path: '/v1/connect/executors/claims/review/garbage-value',
       headers: { cookie: `kazi_connect_session=${SESSION_TOKEN}` },
@@ -439,10 +446,10 @@ describe('read paths over the real graph (repo stubs only)', () => {
   });
 
   it('GET executor detail returns the summary for the owner', async () => {
-    const { status, payload } = await request({
+    const { status, payload } = await request([
       ...browserSessionMethods(),
-      ConnectExecutorRepo: { findByExecutorId: returns(executorRow()) },
-    }, {
+      [ConnectExecutorRepo, { findByExecutorId: returns(executorRow()) }],
+    ], {
       method: 'GET',
       path: `/v1/connect/executors/${EXECUTOR_ID}`,
       headers: { cookie: `kazi_connect_session=${SESSION_TOKEN}` },
@@ -461,10 +468,10 @@ describe('read paths over the real graph (repo stubs only)', () => {
   });
 
   it('GET executor detail answers 404 for an executor owned by someone else', async () => {
-    const { status, payload } = await request({
+    const { status, payload } = await request([
       ...browserSessionMethods(),
-      ConnectExecutorRepo: { findByExecutorId: returns(executorRow({ owner_user_id: 'usr_other0001' })) },
-    }, {
+      [ConnectExecutorRepo, { findByExecutorId: returns(executorRow({ owner_user_id: 'usr_other0001' })) }],
+    ], {
       method: 'GET',
       path: `/v1/connect/executors/${EXECUTOR_ID}`,
       headers: { cookie: `kazi_connect_session=${SESSION_TOKEN}` },

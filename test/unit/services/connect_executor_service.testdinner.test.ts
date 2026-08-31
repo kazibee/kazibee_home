@@ -20,6 +20,11 @@ import ConnectChannelController from '../../../src/server/controller/connect_cha
 import ConnectExecutorService from '../../../src/server/services/connect_executor_service';
 import type { ConnectExecutorActor } from '../../../src/server/services/connect_executor_actor_resolver';
 import type { ClaimCreateInput, ClaimDecisionInput } from '../../../src/server/services/connect_executor_request_parser';
+import ConnectExecutorClaimRepo from '../../../src/server/repo/connect_executor_claim_repo';
+import ConnectExecutorRepo from '../../../src/server/repo/connect_executor_repo';
+import ConnectExecutorAuditRepo from '../../../src/server/repo/connect_executor_audit_repo';
+import ConnectExecutorCredentialRepo from '../../../src/server/repo/connect_executor_credential_repo';
+import ConnectWebsiteDeploymentIdentityRepo from '../../../src/server/repo/connect_website_deployment_identity_repo';
 
 // Presence must resolve through the in-process registry, not a coordinator.
 delete process.env.KAZIBEE_DEV_COORDINATOR_ORIGIN;
@@ -96,11 +101,13 @@ const credentialRow = (overrides: Record<string, unknown> = {}) => ({
 });
 
 const returns = (value: unknown) => control.returns(Promise.resolve(value));
-const deploymentIdentityMethods = () => ({
-  ConnectWebsiteDeploymentIdentityRepo: {
+type Methods = readonly (readonly [unknown, Record<string, unknown>])[];
+
+const deploymentIdentityMethods = (): Methods => ([
+  [ConnectWebsiteDeploymentIdentityRepo, {
     findSingleton: returns({ website_deployment_id: DEPLOYMENT_ID }),
-  },
-});
+  }],
+]);
 
 const base = () =>
   testDinner(executorsSource)
@@ -112,7 +119,7 @@ const base = () =>
     .hooks({});
 
 async function withService(
-  methods: Record<string, Record<string, unknown>>,
+  methods: Methods,
   run: (service: ConnectExecutorService) => Promise<void>,
 ) {
   const env = await base().methods(methods as never).build();
@@ -126,18 +133,18 @@ async function withService(
 
 describe('createClaim', () => {
   it('creates a fresh executor and pending claim', async () => {
-    await withService({
-      ConnectExecutorClaimRepo: {
+    await withService([
+      [ConnectExecutorClaimRepo, {
         findByIdempotencyKey: returns(null),
         findByClaimId: control.calls([returns(null), returns(claimRow())]),
         createClaim: control.once(returns(undefined)),
-      },
-      ConnectExecutorRepo: {
+      }],
+      [ConnectExecutorRepo, {
         findByExecutorId: control.calls([returns(null), returns(executorRow({ state: 'pending', owner_user_id: null }))]),
         createExecutor: control.once(returns(undefined)),
-      },
-      ConnectExecutorAuditRepo: { appendEvent: control.once(returns(undefined)) },
-    }, async (service) => {
+      }],
+      [ConnectExecutorAuditRepo, { appendEvent: control.once(returns(undefined)) }],
+    ], async (service) => {
       const result = await service.createClaim(claimInput(), BOOTSTRAP_TOKEN);
       expect(result.outcome).toBe('created');
       if (result.outcome !== 'created') return;
@@ -151,88 +158,88 @@ describe('createClaim', () => {
   });
 
   it('refreshes a still-pending registered executor and replaces its stale claim', async () => {
-    await withService({
-      ConnectExecutorClaimRepo: {
+    await withService([
+      [ConnectExecutorClaimRepo, {
         findByIdempotencyKey: returns(null),
         findByClaimId: control.calls([returns(null), returns(claimRow())]),
         deletePendingByExecutorId: control.once(returns(undefined)),
         createClaim: control.once(returns(undefined)),
-      },
-      ConnectExecutorRepo: {
+      }],
+      [ConnectExecutorRepo, {
         findByExecutorId: control.calls([
           returns(executorRow({ state: 'pending', owner_user_id: null })),
           returns(executorRow({ state: 'pending', owner_user_id: null })),
         ]),
         refreshPending: control.once(returns(undefined)),
-      },
-      ConnectExecutorAuditRepo: { appendEvent: control.once(returns(undefined)) },
-    }, async (service) => {
+      }],
+      [ConnectExecutorAuditRepo, { appendEvent: control.once(returns(undefined)) }],
+    ], async (service) => {
       const result = await service.createClaim(claimInput(), BOOTSTRAP_TOKEN);
       expect(result.outcome).toBe('created');
     });
   });
 
   it('answers conflict for a registered executor that is no longer pending', async () => {
-    await withService({
-      ConnectExecutorClaimRepo: {
+    await withService([
+      [ConnectExecutorClaimRepo, {
         findByIdempotencyKey: returns(null),
         findByClaimId: returns(null),
         createClaim: control.never(),
-      },
-      ConnectExecutorRepo: {
+      }],
+      [ConnectExecutorRepo, {
         findByExecutorId: returns(executorRow({ state: 'active' })),
-      },
-    }, async (service) => {
+      }],
+    ], async (service) => {
       expect(await service.createClaim(claimInput(), BOOTSTRAP_TOKEN)).toEqual({ outcome: 'conflict' });
     });
   });
 
   it('replays an identical pending claim as a retry with the same challenge', async () => {
-    await withService({
-      ConnectExecutorClaimRepo: {
+    await withService([
+      [ConnectExecutorClaimRepo, {
         findByIdempotencyKey: returns(claimRow()),
         createClaim: control.never(),
-      },
-      ConnectExecutorRepo: { findByExecutorId: returns(executorRow()) },
-    }, async (service) => {
+      }],
+      [ConnectExecutorRepo, { findByExecutorId: returns(executorRow()) }],
+    ], async (service) => {
       const result = await service.createClaim(claimInput(), BOOTSTRAP_TOKEN);
       expect(result.outcome).toBe('retry');
     });
   });
 
   it('answers conflict when the replayed envelope differs from the stored claim', async () => {
-    await withService({
-      ConnectExecutorClaimRepo: {
+    await withService([
+      [ConnectExecutorClaimRepo, {
         findByIdempotencyKey: returns(claimRow({ envelope_hash: sha256('different') })),
-      },
-      ConnectExecutorRepo: { findByExecutorId: returns(executorRow()) },
-    }, async (service) => {
+      }],
+      [ConnectExecutorRepo, { findByExecutorId: returns(executorRow()) }],
+    ], async (service) => {
       expect(await service.createClaim(claimInput(), BOOTSTRAP_TOKEN)).toEqual({ outcome: 'conflict' });
     });
   });
 
   it('maps a unique-constraint violation to conflict', async () => {
-    await withService({
-      ConnectExecutorClaimRepo: {
+    await withService([
+      [ConnectExecutorClaimRepo, {
         findByIdempotencyKey: returns(null),
         findByClaimId: returns(null),
         createClaim: control.throws(new Error('UNIQUE constraint failed: connect_executor_claims.claim_id')),
-      },
-      ConnectExecutorRepo: {
+      }],
+      [ConnectExecutorRepo, {
         findByExecutorId: returns(null),
         createExecutor: returns(undefined),
-      },
-    }, async (service) => {
+      }],
+    ], async (service) => {
       expect(await service.createClaim(claimInput(), BOOTSTRAP_TOKEN)).toEqual({ outcome: 'conflict' });
     });
   });
 
   it('maps any other repository failure to failed', async () => {
-    await withService({
-      ConnectExecutorClaimRepo: {
+    await withService([
+      [ConnectExecutorClaimRepo, {
         findByIdempotencyKey: control.throws(new Error('boom')),
-      },
-    }, async (service) => {
+      }],
+    ], async (service) => {
       expect(await service.createClaim(claimInput(), BOOTSTRAP_TOKEN)).toEqual({ outcome: 'failed' });
     });
   });
@@ -240,40 +247,40 @@ describe('createClaim', () => {
 
 describe('status', () => {
   it('answers not-found for an unknown claim', async () => {
-    await withService({
-      ConnectExecutorClaimRepo: { findByClaimId: returns(null) },
-    }, async (service) => {
+    await withService([
+      [ConnectExecutorClaimRepo, { findByClaimId: returns(null) }],
+    ], async (service) => {
       expect(await service.status(CLAIM_ID, BOOTSTRAP_TOKEN)).toEqual({ outcome: 'not-found' });
     });
   });
 
   it('answers unauthorized without a matching bootstrap token', async () => {
-    await withService({
-      ConnectExecutorClaimRepo: { findByClaimId: returns(claimRow()) },
-    }, async (service) => {
+    await withService([
+      [ConnectExecutorClaimRepo, { findByClaimId: returns(claimRow()) }],
+    ], async (service) => {
       expect(await service.status(CLAIM_ID, null)).toEqual({ outcome: 'unauthorized' });
       expect(await service.status(CLAIM_ID, 'X'.repeat(43))).toEqual({ outcome: 'unauthorized' });
     });
   });
 
   it('reports pending and expired for undecided claims', async () => {
-    await withService({
-      ConnectExecutorClaimRepo: {
+    await withService([
+      [ConnectExecutorClaimRepo, {
         findByClaimId: control.calls([returns(claimRow()), returns(claimRow({ expires_at: PAST }))]),
-      },
-    }, async (service) => {
+      }],
+    ], async (service) => {
       expect(await service.status(CLAIM_ID, BOOTSTRAP_TOKEN)).toEqual({ outcome: 'status', status: 'pending' });
       expect(await service.status(CLAIM_ID, BOOTSTRAP_TOKEN)).toEqual({ outcome: 'status', status: 'expired' });
     });
   });
 
   it('returns the full acceptance identity for an accepted claim', async () => {
-    await withService({
+    await withService([
       ...deploymentIdentityMethods(),
-      ConnectExecutorClaimRepo: { findByClaimId: returns(claimRow({ status: 'accepted' })) },
-      ConnectExecutorRepo: { findByExecutorId: returns(executorRow()) },
-      ConnectExecutorCredentialRepo: { findByTokenHash: returns(credentialRow()) },
-    }, async (service) => {
+      [ConnectExecutorClaimRepo, { findByClaimId: returns(claimRow({ status: 'accepted' })) }],
+      [ConnectExecutorRepo, { findByExecutorId: returns(executorRow()) }],
+      [ConnectExecutorCredentialRepo, { findByTokenHash: returns(credentialRow()) }],
+    ], async (service) => {
       expect(await service.status(CLAIM_ID, BOOTSTRAP_TOKEN)).toEqual({
         outcome: 'status', status: 'accepted', websiteDeploymentId: DEPLOYMENT_ID,
         executorId: EXECUTOR_ID, deviceId: DEVICE_ID, credentialGeneration: 1,
@@ -283,29 +290,29 @@ describe('status', () => {
   });
 
   it('answers unauthorized for an accepted claim with a fenced credential', async () => {
-    await withService({
-      ConnectExecutorClaimRepo: { findByClaimId: returns(claimRow({ status: 'accepted' })) },
-      ConnectExecutorRepo: { findByExecutorId: returns(executorRow({ credential_generation: 2 })) },
-      ConnectExecutorCredentialRepo: { findByTokenHash: returns(credentialRow({ generation: 1 })) },
-    }, async (service) => {
+    await withService([
+      [ConnectExecutorClaimRepo, { findByClaimId: returns(claimRow({ status: 'accepted' })) }],
+      [ConnectExecutorRepo, { findByExecutorId: returns(executorRow({ credential_generation: 2 })) }],
+      [ConnectExecutorCredentialRepo, { findByTokenHash: returns(credentialRow({ generation: 1 })) }],
+    ], async (service) => {
       expect(await service.status(CLAIM_ID, BOOTSTRAP_TOKEN)).toEqual({ outcome: 'unauthorized' });
     });
   });
 
   it('answers unauthorized for an accepted claim whose executor has no owner', async () => {
-    await withService({
-      ConnectExecutorClaimRepo: { findByClaimId: returns(claimRow({ status: 'accepted' })) },
-      ConnectExecutorRepo: { findByExecutorId: returns(executorRow({ owner_user_id: null })) },
-      ConnectExecutorCredentialRepo: { findByTokenHash: returns(credentialRow()) },
-    }, async (service) => {
+    await withService([
+      [ConnectExecutorClaimRepo, { findByClaimId: returns(claimRow({ status: 'accepted' })) }],
+      [ConnectExecutorRepo, { findByExecutorId: returns(executorRow({ owner_user_id: null })) }],
+      [ConnectExecutorCredentialRepo, { findByTokenHash: returns(credentialRow()) }],
+    ], async (service) => {
       expect(await service.status(CLAIM_ID, BOOTSTRAP_TOKEN)).toEqual({ outcome: 'unauthorized' });
     });
   });
 
   it('degrades a repository failure to failed', async () => {
-    await withService({
-      ConnectExecutorClaimRepo: { findByClaimId: control.throws(new Error('boom')) },
-    }, async (service) => {
+    await withService([
+      [ConnectExecutorClaimRepo, { findByClaimId: control.throws(new Error('boom')) }],
+    ], async (service) => {
       expect(await service.status(CLAIM_ID, BOOTSTRAP_TOKEN)).toEqual({ outcome: 'failed' });
     });
   });
@@ -313,31 +320,31 @@ describe('status', () => {
 
 describe('review', () => {
   it('finds a claim by short code hash', async () => {
-    await withService({
-      ConnectExecutorClaimRepo: { findByCodeHash: control.once(returns(claimRow())) },
-      ConnectExecutorRepo: { findByExecutorId: returns(executorRow()) },
-    }, async (service) => {
+    await withService([
+      [ConnectExecutorClaimRepo, { findByCodeHash: control.once(returns(claimRow())) }],
+      [ConnectExecutorRepo, { findByExecutorId: returns(executorRow()) }],
+    ], async (service) => {
       const result = await service.review({ code: 'ABCD-EFGH' });
       expect(result).toMatchObject({ outcome: 'found', status: 'pending' });
     });
   });
 
   it('answers not-found when the claim or its executor is missing', async () => {
-    await withService({
-      ConnectExecutorClaimRepo: {
+    await withService([
+      [ConnectExecutorClaimRepo, {
         findByClaimId: control.calls([returns(null), returns(claimRow())]),
-      },
-      ConnectExecutorRepo: { findByExecutorId: returns(null) },
-    }, async (service) => {
+      }],
+      [ConnectExecutorRepo, { findByExecutorId: returns(null) }],
+    ], async (service) => {
       expect(await service.review({ claimId: CLAIM_ID })).toEqual({ outcome: 'not-found' });
       expect(await service.review({ claimId: CLAIM_ID })).toEqual({ outcome: 'not-found' });
     });
   });
 
   it('degrades a repository failure to failed', async () => {
-    await withService({
-      ConnectExecutorClaimRepo: { findByClaimId: control.throws(new Error('boom')) },
-    }, async (service) => {
+    await withService([
+      [ConnectExecutorClaimRepo, { findByClaimId: control.throws(new Error('boom')) }],
+    ], async (service) => {
       expect(await service.review({ claimId: CLAIM_ID })).toEqual({ outcome: 'failed' });
     });
   });
@@ -345,31 +352,31 @@ describe('review', () => {
 
 describe('decide', () => {
   it('rejects non-browser actors as not-found', async () => {
-    await withService({}, async (service) => {
+    await withService([], async (service) => {
       expect(await service.decide(deviceActor, decisionInput())).toEqual({ outcome: 'not-found' });
     });
   });
 
   it('answers not-found for an unknown claim and expired past the deadline', async () => {
-    await withService({
-      ConnectExecutorClaimRepo: {
+    await withService([
+      [ConnectExecutorClaimRepo, {
         findByClaimId: control.calls([returns(null), returns(claimRow({ expires_at: PAST }))]),
-      },
-    }, async (service) => {
+      }],
+    ], async (service) => {
       expect(await service.decide(browserActor, decisionInput())).toEqual({ outcome: 'not-found' });
       expect(await service.decide(browserActor, decisionInput())).toEqual({ outcome: 'expired' });
     });
   });
 
   it('replays an identical accepted decision idempotently', async () => {
-    await withService({
+    await withService([
       ...deploymentIdentityMethods(),
-      ConnectExecutorClaimRepo: {
+      [ConnectExecutorClaimRepo, {
         findByClaimId: returns(claimRow({
           status: 'accepted', decided_by_user_id: USER_ID, decision_idempotency_key: IDEMPOTENCY_KEY,
         })),
-      },
-    }, async (service) => {
+      }],
+    ], async (service) => {
       expect(await service.decide(browserActor, decisionInput('accept'))).toEqual({
         outcome: 'accepted', websiteDeploymentId: DEPLOYMENT_ID,
       });
@@ -377,8 +384,8 @@ describe('decide', () => {
   });
 
   it('replays an identical denied decision idempotently and flags foreign replays', async () => {
-    await withService({
-      ConnectExecutorClaimRepo: {
+    await withService([
+      [ConnectExecutorClaimRepo, {
         findByClaimId: control.calls([
           returns(claimRow({
             status: 'denied', decided_by_user_id: USER_ID, decision_idempotency_key: IDEMPOTENCY_KEY,
@@ -387,46 +394,46 @@ describe('decide', () => {
             status: 'denied', decided_by_user_id: 'usr_intruder', decision_idempotency_key: IDEMPOTENCY_KEY,
           })),
         ]),
-      },
-    }, async (service) => {
+      }],
+    ], async (service) => {
       expect(await service.decide(browserActor, decisionInput('deny'))).toEqual({ outcome: 'denied' });
       expect(await service.decide(browserActor, decisionInput('deny'))).toEqual({ outcome: 'replayed' });
     });
   });
 
   it('denies a pending claim', async () => {
-    await withService({
-      ConnectExecutorClaimRepo: {
+    await withService([
+      [ConnectExecutorClaimRepo, {
         findByClaimId: control.calls([
           returns(claimRow()),
           returns(claimRow({ status: 'denied', decided_by_user_id: USER_ID })),
         ]),
         denyPending: control.once(returns(undefined)),
-      },
-      ConnectExecutorAuditRepo: { appendEvent: control.once(returns(undefined)) },
-    }, async (service) => {
+      }],
+      [ConnectExecutorAuditRepo, { appendEvent: control.once(returns(undefined)) }],
+    ], async (service) => {
       expect(await service.decide(browserActor, decisionInput('deny'))).toEqual({ outcome: 'denied' });
     });
   });
 
   it('reports replayed when the deny lost a decision race', async () => {
-    await withService({
-      ConnectExecutorClaimRepo: {
+    await withService([
+      [ConnectExecutorClaimRepo, {
         findByClaimId: control.calls([
           returns(claimRow()),
           returns(claimRow({ status: 'accepted', decided_by_user_id: 'usr_intruder' })),
         ]),
         denyPending: control.once(returns(undefined)),
-      },
-    }, async (service) => {
+      }],
+    ], async (service) => {
       expect(await service.decide(browserActor, decisionInput('deny'))).toEqual({ outcome: 'replayed' });
     });
   });
 
   it('accepts a pending claim, fences the owner, and mints the generation-1 credential', async () => {
-    await withService({
+    await withService([
       ...deploymentIdentityMethods(),
-      ConnectExecutorClaimRepo: {
+      [ConnectExecutorClaimRepo, {
         findByClaimId: control.calls([
           returns(claimRow()),
           returns(claimRow({
@@ -434,14 +441,14 @@ describe('decide', () => {
           })),
         ]),
         acceptPending: control.once(returns(undefined)),
-      },
-      ConnectExecutorRepo: {
+      }],
+      [ConnectExecutorRepo, {
         acceptOwner: control.once(returns(undefined)),
         findByExecutorId: returns(executorRow()),
-      },
-      ConnectExecutorCredentialRepo: { createCredential: control.once(returns(undefined)) },
-      ConnectExecutorAuditRepo: { appendEvent: control.once(returns(undefined)) },
-    }, async (service) => {
+      }],
+      [ConnectExecutorCredentialRepo, { createCredential: control.once(returns(undefined)) }],
+      [ConnectExecutorAuditRepo, { appendEvent: control.once(returns(undefined)) }],
+    ], async (service) => {
       expect(await service.decide(browserActor, decisionInput('accept'))).toEqual({
         outcome: 'accepted', websiteDeploymentId: DEPLOYMENT_ID,
       });
@@ -449,15 +456,15 @@ describe('decide', () => {
   });
 
   it('reports replayed when the accept lost a decision race', async () => {
-    await withService({
-      ConnectExecutorClaimRepo: {
+    await withService([
+      [ConnectExecutorClaimRepo, {
         findByClaimId: control.calls([
           returns(claimRow()),
           returns(claimRow({ status: 'denied', decided_by_user_id: 'usr_intruder' })),
         ]),
         acceptPending: control.once(returns(undefined)),
-      },
-    }, async (service) => {
+      }],
+    ], async (service) => {
       expect(await service.decide(browserActor, decisionInput('accept'))).toEqual({ outcome: 'replayed' });
     });
   });
@@ -466,8 +473,8 @@ describe('decide', () => {
   // invariant violation rejects out of decide (the logic @transaction wrapper
   // and controller catch own it in production) rather than mapping to failed.
   it('rejects when the owner invariant does not hold after acceptance', async () => {
-    await withService({
-      ConnectExecutorClaimRepo: {
+    await withService([
+      [ConnectExecutorClaimRepo, {
         findByClaimId: control.calls([
           returns(claimRow()),
           returns(claimRow({
@@ -475,12 +482,12 @@ describe('decide', () => {
           })),
         ]),
         acceptPending: returns(undefined),
-      },
-      ConnectExecutorRepo: {
+      }],
+      [ConnectExecutorRepo, {
         acceptOwner: returns(undefined),
         findByExecutorId: returns(executorRow({ credential_generation: 7 })),
-      },
-    }, async (service) => {
+      }],
+    ], async (service) => {
       await expect(service.decide(browserActor, decisionInput('accept')))
         .rejects.toThrow('Claim owner invariant failed');
     });
@@ -495,30 +502,30 @@ describe('decide', () => {
 
 describe('list / presence / detail', () => {
   it('lists owner executors for browser sessions and nothing for devices', async () => {
-    await withService({
-      ConnectExecutorRepo: { listByOwner: control.once(returns([executorRow()])) },
-    }, async (service) => {
+    await withService([
+      [ConnectExecutorRepo, { listByOwner: control.once(returns([executorRow()])) }],
+    ], async (service) => {
       expect(await service.list(browserActor)).toHaveLength(1);
       expect(await service.list(deviceActor)).toEqual([]);
     });
   });
 
   it('reports offline presence from the in-process registry when no coordinator routes', async () => {
-    await withService({}, async (service) => {
+    await withService([], async (service) => {
       expect(await service.presence(EXECUTOR_ID)).toBe('offline');
     });
   });
 
   it('answers detail found for the owner, not-found for others, failed on errors', async () => {
-    await withService({
-      ConnectExecutorRepo: {
+    await withService([
+      [ConnectExecutorRepo, {
         findByExecutorId: control.calls([
           returns(executorRow()),
           returns(executorRow({ owner_user_id: 'usr_someoneelse' })),
           control.throws(new Error('boom')),
         ]),
-      },
-    }, async (service) => {
+      }],
+    ], async (service) => {
       expect(await service.detail(browserActor, EXECUTOR_ID)).toMatchObject({ outcome: 'found' });
       expect(await service.detail(browserActor, EXECUTOR_ID)).toEqual({ outcome: 'not-found' });
       expect(await service.detail(browserActor, EXECUTOR_ID)).toEqual({ outcome: 'failed' });
@@ -534,31 +541,31 @@ describe('rename', () => {
   };
 
   it('renames an owned active executor and audits the change', async () => {
-    await withService({
-      ConnectExecutorRepo: {
+    await withService([
+      [ConnectExecutorRepo, {
         findByExecutorId: control.calls([
           returns(executorRow()),
           returns(executorRow({ display_name: 'New Name' })),
         ]),
         renameOwned: control.once(returns(undefined)),
-      },
-      ConnectExecutorAuditRepo: { appendEvent: control.once(returns(undefined)) },
-    }, async (service) => {
+      }],
+      [ConnectExecutorAuditRepo, { appendEvent: control.once(returns(undefined)) }],
+    ], async (service) => {
       const result = await service.rename(browserActor, renameInput);
       expect(result).toMatchObject({ outcome: 'renamed', executor: { display_name: 'New Name' } });
     });
   });
 
   it('rejects non-owners, non-active executors, and device actors as not-found', async () => {
-    await withService({
-      ConnectExecutorRepo: {
+    await withService([
+      [ConnectExecutorRepo, {
         findByExecutorId: control.calls([
           returns(null),
           returns(executorRow({ state: 'revoked' })),
         ]),
         renameOwned: control.never(),
-      },
-    }, async (service) => {
+      }],
+    ], async (service) => {
       expect(await service.rename(deviceActor, renameInput)).toEqual({ outcome: 'not-found' });
       expect(await service.rename(browserActor, renameInput)).toEqual({ outcome: 'not-found' });
       expect(await service.rename(browserActor, renameInput)).toEqual({ outcome: 'not-found' });
@@ -566,16 +573,16 @@ describe('rename', () => {
   });
 
   it('answers not-found when the rename did not stick and failed on write errors', async () => {
-    await withService({
-      ConnectExecutorRepo: {
+    await withService([
+      [ConnectExecutorRepo, {
         findByExecutorId: control.calls([
           returns(executorRow()),
           returns(executorRow({ display_name: 'Old Name' })),
           returns(executorRow()),
         ]),
         renameOwned: control.calls([returns(undefined), control.throws(new Error('boom'))]),
-      },
-    }, async (service) => {
+      }],
+    ], async (service) => {
       expect(await service.rename(browserActor, renameInput)).toEqual({ outcome: 'not-found' });
       expect(await service.rename(browserActor, renameInput)).toEqual({ outcome: 'failed' });
     });
@@ -590,53 +597,53 @@ describe('revoke', () => {
   };
 
   it('revokes an owned executor and bumps the credential fence', async () => {
-    await withService({
-      ConnectExecutorRepo: {
+    await withService([
+      [ConnectExecutorRepo, {
         findByExecutorId: control.calls([
           returns(executorRow()),
           returns(executorRow({ state: 'revoked', credential_generation: 2 })),
         ]),
         revokeOwned: control.once(returns(undefined)),
-      },
-      ConnectExecutorCredentialRepo: { revokeForExecutor: control.once(returns(undefined)) },
-      ConnectExecutorAuditRepo: { appendEvent: control.once(returns(undefined)) },
-    }, async (service) => {
+      }],
+      [ConnectExecutorCredentialRepo, { revokeForExecutor: control.once(returns(undefined)) }],
+      [ConnectExecutorAuditRepo, { appendEvent: control.once(returns(undefined)) }],
+    ], async (service) => {
       const result = await service.revoke(browserActor, revokeInput);
       expect(result).toMatchObject({ outcome: 'revoked', executor: { state: 'revoked' } });
     });
   });
 
   it('short-circuits an already revoked executor idempotently', async () => {
-    await withService({
-      ConnectExecutorRepo: {
+    await withService([
+      [ConnectExecutorRepo, {
         findByExecutorId: returns(executorRow({ state: 'revoked' })),
         revokeOwned: control.never(),
-      },
-    }, async (service) => {
+      }],
+    ], async (service) => {
       expect(await service.revoke(browserActor, revokeInput)).toMatchObject({ outcome: 'revoked' });
     });
   });
 
   it('rejects unknown executors and non-browser actors as not-found', async () => {
-    await withService({
-      ConnectExecutorRepo: { findByExecutorId: returns(null), revokeOwned: control.never() },
-    }, async (service) => {
+    await withService([
+      [ConnectExecutorRepo, { findByExecutorId: returns(null), revokeOwned: control.never() }],
+    ], async (service) => {
       expect(await service.revoke(deviceActor, revokeInput)).toEqual({ outcome: 'not-found' });
       expect(await service.revoke(browserActor, revokeInput)).toEqual({ outcome: 'not-found' });
     });
   });
 
   it('fails when the credential fence invariant does not hold', async () => {
-    await withService({
-      ConnectExecutorRepo: {
+    await withService([
+      [ConnectExecutorRepo, {
         findByExecutorId: control.calls([
           returns(executorRow()),
           returns(executorRow({ state: 'revoked', credential_generation: 1 })),
         ]),
         revokeOwned: returns(undefined),
-      },
-      ConnectExecutorCredentialRepo: { revokeForExecutor: returns(undefined) },
-    }, async (service) => {
+      }],
+      [ConnectExecutorCredentialRepo, { revokeForExecutor: returns(undefined) }],
+    ], async (service) => {
       expect(await service.revoke(browserActor, revokeInput)).toEqual({ outcome: 'failed' });
     });
   });

@@ -87,11 +87,11 @@ const sendParams = (over: Record<string, unknown> = {}) => ({
 const repoStubs = (
   config: Partial<Record<"device" | "message" | "session", Record<string, unknown>>>,
 ) => {
-  const map = new Map<unknown, Record<string, any>>();
-  if (config.device) map.set(DeviceRepo, config.device);
-  if (config.message) map.set(MessageRepo, config.message);
-  if (config.session) map.set(SessionRepo, config.session);
-  return map;
+  const entries: [unknown, Record<string, any>][] = [];
+  if (config.device) entries.push([DeviceRepo, config.device]);
+  if (config.message) entries.push([MessageRepo, config.message]);
+  if (config.session) entries.push([SessionRepo, config.session]);
+  return entries;
 };
 
 describe("RelayService (real service, stubbed SQL boundary)", () => {

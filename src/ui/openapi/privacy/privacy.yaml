@@ -1,0 +1,8 @@
+paths:
+  /privacy:
+    get:
+      summary: Privacy Policy
+      description: How Kazibee handles your data - local-first desktop app, bring your own keys, no account required
+      x-view: pages/privacy/main.svelte
+      x-layout:
+        - layout/public_layout.svelte

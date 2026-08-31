@@ -9,14 +9,16 @@
  */
 import { describe, expect, it } from 'vitest';
 import path from 'node:path';
-import { testApp } from '@noego/app/testing';
+import { appTest } from '../../helpers/app_test';
 import { test as control } from '@noego/testing';
+import StatusRepo from '../../../src/server/repo/status_repo';
+import ConnectAccountRepo from '../../../src/server/repo/connect_account_repo';
+import { ConnectIdGenerator } from '../../../src/server/services/connect_auth_primitives';
 
-const configPath = path.resolve(__dirname, '../../../noego.config.yml');
 
 describe('testApp over the real product config', () => {
   it('GET /api/status runs the auto-bound production controller graph', async () => {
-    const app = await testApp(configPath)
+    const app = await appTest()
       .select({ server: { route: { method: 'get', path: '/api/status' } } })
       .build();
     const response = await app.dinner.request({ method: 'GET', path: '/api/status' });
@@ -26,13 +28,13 @@ describe('testApp over the real product config', () => {
   });
 
   it('deep status: guest 403 and stubbed SQL boundary through the product path', async () => {
-    const app = await testApp(configPath)
+    const app = await appTest()
       .select({ server: { route: { method: 'get', path: '/api/status/deep' } } })
-      .methods({
-        StatusRepo: {
+      .methods([
+        [StatusRepo, {
           checkDatabase: control.never(),
-        },
-      })
+        }],
+      ])
       .build();
     const response = await app.dinner.request({ method: 'GET', path: '/api/status/deep' });
     expect(response.status).toBe(403);
@@ -41,15 +43,20 @@ describe('testApp over the real product config', () => {
   });
 
   it('a heavier graph: connect signup resolves its full controller/logic/service chain', async () => {
-    const app = await testApp(configPath)
+    const app = await appTest()
       .select({ server: { route: { method: 'post', path: '/v1/connect/auth/signup' } } })
-      .methods({
-        ConnectAccountRepo: {
+      // Spec 04 tuple composition binds by EXACT token identity, so the
+      // auto-imported controller graph must come from the same module
+      // registry as this file's imports. Node's default importer would
+      // instantiate a second copy of ConnectAccountRepo/ConnectIdGenerator
+      // and the stubs below would silently not apply.
+      .methods([
+        [ConnectAccountRepo, {
           findPasswordlessByEmail: control.once(control.returns(Promise.resolve(null))),
           createAccount: control.once(control.returns(Promise.resolve())),
-        },
-        ConnectIdGenerator: { userId: control.returns('usr_testapp01') },
-      })
+        }],
+        [ConnectIdGenerator, { userId: control.returns('usr_testapp01') }],
+      ])
       .build();
     const response = await app.dinner.request({
       method: 'POST',
@@ -75,7 +82,7 @@ describe('testApp over the real product config', () => {
 
   it('unknown selections fail with the available production identities', async () => {
     await expect(
-      testApp(configPath)
+      appTest()
         .select({ server: { route: { method: 'get', path: '/nope' } } })
         .build()
     ).rejects.toThrow(/available routes/);

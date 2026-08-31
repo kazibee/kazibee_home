@@ -17,6 +17,7 @@ import OAuthController from '../../../src/server/controller/oauth.controller';
 import OAuthTokenAuthService, { InvalidOAuthTokenError } from '../../../src/server/services/oauth_token_auth_service';
 import { tokenMatchesResource } from '../../../src/server/services/oauth_flow_service';
 import formBody from '../../../src/middleware/form_body';
+import OAuthRepo from '../../../src/server/repo/oauth_repo';
 
 const oauthSource = parseYaml(
   readFileSync(path.resolve(__dirname, '../../../src/mcp/openapi/oauth.yaml'), 'utf8')
@@ -101,13 +102,13 @@ const exchangeForm = (overrides: Record<string, string> = {}) => form({
 describe('oauth refresh_token grant through testDinner', () => {
   it('rotates the refresh token and mints a fresh resource-bound access token', async () => {
     const env = await base()
-      .methods({
-        OAuthRepo: {
+      .methods([
+        [OAuthRepo, {
           findActiveTokenWithConnection: control.once(control.returns(Promise.resolve(refreshRow()))),
           rotateRefreshToken: control.once(control.returns(Promise.resolve({ rotated: true }))),
           createToken: control.once(control.returns(Promise.resolve(undefined))),
-        },
-      })
+        }],
+      ])
       .build();
     const response = await env.dinner.request({
       method: 'POST', path: '/oauth/token', ...refreshForm(),
@@ -128,7 +129,7 @@ describe('oauth refresh_token grant through testDinner', () => {
 
   it('a refresh token bound to another resource is invalid_grant before any lookup', async () => {
     const env = await base()
-      .methods({ OAuthRepo: { findActiveTokenWithConnection: control.never() } })
+      .methods([ [OAuthRepo, { findActiveTokenWithConnection: control.never() }] ])
       .build();
     const response = await env.dinner.request({
       method: 'POST', path: '/oauth/token',
@@ -171,12 +172,12 @@ describe('oauth refresh_token grant through testDinner', () => {
     ];
     for (const row of rows) {
       const env = await base()
-        .methods({
-          OAuthRepo: {
+        .methods([
+          [OAuthRepo, {
             findActiveTokenWithConnection: control.once(control.returns(Promise.resolve(row))),
             rotateRefreshToken: control.never(),
-          },
-        })
+          }],
+        ])
         .build();
       const response = await env.dinner.request({
         method: 'POST', path: '/oauth/token', ...refreshForm(),
@@ -190,14 +191,14 @@ describe('oauth refresh_token grant through testDinner', () => {
 
   it('a refresh token owned by another client is invalid_client', async () => {
     const env = await base()
-      .methods({
-        OAuthRepo: {
+      .methods([
+        [OAuthRepo, {
           findActiveTokenWithConnection: control.once(
             control.returns(Promise.resolve(refreshRow({ client_id: 'oac_other' }))),
           ),
           rotateRefreshToken: control.never(),
-        },
-      })
+        }],
+      ])
       .build();
     const response = await env.dinner.request({
       method: 'POST', path: '/oauth/token', ...refreshForm(),
@@ -210,13 +211,13 @@ describe('oauth refresh_token grant through testDinner', () => {
 
   it('a lost rotation race (rotateRefreshToken -> null) is invalid_grant with no token minted', async () => {
     const env = await base()
-      .methods({
-        OAuthRepo: {
+      .methods([
+        [OAuthRepo, {
           findActiveTokenWithConnection: control.once(control.returns(Promise.resolve(refreshRow()))),
           rotateRefreshToken: control.once(control.returns(Promise.resolve(null))),
           createToken: control.never(),
-        },
-      })
+        }],
+      ])
       .build();
     const response = await env.dinner.request({
       method: 'POST', path: '/oauth/token', ...refreshForm(),
@@ -231,7 +232,7 @@ describe('oauth refresh_token grant through testDinner', () => {
 describe('oauth authorization_code remaining branches', () => {
   it('missing required fields are invalid_request before any repo call', async () => {
     const env = await base()
-      .methods({ OAuthRepo: { consumeCode: control.never() } })
+      .methods([ [OAuthRepo, { consumeCode: control.never() }] ])
       .build();
     const response = await env.dinner.request({
       method: 'POST', path: '/oauth/token', ...exchangeForm({ code: '' }),
@@ -244,9 +245,9 @@ describe('oauth authorization_code remaining branches', () => {
 
   it('an unknown or consumed code is invalid_grant', async () => {
     const env = await base()
-      .methods({
-        OAuthRepo: { consumeCode: control.once(control.returns(Promise.resolve(null))) },
-      })
+      .methods([
+        [OAuthRepo, { consumeCode: control.once(control.returns(Promise.resolve(null))) }],
+      ])
       .build();
     const response = await env.dinner.request({
       method: 'POST', path: '/oauth/token', ...exchangeForm(),
@@ -264,12 +265,12 @@ describe('oauth authorization_code remaining branches', () => {
       codeRow({ resource: 'https://other.example/mcp' }),
     ]) {
       const env = await base()
-        .methods({
-          OAuthRepo: {
+        .methods([
+          [OAuthRepo, {
             consumeCode: control.once(control.returns(Promise.resolve(row))),
             findActiveConnectionById: control.never(),
-          },
-        })
+          }],
+        ])
         .build();
       const response = await env.dinner.request({
         method: 'POST', path: '/oauth/token', ...exchangeForm(),
@@ -303,13 +304,13 @@ describe('oauth authorization_code remaining branches', () => {
     ];
     for (const { connection, status, error } of cases) {
       const env = await base()
-        .methods({
-          OAuthRepo: {
+        .methods([
+          [OAuthRepo, {
             consumeCode: control.once(control.returns(Promise.resolve(codeRow()))),
             findActiveConnectionById: control.once(control.returns(Promise.resolve(connection))),
             createToken: control.never(),
-          },
-        })
+          }],
+        ])
         .build();
       const response = await env.dinner.request({
         method: 'POST', path: '/oauth/token', ...exchangeForm(),
@@ -351,8 +352,8 @@ describe('OAuthTokenAuthService at service depth (real hashing, stubbed repo)', 
 
   it('authenticate resolves the principal with live members, capping member scopes', async () => {
     const env = await base()
-      .methods({
-        OAuthRepo: {
+      .methods([
+        [OAuthRepo, {
           findActiveTokenWithConnection: control.once(
             control.returns(Promise.resolve(accessRow({ approved_scope: 'read' }))),
           ),
@@ -361,8 +362,8 @@ describe('OAuthTokenAuthService at service depth (real hashing, stubbed repo)', 
             memberRow({ executor_id: 'exe_gone', executor_state: 'revoked' }),
             memberRow({ executor_id: 'exe_foreign', executor_owner_user_id: 'usr_other' }),
           ]))),
-        },
-      })
+        }],
+      ])
       .build();
     const service = await env.get<OAuthTokenAuthService>(OAuthTokenAuthService);
     const principal = await service.authenticate(`Bearer ${ACCESS_TOKEN}`, RESOURCE);
@@ -388,16 +389,16 @@ describe('OAuthTokenAuthService at service depth (real hashing, stubbed repo)', 
 
   it('authenticate rejects malformed bearers, unknown tokens, and expired tokens', async () => {
     const env = await base()
-      .methods({
-        OAuthRepo: {
+      .methods([
+        [OAuthRepo, {
           findActiveTokenWithConnection: control.calls([
             control.returns(Promise.resolve(null)),
             control.returns(Promise.resolve(accessRow({ expires_at: past }))),
             control.returns(Promise.resolve(accessRow({ kind: 'refresh' }))),
           ]),
           listConnectionExecutors: control.never(),
-        },
-      })
+        }],
+      ])
       .build();
     const service = await env.get<OAuthTokenAuthService>(OAuthTokenAuthService);
     await expect(service.authenticate('Bearer nope', RESOURCE)).rejects.toThrow(InvalidOAuthTokenError);

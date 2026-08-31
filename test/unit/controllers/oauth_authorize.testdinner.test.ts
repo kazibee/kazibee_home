@@ -16,6 +16,9 @@ import { load as parseYaml } from 'js-yaml';
 import { testDinner } from '@noego/dinner/testing';
 import { test as control } from '@noego/testing';
 import OAuthAuthorizeController from '../../../src/server/controller/oauth_authorize.controller';
+import OAuthRepo from '../../../src/server/repo/oauth_repo';
+import ConnectBrowserSessionRepo from '../../../src/server/repo/connect_browser_session_repo';
+import ConnectAccountRepo from '../../../src/server/repo/connect_account_repo';
 
 // Real production source — the same document production stitching includes.
 const authorizeSource = parseYaml(
@@ -86,9 +89,9 @@ const activeAccount = {
 describe('oauth authorize/consent routes through testDinner (no server, no database)', () => {
   it('GET /oauth/authorize without a client_id renders the plain error page (no redirect)', async () => {
     const env = await base()
-      .methods({
-        OAuthRepo: { findClientById: control.never() },
-      })
+      .methods([
+        [OAuthRepo, { findClientById: control.never() }],
+      ])
       .build();
     const response = await env.dinner.request({
       method: 'GET',
@@ -106,11 +109,11 @@ describe('oauth authorize/consent routes through testDinner (no server, no datab
 
   it('a fully valid authorization request serves the consent application shell', async () => {
     const env = await base()
-      .methods({
-        OAuthRepo: {
+      .methods([
+        [OAuthRepo, {
           findClientById: control.once(control.returns(Promise.resolve(dcrClient))),
-        },
-      })
+        }],
+      ])
       .build();
     const response = await env.dinner.request({
       method: 'GET',
@@ -127,11 +130,11 @@ describe('oauth authorize/consent routes through testDinner (no server, no datab
 
   it('a validated client with a bad response_type gets a 302 error redirect carrying state and iss', async () => {
     const env = await base()
-      .methods({
-        OAuthRepo: {
+      .methods([
+        [OAuthRepo, {
           findClientById: control.once(control.returns(Promise.resolve(dcrClient))),
-        },
-      })
+        }],
+      ])
       .build();
     const response = await env.dinner.request({
       method: 'GET',
@@ -152,10 +155,10 @@ describe('oauth authorize/consent routes through testDinner (no server, no datab
 
   it('GET /oauth/consent/context without a session cookie is 401 and never queries anything', async () => {
     const env = await base()
-      .methods({
-        ConnectBrowserSessionRepo: { findByTokenHash: control.never() },
-        OAuthRepo: { findClientById: control.never() },
-      })
+      .methods([
+        [ConnectBrowserSessionRepo, { findByTokenHash: control.never() }],
+        [OAuthRepo, { findClientById: control.never() }],
+      ])
       .build();
     const response = await env.dinner.request({
       method: 'GET',
@@ -170,15 +173,15 @@ describe('oauth authorize/consent routes through testDinner (no server, no datab
 
   it('POST /oauth/consent/approve with a valid session but no CSRF token is 403', async () => {
     const env = await base()
-      .methods({
-        ConnectBrowserSessionRepo: {
+      .methods([
+        [ConnectBrowserSessionRepo, {
           findByTokenHash: control.once(control.returns(Promise.resolve(activeSession))),
-        },
-        ConnectAccountRepo: {
+        }],
+        [ConnectAccountRepo, {
           findByUserId: control.once(control.returns(Promise.resolve(activeAccount))),
-        },
-        OAuthRepo: { createConnection: control.never() },
-      })
+        }],
+        [OAuthRepo, { createConnection: control.never() }],
+      ])
       .build();
     const response = await env.dinner.request({
       method: 'POST',
@@ -200,19 +203,19 @@ describe('oauth authorize/consent routes through testDinner (no server, no datab
 
   it('POST /oauth/consent/deny with real session+CSRF auth returns the access_denied redirect', async () => {
     const env = await base()
-      .methods({
-        ConnectBrowserSessionRepo: {
+      .methods([
+        [ConnectBrowserSessionRepo, {
           findByTokenHash: control.once(control.returns(Promise.resolve(activeSession))),
           touchSession: control.once(control.returns(Promise.resolve(undefined))),
-        },
-        ConnectAccountRepo: {
+        }],
+        [ConnectAccountRepo, {
           findByUserId: control.once(control.returns(Promise.resolve(activeAccount))),
-        },
-        OAuthRepo: {
+        }],
+        [OAuthRepo, {
           findClientById: control.once(control.returns(Promise.resolve(dcrClient))),
           createConnection: control.never(),
-        },
-      })
+        }],
+      ])
       .build();
     const response = await env.dinner.request({
       method: 'POST',
@@ -238,16 +241,16 @@ describe('oauth authorize/consent routes through testDinner (no server, no datab
 
   it('POST /oauth/consent/deny with authenticated user but invalid OAuth params is a 400 JSON error', async () => {
     const env = await base()
-      .methods({
-        ConnectBrowserSessionRepo: {
+      .methods([
+        [ConnectBrowserSessionRepo, {
           findByTokenHash: control.once(control.returns(Promise.resolve(activeSession))),
           touchSession: control.once(control.returns(Promise.resolve(undefined))),
-        },
-        ConnectAccountRepo: {
+        }],
+        [ConnectAccountRepo, {
           findByUserId: control.once(control.returns(Promise.resolve(activeAccount))),
-        },
-        OAuthRepo: { findClientById: control.never() },
-      })
+        }],
+        [OAuthRepo, { findClientById: control.never() }],
+      ])
       .build();
     const response = await env.dinner.request({
       method: 'POST',

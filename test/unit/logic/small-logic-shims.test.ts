@@ -12,6 +12,10 @@ import UpdateLogic from '../../../src/server/logic/update.logic';
 import ConnectRelayLogic from '../../../src/server/logic/connect_relay.logic';
 import ConnectServiceReleaseLogic from '../../../src/server/logic/connect_service_release.logic';
 import RawRequest from '../../../src/server/services/raw_request';
+import PairingService from '../../../src/server/services/pairing_service';
+import UpdateFeedService from '../../../src/server/services/update_feed_service';
+import ConnectRelayService from '../../../src/server/services/connect_relay_service';
+import ConnectServiceReleaseResolver from '../../../src/server/services/connect_service_release_resolver';
 
 describe('small logic shims delegate through real IoC', () => {
   it('PairingLogic forwards all three methods to PairingService', async () => {
@@ -19,13 +23,13 @@ describe('small logic shims delegate through real IoC', () => {
     const claimed = { ok: true };
     const devices = [{ deviceId: 'dev_1' }];
     const env = await testIoc()
-      .methods({
-        PairingService: {
+      .methods([
+        [PairingService, {
           registerDevice: control.once(control.returns(registered)),
           claimPairing: control.once(control.returns(claimed)),
           getDevicesForUser: control.once(control.returns(devices)),
-        },
-      })
+        }],
+      ])
       .build();
     const logic = await env.get<PairingLogic>(PairingLogic);
     expect(await logic.registerDevice('Mac', 'desktop')).toBe(registered);
@@ -43,13 +47,13 @@ describe('small logic shims delegate through real IoC', () => {
     const releases = 'RELEASES';
     const download = new Response('bin');
     const env = await testIoc()
-      .methods({
-        UpdateFeedService: {
+      .methods([
+        [UpdateFeedService, {
           createFeed: control.once(control.returns(feed)),
           createWindowsReleases: control.once(control.returns(releases)),
           createWindowsPackageDownload: control.once(control.returns(download)),
-        },
-      })
+        }],
+      ])
       .build();
     const logic = await env.get<UpdateLogic>(UpdateLogic);
     expect(await logic.createFeed('arm64' as never)).toBe(feed);
@@ -65,13 +69,13 @@ describe('small logic shims delegate through real IoC', () => {
   it('ConnectRelayLogic forwards receive/open/close to ConnectRelayService', async () => {
     const ack = { kind: 'channel.ack' };
     const env = await testIoc()
-      .methods({
-        ConnectRelayService: {
+      .methods([
+        [ConnectRelayService, {
           receive: control.once(control.returns(ack)),
           open: control.once(control.returns(undefined)),
           close: control.once(control.returns(undefined)),
-        },
-      })
+        }],
+      ])
       .build();
     const logic = await env.get<ConnectRelayLogic>(ConnectRelayLogic);
     const actor = { role: 'executor_device', executorId: 'exe_1' } as never;
@@ -88,11 +92,11 @@ describe('small logic shims delegate through real IoC', () => {
   it('ConnectServiceReleaseLogic resolves through the resolver with no actor gate', async () => {
     const candidate = { version: '2.0.0', url: 'https://cdn/app' };
     const env = await testIoc()
-      .methods({
-        ConnectServiceReleaseResolver: {
+      .methods([
+        [ConnectServiceReleaseResolver, {
           resolve: control.once(control.returns(candidate)),
-        },
-      })
+        }],
+      ])
       .build();
     const logic = await env.get<ConnectServiceReleaseLogic>(ConnectServiceReleaseLogic);
     const request = { service: 'desktop', platform: 'darwin' } as never;

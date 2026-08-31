@@ -24,6 +24,7 @@ import StatusController from '../../../src/server/controller/status.controller';
 import StatusLogic from '../../../src/server/logic/status.logic';
 import { GUEST_ACTOR, createActor } from '../../../src/server/types/actor';
 import { ForbiddenError } from '../../../src/server/errors/domain_errors';
+import StatusRepo from '../../../src/server/repo/status_repo';
 
 // Real production source — the same document production stitching includes.
 const statusSource = parseYaml(
@@ -60,11 +61,11 @@ describe('status routes through testDinner (no server, no database)', () => {
 
   it('admin deep status reports connected when the SQL boundary reports 1', async () => {
     const env = await base()
-      .methods({
-        StatusRepo: {
+      .methods([
+        [StatusRepo, {
           checkDatabase: control.once(control.returns(Promise.resolve({ result: 1 }))),
-        },
-      })
+        }],
+      ])
       .build();
     // Logic-depth surface for the admin branch (auth middleware owns req.user
     // in production; the authorization rule itself lives in StatusLogic).
@@ -77,11 +78,11 @@ describe('status routes through testDinner (no server, no database)', () => {
 
   it('guest actors cannot reach the database status at all', async () => {
     const env = await base()
-      .methods({
-        StatusRepo: {
+      .methods([
+        [StatusRepo, {
           checkDatabase: control.never(),
-        },
-      })
+        }],
+      ])
       .build();
     const logic = await env.get<StatusLogic>(StatusLogic);
     await expect(logic.getDatabaseStatus(GUEST_ACTOR)).rejects.toThrow(ForbiddenError);
@@ -91,11 +92,11 @@ describe('status routes through testDinner (no server, no database)', () => {
 
   it('database failures degrade to a structured ERROR payload', async () => {
     const env = await base()
-      .methods({
-        StatusRepo: {
+      .methods([
+        [StatusRepo, {
           checkDatabase: control.once(control.throws(new Error('connection refused'))),
-        },
-      })
+        }],
+      ])
       .build();
     const logic = await env.get<StatusLogic>(StatusLogic);
     const result = await logic.getDatabaseStatus(createActor({ id: 1, role: 'admin' }));

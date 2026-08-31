@@ -75,7 +75,10 @@
         <img src="/images/logo_bold_128_transparent.png" alt="" class="h-8 w-8" />
         <span class="text-sm font-semibold text-ink-muted">Kazibee</span>
       </div>
-      <p class="text-xs text-ink-faint">Bounded AI execution. Free and open source.</p>
+      <div class="flex items-center gap-4">
+        <a href="/privacy" class="text-xs text-ink-faint transition hover:text-ink" data-test-id="footer-privacy">Privacy Policy</a>
+        <p class="text-xs text-ink-faint">Bounded AI execution. Free and open source.</p>
+      </div>
     </div>
   </footer>
 </div>

@@ -18,6 +18,10 @@ import { load as parseYaml } from 'js-yaml';
 import { testDinner } from '@noego/dinner/testing';
 import { test as control } from '@noego/testing';
 import RemoteToolsController from '../../../src/server/controller/remote_tools.controller';
+import RemoteToolGrantRepo from '../../../src/server/repo/remote_tool_grant_repo';
+import ConnectExecutorRepo from '../../../src/server/repo/connect_executor_repo';
+import ConnectBrowserSessionRepo from '../../../src/server/repo/connect_browser_session_repo';
+import ConnectAccountRepo from '../../../src/server/repo/connect_account_repo';
 
 // Force the "no coordinator routing" branch regardless of the shell env.
 delete process.env.KAZIBEE_DEV_COORDINATOR_ORIGIN;
@@ -93,22 +97,22 @@ const executorRow = () => ({
   last_seen_at: '2026-01-01T00:00:00.000Z',
 });
 
-const patAuthMethods = () => ({
-  RemoteToolGrantRepo: {
+const patAuthMethods = () => ([
+  [RemoteToolGrantRepo, {
     findByTokenHash: control.returns(Promise.resolve(grantRow())),
     touchLastUsed: control.returns(Promise.resolve(undefined)),
-  },
-});
+  }],
+] as const);
 
-const browserSessionMethods = () => ({
-  ConnectBrowserSessionRepo: {
+const browserSessionMethods = () => ([
+  [ConnectBrowserSessionRepo, {
     findByTokenHash: control.returns(Promise.resolve(sessionRow())),
     touchSession: control.returns(Promise.resolve(undefined)),
-  },
-  ConnectAccountRepo: {
+  }],
+  [ConnectAccountRepo, {
     findByUserId: control.returns(Promise.resolve(accountRow())),
-  },
-});
+  }],
+] as const);
 
 const ownerHeaders = () => ({
   cookie: `kazi_connect_session=${SESSION_TOKEN}; kazi_connect_csrf=${CSRF_TOKEN}`,
@@ -126,9 +130,9 @@ const base = () =>
 describe('remote tools routes through testDinner (no server, no database)', () => {
   it('POST /mcp without a bearer answers 401 with RFC 9728 resource metadata', async () => {
     const env = await base()
-      .methods({
-        RemoteToolGrantRepo: { findByTokenHash: control.never() },
-      })
+      .methods([
+        [RemoteToolGrantRepo, { findByTokenHash: control.never() }],
+      ])
       .build();
     const response = await env.dinner.request({
       method: 'POST',
@@ -205,16 +209,16 @@ describe('remote tools routes through testDinner (no server, no database)', () =
 
   it('POST /grants mints a grant and returns the raw token exactly once', async () => {
     const env = await base()
-      .methods({
+      .methods([
         ...browserSessionMethods(),
-        ConnectExecutorRepo: {
+        [ConnectExecutorRepo, {
           findByExecutorId: control.once(control.returns(Promise.resolve(executorRow()))),
-        },
-        RemoteToolGrantRepo: {
+        }],
+        [RemoteToolGrantRepo, {
           createGrant: control.once(control.returns(Promise.resolve(undefined))),
           findByTokenHash: control.once(control.returns(Promise.resolve(grantRow()))),
-        },
-      })
+        }],
+      ])
       .build();
     const response = await env.dinner.request({
       method: 'POST',
@@ -238,10 +242,10 @@ describe('remote tools routes through testDinner (no server, no database)', () =
 
   it('POST /grants rejects an invalid scope closure with 400', async () => {
     const env = await base()
-      .methods({
+      .methods([
         ...browserSessionMethods(),
-        RemoteToolGrantRepo: { createGrant: control.never() },
-      })
+        [RemoteToolGrantRepo, { createGrant: control.never() }],
+      ])
       .build();
     const response = await env.dinner.request({
       method: 'POST',
@@ -262,12 +266,12 @@ describe('remote tools routes through testDinner (no server, no database)', () =
 
   it('GET /grants answers 401 when the session cookie resolves to nothing', async () => {
     const env = await base()
-      .methods({
-        ConnectBrowserSessionRepo: {
+      .methods([
+        [ConnectBrowserSessionRepo, {
           findByTokenHash: control.once(control.returns(Promise.resolve(null))),
-        },
-        RemoteToolGrantRepo: { listByOwner: control.never() },
-      })
+        }],
+        [RemoteToolGrantRepo, { listByOwner: control.never() }],
+      ])
       .build();
     const response = await env.dinner.request({
       method: 'GET',

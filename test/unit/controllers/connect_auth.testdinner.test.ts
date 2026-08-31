@@ -16,6 +16,10 @@ import { test as control } from '@noego/testing';
 import ConnectAuthController from '../../../src/server/controller/connect_auth.controller';
 import ConnectAuthLogic from '../../../src/server/logic/connect_auth.logic';
 import { GUEST_ACTOR } from '../../../src/server/types/actor';
+import ConnectAccountRepo from '../../../src/server/repo/connect_account_repo';
+import { ConnectIdGenerator } from '../../../src/server/services/connect_auth_primitives';
+import { ConnectClock } from '../../../src/server/services/connect_auth_primitives';
+import ConnectBrowserSessionRepo from '../../../src/server/repo/connect_browser_session_repo';
 
 const authSource = parseYaml(
   readFileSync(path.resolve(__dirname, '../../../src/server/openapi/connect/auth.yaml'), 'utf8')
@@ -43,14 +47,14 @@ const signupBody = {
 describe('connect auth routes through testDinner (no server, no database)', () => {
   it('POST /signup creates an account when the email is unknown', async () => {
     const env = await base()
-      .methods({
-        ConnectAccountRepo: {
+      .methods([
+        [ConnectAccountRepo, {
           findPasswordlessByEmail: control.once(control.returns(Promise.resolve(null))),
           createAccount: control.once(control.returns(Promise.resolve())),
-        },
-        ConnectIdGenerator: { userId: control.returns('usr_fixed0001') },
-        ConnectClock: { now: control.returns(NOW) },
-      })
+        }],
+        [ConnectIdGenerator, { userId: control.returns('usr_fixed0001') }],
+        [ConnectClock, { now: control.returns(NOW) }],
+      ])
       .build();
     const response = await env.dinner.request({
       method: 'POST', path: '/v1/connect/auth/signup', body: signupBody,
@@ -76,13 +80,13 @@ describe('connect auth routes through testDinner (no server, no database)', () =
       code: '23505',
     });
     const env = await base()
-      .methods({
-        ConnectAccountRepo: {
+      .methods([
+        [ConnectAccountRepo, {
           findPasswordlessByEmail: control.once(control.returns(Promise.resolve(null))),
           createAccount: control.once(control.throws(violation)),
-        },
-        ConnectClock: { now: control.returns(NOW) },
-      })
+        }],
+        [ConnectClock, { now: control.returns(NOW) }],
+      ])
       .build();
     const response = await env.dinner.request({
       method: 'POST', path: '/v1/connect/auth/signup', body: signupBody,
@@ -95,9 +99,9 @@ describe('connect auth routes through testDinner (no server, no database)', () =
 
   it('POST /signup with a malformed envelope is a 400 that never reaches the repos', async () => {
     const env = await base()
-      .methods({
-        ConnectAccountRepo: { findByEmail: control.never(), createAccount: control.never() },
-      })
+      .methods([
+        [ConnectAccountRepo, { findByEmail: control.never(), createAccount: control.never() }],
+      ])
       .build();
     const response = await env.dinner.request({
       method: 'POST', path: '/v1/connect/auth/signup',
@@ -112,20 +116,20 @@ describe('connect auth routes through testDinner (no server, no database)', () =
     const password = 'a-long-password-123';
     const passwordHash = await bcrypt.hash(password, 4);
     const env = await base()
-      .methods({
-        ConnectAccountRepo: {
+      .methods([
+        [ConnectAccountRepo, {
           findByUsername: control.once(control.returns(Promise.resolve({
             user_id: 'usr_existing01', username: 'shavyg2', email: 'shavyg2@gmail.com',
             email_verified_at: null, password_hash: passwordHash, status: 'active',
             created_at: NOW.toISOString(), updated_at: NOW.toISOString(),
           }))),
-        },
-        ConnectBrowserSessionRepo: {
+        }],
+        [ConnectBrowserSessionRepo, {
           createSession: control.once(control.returns(Promise.resolve())),
-        },
-        ConnectIdGenerator: { sessionId: control.returns('ses_fixed0001') },
-        ConnectClock: { now: control.returns(NOW) },
-      })
+        }],
+        [ConnectIdGenerator, { sessionId: control.returns('ses_fixed0001') }],
+        [ConnectClock, { now: control.returns(NOW) }],
+      ])
       .build();
     const response = await env.dinner.request({
       method: 'POST', path: '/v1/connect/auth/login',
@@ -152,12 +156,12 @@ describe('connect auth routes through testDinner (no server, no database)', () =
 
   it('POST /login for an unknown identifier is a uniform 401', async () => {
     const env = await base()
-      .methods({
-        ConnectAccountRepo: {
+      .methods([
+        [ConnectAccountRepo, {
           findByUsername: control.once(control.returns(Promise.resolve(null))),
-        },
-        ConnectBrowserSessionRepo: { createSession: control.never() },
-      })
+        }],
+        [ConnectBrowserSessionRepo, { createSession: control.never() }],
+      ])
       .build();
     const response = await env.dinner.request({
       method: 'POST', path: '/v1/connect/auth/login',
@@ -175,11 +179,11 @@ describe('connect auth routes through testDinner (no server, no database)', () =
 
   it('login repo failures degrade to a structured 500, not a leak', async () => {
     const env = await base()
-      .methods({
-        ConnectAccountRepo: {
+      .methods([
+        [ConnectAccountRepo, {
           findByUsername: control.once(control.throws(new Error('connection refused'))),
-        },
-      })
+        }],
+      ])
       .build();
     const response = await env.dinner.request({
       method: 'POST', path: '/v1/connect/auth/login',
@@ -197,12 +201,12 @@ describe('connect auth routes through testDinner (no server, no database)', () =
 
   it('logic-depth session check: unknown session token is unauthorized', async () => {
     const env = await base()
-      .methods({
-        ConnectBrowserSessionRepo: {
+      .methods([
+        [ConnectBrowserSessionRepo, {
           findByTokenHash: control.once(control.returns(Promise.resolve(null))),
-        },
-        ConnectAccountRepo: { findByUserId: control.never() },
-      })
+        }],
+        [ConnectAccountRepo, { findByUserId: control.never() }],
+      ])
       .build();
     const logic = await env.get<ConnectAuthLogic>(ConnectAuthLogic);
     const result = await logic.session(GUEST_ACTOR, {
@@ -226,20 +230,20 @@ describe('connect auth routes through testDinner (no server, no database)', () =
       absolute_expires_at: new Date(NOW.getTime() + 60_000).toISOString(),
     };
     const env = await base()
-      .methods({
-        ConnectBrowserSessionRepo: {
+      .methods([
+        [ConnectBrowserSessionRepo, {
           findByTokenHash: control.once(control.returns(Promise.resolve(session))),
           revokeSession: control.never(),
-        },
-        ConnectAccountRepo: {
+        }],
+        [ConnectAccountRepo, {
           findByUserId: control.once(control.returns(Promise.resolve({
             user_id: 'usr_existing01', username: 'shavyg2', email: 'shavyg2@gmail.com',
             email_verified_at: null, password_hash: 'x', status: 'active',
             created_at: NOW.toISOString(), updated_at: NOW.toISOString(),
           }))),
-        },
-        ConnectClock: { now: control.returns(NOW) },
-      })
+        }],
+        [ConnectClock, { now: control.returns(NOW) }],
+      ])
       .build();
     const logic = await env.get<ConnectAuthLogic>(ConnectAuthLogic);
     const result = await logic.logout(GUEST_ACTOR, {

@@ -15,6 +15,11 @@ import { load as parseYaml } from 'js-yaml';
 import { testDinner } from '@noego/dinner/testing';
 import { test as control } from '@noego/testing';
 import OAuthAuthorizeController from '../../../src/server/controller/oauth_authorize.controller';
+import OAuthRepo from '../../../src/server/repo/oauth_repo';
+import ConnectExecutorRepo from '../../../src/server/repo/connect_executor_repo';
+import RemoteToolDispatchService from '../../../src/server/services/remote_tool_dispatch_service';
+import ConnectBrowserSessionRepo from '../../../src/server/repo/connect_browser_session_repo';
+import ConnectAccountRepo from '../../../src/server/repo/connect_account_repo';
 
 const authorizeSource = parseYaml(
   readFileSync(
@@ -92,15 +97,15 @@ const authedHeaders = {
 };
 
 /** Session + account stubs shared by every authenticated consent request. */
-const sessionStubs = () => ({
-  ConnectBrowserSessionRepo: {
+const sessionStubs = () => ([
+  [ConnectBrowserSessionRepo, {
     findByTokenHash: control.once(control.returns(Promise.resolve(activeSession))),
     touchSession: control.returns(Promise.resolve(undefined)),
-  },
-  ConnectAccountRepo: {
+  }],
+  [ConnectAccountRepo, {
     findByUserId: control.once(control.returns(Promise.resolve(activeAccount))),
-  },
-});
+  }],
+] as const);
 
 afterEach(() => {
   vi.unstubAllGlobals();
@@ -113,9 +118,9 @@ describe('oauth authorize deep flows through testDinner', () => {
     const recorded = <T>(name: string, value: T) =>
       control.returns((async () => { written.push(name); return value; })());
     const env = await base()
-      .methods({
+      .methods([
         ...sessionStubs(),
-        OAuthRepo: {
+        [OAuthRepo, {
           findClientById: control.returns(Promise.resolve(dcrClient)),
           createConnection: control.once(recorded('connection', undefined)),
           addConnectionExecutor: control.once(recorded('member', undefined)),
@@ -123,11 +128,11 @@ describe('oauth authorize deep flows through testDinner', () => {
           revokeSupersededConnectionTokens: control.once(recorded('supersede-tokens', undefined)),
           revokeSupersededConnections: control.once(recorded('supersede-connections', undefined)),
           revokeConnection: control.never(),
-        },
-        ConnectExecutorRepo: {
+        }],
+        [ConnectExecutorRepo, {
           findByExecutorId: control.once(control.returns(Promise.resolve(executor))),
-        },
-      })
+        }],
+      ])
       .build();
     const response = await env.dinner.request({
       method: 'POST',
@@ -156,19 +161,19 @@ describe('oauth authorize deep flows through testDinner', () => {
 
   it('approve compensates: a failed membership write revokes the connection and maps to 500', async () => {
     const env = await base()
-      .methods({
+      .methods([
         ...sessionStubs(),
-        OAuthRepo: {
+        [OAuthRepo, {
           findClientById: control.returns(Promise.resolve(dcrClient)),
           createConnection: control.once(control.returns(Promise.resolve(undefined))),
           addConnectionExecutor: control.once(control.throws(new Error('membership write failed'))),
           revokeConnection: control.once(control.returns(Promise.resolve(undefined))),
           createCode: control.never(),
-        },
-        ConnectExecutorRepo: {
+        }],
+        [ConnectExecutorRepo, {
           findByExecutorId: control.once(control.returns(Promise.resolve(executor))),
-        },
-      })
+        }],
+      ])
       .build();
     const response = await env.dinner.request({
       method: 'POST',
@@ -192,20 +197,20 @@ describe('oauth authorize deep flows through testDinner', () => {
 
   it('approve compensates: a failed code issuance also revokes the fresh connection', async () => {
     const env = await base()
-      .methods({
+      .methods([
         ...sessionStubs(),
-        OAuthRepo: {
+        [OAuthRepo, {
           findClientById: control.returns(Promise.resolve(dcrClient)),
           createConnection: control.once(control.returns(Promise.resolve(undefined))),
           addConnectionExecutor: control.once(control.returns(Promise.resolve(undefined))),
           createCode: control.once(control.throws(new Error('code write failed'))),
           revokeConnection: control.once(control.returns(Promise.resolve(undefined))),
           revokeSupersededConnections: control.never(),
-        },
-        ConnectExecutorRepo: {
+        }],
+        [ConnectExecutorRepo, {
           findByExecutorId: control.once(control.returns(Promise.resolve(executor))),
-        },
-      })
+        }],
+      ])
       .build();
     const response = await env.dinner.request({
       method: 'POST',
@@ -225,13 +230,13 @@ describe('oauth authorize deep flows through testDinner', () => {
 
   it('approve rejects an approved scope that escalates read to read_write', async () => {
     const env = await base()
-      .methods({
+      .methods([
         ...sessionStubs(),
-        OAuthRepo: {
+        [OAuthRepo, {
           findClientById: control.returns(Promise.resolve(dcrClient)),
           createConnection: control.never(),
-        },
-      })
+        }],
+      ])
       .build();
     const response = await env.dinner.request({
       method: 'POST',
@@ -255,13 +260,13 @@ describe('oauth authorize deep flows through testDinner', () => {
 
   it('approve without any machine selection is invalid_request', async () => {
     const env = await base()
-      .methods({
+      .methods([
         ...sessionStubs(),
-        OAuthRepo: {
+        [OAuthRepo, {
           findClientById: control.returns(Promise.resolve(dcrClient)),
           createConnection: control.never(),
-        },
-      })
+        }],
+      ])
       .build();
     const response = await env.dinner.request({
       method: 'POST',
@@ -285,19 +290,19 @@ describe('oauth authorize deep flows through testDinner', () => {
 
   it('approve rejects a machine the user does not own', async () => {
     const env = await base()
-      .methods({
+      .methods([
         ...sessionStubs(),
-        OAuthRepo: {
+        [OAuthRepo, {
           findClientById: control.returns(Promise.resolve(dcrClient)),
           createConnection: control.never(),
-        },
-        ConnectExecutorRepo: {
+        }],
+        [ConnectExecutorRepo, {
           findByExecutorId: control.once(control.returns(Promise.resolve({
             ...executor,
             owner_user_id: 'usr_someone_else',
           }))),
-        },
-      })
+        }],
+      ])
       .build();
     const response = await env.dinner.request({
       method: 'POST',
@@ -321,24 +326,24 @@ describe('oauth authorize deep flows through testDinner', () => {
 
   it('GET /oauth/consent/context projects the client and live executor presence', async () => {
     const env = await base()
-      .methods({
+      .methods([
         ...sessionStubs(),
-        OAuthRepo: {
+        [OAuthRepo, {
           findClientById: control.returns(Promise.resolve(dcrClient)),
-        },
-        ConnectExecutorRepo: {
+        }],
+        [ConnectExecutorRepo, {
           listByOwner: control.once(control.returns(Promise.resolve([
             executor,
             { ...executor, executor_id: 'exe_pending', state: 'pending' },
           ]))),
-        },
-        RemoteToolDispatchService: {
+        }],
+        [RemoteToolDispatchService, {
           presenceDetail: control.once(control.returns(Promise.resolve({
             state: 'online',
             workspaces: [{ workspaceId: 'ws_1', displayName: 'Repo', state: 'ready' }],
           }))),
-        },
-      })
+        }],
+      ])
       .build();
     const response = await env.dinner.request({
       method: 'GET',
@@ -366,16 +371,16 @@ describe('oauth authorize deep flows through testDinner', () => {
 
   it('context with a null presence detail degrades the executor to offline', async () => {
     const env = await base()
-      .methods({
+      .methods([
         ...sessionStubs(),
-        OAuthRepo: { findClientById: control.returns(Promise.resolve({ ...dcrClient, client_name: '  ' })) },
-        ConnectExecutorRepo: {
+        [OAuthRepo, { findClientById: control.returns(Promise.resolve({ ...dcrClient, client_name: '  ' })) }],
+        [ConnectExecutorRepo, {
           listByOwner: control.once(control.returns(Promise.resolve([executor]))),
-        },
-        RemoteToolDispatchService: {
+        }],
+        [RemoteToolDispatchService, {
           presenceDetail: control.once(control.returns(Promise.resolve(null))),
-        },
-      })
+        }],
+      ])
       .build();
     const response = await env.dinner.request({
       method: 'GET',
@@ -399,10 +404,10 @@ describe('oauth authorize deep flows through testDinner', () => {
 
   it('context failures inside the service map to a 500 JSON error', async () => {
     const env = await base()
-      .methods({
+      .methods([
         ...sessionStubs(),
-        OAuthRepo: { findClientById: control.once(control.throws(new Error('db down'))) },
-      })
+        [OAuthRepo, { findClientById: control.once(control.throws(new Error('db down'))) }],
+      ])
       .build();
     const response = await env.dinner.request({
       method: 'GET',
@@ -428,9 +433,9 @@ describe('oauth authorize deep flows through testDinner', () => {
     ];
     for (const { override, error } of cases) {
       const env = await base()
-        .methods({
-          OAuthRepo: { findClientById: control.returns(Promise.resolve(dcrClient)) },
-        })
+        .methods([
+          [OAuthRepo, { findClientById: control.returns(Promise.resolve(dcrClient)) }],
+        ])
         .build();
       const response = await env.dinner.request({
         method: 'GET',
@@ -447,9 +452,9 @@ describe('oauth authorize deep flows through testDinner', () => {
 
   it('validate: an unregistered redirect_uri renders the plain 400 page, never a redirect', async () => {
     const env = await base()
-      .methods({
-        OAuthRepo: { findClientById: control.returns(Promise.resolve(dcrClient)) },
-      })
+      .methods([
+        [OAuthRepo, { findClientById: control.returns(Promise.resolve(dcrClient)) }],
+      ])
       .build();
     const response = await env.dinner.request({
       method: 'GET',
@@ -463,9 +468,9 @@ describe('oauth authorize deep flows through testDinner', () => {
 
   it('validate: a loopback redirect matches its registration ignoring the ephemeral port', async () => {
     const env = await base()
-      .methods({
-        OAuthRepo: { findClientById: control.returns(Promise.resolve(dcrClient)) },
-      })
+      .methods([
+        [OAuthRepo, { findClientById: control.returns(Promise.resolve(dcrClient)) }],
+      ])
       .build();
     const response = await env.dinner.request({
       method: 'GET',
@@ -492,12 +497,12 @@ describe('oauth authorize deep flows through testDinner', () => {
       });
     }));
     const env = await base()
-      .methods({
-        OAuthRepo: {
+      .methods([
+        [OAuthRepo, {
           findClientById: control.once(control.returns(Promise.resolve(null))),
           createClient: control.once(control.returns(Promise.resolve(undefined))),
-        },
-      })
+        }],
+      ])
       .build();
     const response = await env.dinner.request({
       method: 'GET',
@@ -522,12 +527,12 @@ describe('oauth authorize deep flows through testDinner', () => {
     for (const attempt of attempts) {
       vi.stubGlobal('fetch', vi.fn(attempt));
       const env = await base()
-        .methods({
-          OAuthRepo: {
+        .methods([
+          [OAuthRepo, {
             findClientById: control.once(control.returns(Promise.resolve(null))),
             createClient: control.never(),
-          },
-        })
+          }],
+        ])
         .build();
       const response = await env.dinner.request({
         method: 'GET',
@@ -546,15 +551,15 @@ describe('oauth authorize deep flows through testDinner', () => {
     const CIMD_ID = 'https://client.example/oauth-client.json';
     vi.stubGlobal('fetch', vi.fn(async () => { throw new Error('must not fetch'); }));
     const env = await base()
-      .methods({
-        OAuthRepo: {
+      .methods([
+        [OAuthRepo, {
           findClientById: control.once(control.returns(Promise.resolve({
             ...dcrClient,
             client_id: CIMD_ID,
             kind: 'cimd',
           }))),
-        },
-      })
+        }],
+      ])
       .build();
     const cached = await env.dinner.request({
       method: 'GET',
@@ -566,7 +571,7 @@ describe('oauth authorize deep flows through testDinner', () => {
     await env.dispose();
 
     const env2 = await base()
-      .methods({ OAuthRepo: { findClientById: control.never() } })
+      .methods([ [OAuthRepo, { findClientById: control.never() }] ])
       .build();
     const bad = await env2.dinner.request({
       method: 'GET',
@@ -581,9 +586,9 @@ describe('oauth authorize deep flows through testDinner', () => {
 
   it('a validate() crash on GET /oauth/authorize renders the plain 500 error page', async () => {
     const env = await base()
-      .methods({
-        OAuthRepo: { findClientById: control.once(control.throws(new Error('db down'))) },
-      })
+      .methods([
+        [OAuthRepo, { findClientById: control.once(control.throws(new Error('db down'))) }],
+      ])
       .build();
     const response = await env.dinner.request({
       method: 'GET',

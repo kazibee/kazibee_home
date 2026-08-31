@@ -13,6 +13,7 @@ import { testDinner } from '@noego/dinner/testing';
 import { test as control } from '@noego/testing';
 import UpdateController from '../../../src/server/controller/update.controller';
 import { NotFoundError, ValidationError } from '../../../src/server/errors/domain_errors';
+import UpdateLogic from '../../../src/server/logic/update.logic';
 
 const updatesSource = parseYaml(
   readFileSync(path.resolve(__dirname, '../../../src/server/openapi/updates/updates.yaml'), 'utf8')
@@ -28,9 +29,9 @@ describe('update routes through testDinner (no server, no S3)', () => {
   it('GET /updates/darwin/:arch/RELEASES.json returns the feed for a valid arch', async () => {
     const feed = { currentRelease: '1.4.2', releases: [] };
     const env = await base()
-      .methods({
-        UpdateLogic: { createFeed: control.once(control.returns(Promise.resolve(feed))) },
-      })
+      .methods([
+        [UpdateLogic, { createFeed: control.once(control.returns(Promise.resolve(feed))) }],
+      ])
       .build();
     const response = await env.dinner.request({
       method: 'GET', path: '/updates/darwin/arm64/RELEASES.json',
@@ -43,11 +44,11 @@ describe('update routes through testDinner (no server, no S3)', () => {
 
   it('a NotFoundError from the feed logic maps to 404', async () => {
     const env = await base()
-      .methods({
-        UpdateLogic: {
+      .methods([
+        [UpdateLogic, {
           createFeed: control.once(control.throws(new NotFoundError('No app releases available'))),
-        },
-      })
+        }],
+      ])
       .build();
     const response = await env.dinner.request({
       method: 'GET', path: '/updates/darwin/x64/RELEASES.json',
@@ -60,9 +61,9 @@ describe('update routes through testDinner (no server, no S3)', () => {
 
   it('an unexpected feed failure degrades to a structured 500', async () => {
     const env = await base()
-      .methods({
-        UpdateLogic: { createFeed: control.once(control.throws(new Error('S3 unreachable'))) },
-      })
+      .methods([
+        [UpdateLogic, { createFeed: control.once(control.throws(new Error('S3 unreachable'))) }],
+      ])
       .build();
     const response = await env.dinner.request({
       method: 'GET', path: '/updates/darwin/arm64/RELEASES.json',
@@ -76,11 +77,11 @@ describe('update routes through testDinner (no server, no S3)', () => {
   it('GET /updates/win32/:arch/RELEASES serves the manifest as text/plain', async () => {
     const manifest = 'HASH kazibee-1.4.2-full.nupkg 12345';
     const env = await base()
-      .methods({
-        UpdateLogic: {
+      .methods([
+        [UpdateLogic, {
           createWindowsReleases: control.once(control.returns(Promise.resolve(manifest))),
-        },
-      })
+        }],
+      ])
       .build();
     const response = await env.dinner.request({
       method: 'GET', path: '/updates/win32/x64/RELEASES',
@@ -98,9 +99,9 @@ describe('update routes through testDinner (no server, no S3)', () => {
       { error: new NotFoundError('No published release with a RELEASES manifest'), status: 404 },
     ]) {
       const env = await base()
-        .methods({
-          UpdateLogic: { createWindowsReleases: control.once(control.throws(error)) },
-        })
+        .methods([
+          [UpdateLogic, { createWindowsReleases: control.once(control.throws(error)) }],
+        ])
         .build();
       const response = await env.dinner.request({
         method: 'GET', path: '/updates/win32/x64/RELEASES',
@@ -114,13 +115,13 @@ describe('update routes through testDinner (no server, no S3)', () => {
 
   it('GET /updates/win32/:arch/:file redirects 302 to the temporary package URL', async () => {
     const env = await base()
-      .methods({
-        UpdateLogic: {
+      .methods([
+        [UpdateLogic, {
           createWindowsPackageDownload: control.once(
             control.returns(Promise.resolve('https://s3.example/signed/kazibee-full.nupkg')),
           ),
-        },
-      })
+        }],
+      ])
       .build();
     const response = await env.dinner.request({
       method: 'GET', path: '/updates/win32/x64/kazibee-1.4.2-full.nupkg',
@@ -138,9 +139,9 @@ describe('update routes through testDinner (no server, no S3)', () => {
       { error: new Error('presign blew up'), status: 500 },
     ]) {
       const env = await base()
-        .methods({
-          UpdateLogic: { createWindowsPackageDownload: control.once(control.throws(error)) },
-        })
+        .methods([
+          [UpdateLogic, { createWindowsPackageDownload: control.once(control.throws(error)) }],
+        ])
         .build();
       const response = await env.dinner.request({
         method: 'GET', path: '/updates/win32/x64/kazibee-1.4.2-full.nupkg',
@@ -153,7 +154,7 @@ describe('update routes through testDinner (no server, no S3)', () => {
 
   it('an arch outside the schema enum is rejected before the controller logic runs', async () => {
     const env = await base()
-      .methods({ UpdateLogic: { createFeed: control.never() } })
+      .methods([ [UpdateLogic, { createFeed: control.never() }] ])
       .build();
     const response = await env.dinner.request({
       method: 'GET', path: '/updates/darwin/ia32/RELEASES.json',

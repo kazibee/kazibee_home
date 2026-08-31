@@ -16,6 +16,7 @@ import { testDinner } from '@noego/dinner/testing';
 import { test as control } from '@noego/testing';
 import OAuthController from '../../../src/server/controller/oauth.controller';
 import formBody from '../../../src/middleware/form_body';
+import OAuthRepo from '../../../src/server/repo/oauth_repo';
 
 // Real production source — the same document production stitching includes.
 const oauthSource = parseYaml(
@@ -113,12 +114,12 @@ describe('oauth token/metadata/register routes through testDinner (no server, no
 
   it('POST /oauth/token without grant_type is invalid_request and never reaches the repo', async () => {
     const env = await base()
-      .methods({
-        OAuthRepo: {
+      .methods([
+        [OAuthRepo, {
           consumeCode: control.never(),
           findActiveTokenWithConnection: control.never(),
-        },
-      })
+        }],
+      ])
       .build();
     const response = await env.dinner.request({
       method: 'POST',
@@ -146,16 +147,16 @@ describe('oauth token/metadata/register routes through testDinner (no server, no
 
   it('authorization_code exchange mints a Bearer token pair (real PKCE, real form_body)', async () => {
     const env = await base()
-      .methods({
-        OAuthRepo: {
+      .methods([
+        [OAuthRepo, {
           consumeCode: control.once(control.returns(Promise.resolve(codeRow()))),
           findActiveConnectionById: control.once(
             control.returns(Promise.resolve(activeConnection)),
           ),
           // Access token + refresh token: two writes.
           createToken: control.returns(Promise.resolve(undefined)),
-        },
-      })
+        }],
+      ])
       .build();
     const response = await env.dinner.request({
       method: 'POST',
@@ -185,14 +186,14 @@ describe('oauth token/metadata/register routes through testDinner (no server, no
 
   it('authorization_code exchange for the wrong client is a 401 invalid_client', async () => {
     const env = await base()
-      .methods({
-        OAuthRepo: {
+      .methods([
+        [OAuthRepo, {
           consumeCode: control.once(
             control.returns(Promise.resolve(codeRow({ client_id: 'oac_someone_else' }))),
           ),
           createToken: control.never(),
-        },
-      })
+        }],
+      ])
       .build();
     const response = await env.dinner.request({
       method: 'POST',
@@ -214,11 +215,11 @@ describe('oauth token/metadata/register routes through testDinner (no server, no
 
   it('POST /oauth/register registers a dynamic client and echoes its metadata', async () => {
     const env = await base()
-      .methods({
-        OAuthRepo: {
+      .methods([
+        [OAuthRepo, {
           createClient: control.once(control.returns(Promise.resolve(undefined))),
-        },
-      })
+        }],
+      ])
       .build();
     const response = await env.dinner.request({
       method: 'POST',
@@ -243,11 +244,11 @@ describe('oauth token/metadata/register routes through testDinner (no server, no
 
   it('POST /oauth/register rejects non-loopback http redirect URIs without touching the repo', async () => {
     const env = await base()
-      .methods({
-        OAuthRepo: {
+      .methods([
+        [OAuthRepo, {
           createClient: control.never(),
-        },
-      })
+        }],
+      ])
       .build();
     const response = await env.dinner.request({
       method: 'POST',

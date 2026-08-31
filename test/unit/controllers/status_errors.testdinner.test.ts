@@ -19,6 +19,7 @@ import {
   UnauthorizedError,
   ValidationError,
 } from '../../../src/server/errors/domain_errors';
+import StatusLogic from '../../../src/server/logic/status.logic';
 
 const statusSource = parseYaml(
   readFileSync(path.resolve(__dirname, '../../../src/server/openapi/status/status.yaml'), 'utf8')
@@ -40,9 +41,9 @@ describe('status controller error mapping through testDinner', () => {
     ];
     for (const { error, status } of cases) {
       const env = await base()
-        .methods({
-          StatusLogic: { getStatus: control.once(control.throws(error)) },
-        })
+        .methods([
+          [StatusLogic, { getStatus: control.once(control.throws(error)) }],
+        ])
         .build();
       const response = await env.dinner.request({ method: 'GET', path: '/api/status' });
       expect(response.status).toBe(status);
@@ -54,9 +55,9 @@ describe('status controller error mapping through testDinner', () => {
 
   it('an unexpected getStatus crash maps to a structured 500', async () => {
     const env = await base()
-      .methods({
-        StatusLogic: { getStatus: control.once(control.throws(new Error('kaboom'))) },
-      })
+      .methods([
+        [StatusLogic, { getStatus: control.once(control.throws(new Error('kaboom'))) }],
+      ])
       .build();
     const response = await env.dinner.request({ method: 'GET', path: '/api/status' });
     expect(response.status).toBe(500);
@@ -67,11 +68,11 @@ describe('status controller error mapping through testDinner', () => {
 
   it('an unexpected getDatabaseStatus crash maps to a structured 500', async () => {
     const env = await base()
-      .methods({
-        StatusLogic: {
+      .methods([
+        [StatusLogic, {
           getDatabaseStatus: control.once(control.throws(new Error('pool exhausted'))),
-        },
-      })
+        }],
+      ])
       .build();
     const response = await env.dinner.request({ method: 'GET', path: '/api/status/deep' });
     expect(response.status).toBe(500);

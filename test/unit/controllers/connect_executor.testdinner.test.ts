@@ -17,6 +17,10 @@ import { testDinner } from '@noego/dinner/testing';
 import { test as control } from '@noego/testing';
 import ConnectExecutorController from '../../../src/server/controller/connect_executor.controller';
 import ConnectChannelController from '../../../src/server/controller/connect_channel.controller';
+import ConnectExecutorClaimRepo from '../../../src/server/repo/connect_executor_claim_repo';
+import ConnectExecutorRepo from '../../../src/server/repo/connect_executor_repo';
+import ConnectBrowserSessionRepo from '../../../src/server/repo/connect_browser_session_repo';
+import ConnectAccountRepo from '../../../src/server/repo/connect_account_repo';
 
 const executorsSource = parseYaml(
   readFileSync(path.resolve(__dirname, '../../../src/server/openapi/connect/executors.yaml'), 'utf8')
@@ -92,15 +96,15 @@ const accountRow = () => ({
 });
 
 // Session-authenticated repos: cookie hash → session row → account row.
-const browserSessionMethods = () => ({
-  ConnectBrowserSessionRepo: {
+const browserSessionMethods = () => ([
+  [ConnectBrowserSessionRepo, {
     findByTokenHash: control.returns(Promise.resolve(sessionRow())),
     touchSession: control.returns(Promise.resolve(undefined)),
-  },
-  ConnectAccountRepo: {
+  }],
+  [ConnectAccountRepo, {
     findByUserId: control.returns(Promise.resolve(accountRow())),
-  },
-});
+  }],
+] as const);
 
 const base = () =>
   testDinner(executorsSource)
@@ -116,11 +120,11 @@ const base = () =>
 describe('connect executor routes through testDinner (no server, no database)', () => {
   it('GET claim status reports pending when the bootstrap token matches the claim', async () => {
     const env = await base()
-      .methods({
-        ConnectExecutorClaimRepo: {
+      .methods([
+        [ConnectExecutorClaimRepo, {
           findByClaimId: control.once(control.returns(Promise.resolve(pendingClaim()))),
-        },
-      })
+        }],
+      ])
       .build();
     const response = await env.dinner.request({
       method: 'GET',
@@ -142,11 +146,11 @@ describe('connect executor routes through testDinner (no server, no database)', 
 
   it('GET claim status answers 401 revoked when the bootstrap token does not match', async () => {
     const env = await base()
-      .methods({
-        ConnectExecutorClaimRepo: {
+      .methods([
+        [ConnectExecutorClaimRepo, {
           findByClaimId: control.once(control.returns(Promise.resolve(pendingClaim()))),
-        },
-      })
+        }],
+      ])
       .build();
     const response = await env.dinner.request({
       method: 'GET',
@@ -162,11 +166,11 @@ describe('connect executor routes through testDinner (no server, no database)', 
 
   it('GET claim status answers 404 for an unknown claim', async () => {
     const env = await base()
-      .methods({
-        ConnectExecutorClaimRepo: {
+      .methods([
+        [ConnectExecutorClaimRepo, {
           findByClaimId: control.once(control.returns(Promise.resolve(null))),
-        },
-      })
+        }],
+      ])
       .build();
     const response = await env.dinner.request({
       method: 'GET',
@@ -182,15 +186,15 @@ describe('connect executor routes through testDinner (no server, no database)', 
 
   it('GET claim review returns the safe review payload for a signed-in owner', async () => {
     const env = await base()
-      .methods({
+      .methods([
         ...browserSessionMethods(),
-        ConnectExecutorClaimRepo: {
+        [ConnectExecutorClaimRepo, {
           findByClaimId: control.once(control.returns(Promise.resolve(pendingClaim()))),
-        },
-        ConnectExecutorRepo: {
+        }],
+        [ConnectExecutorRepo, {
           findByExecutorId: control.once(control.returns(Promise.resolve(executorRow()))),
-        },
-      })
+        }],
+      ])
       .build();
     const response = await env.dinner.request({
       method: 'GET',
@@ -218,12 +222,12 @@ describe('connect executor routes through testDinner (no server, no database)', 
 
   it('GET executor list returns owner executors with live (offline) presence', async () => {
     const env = await base()
-      .methods({
+      .methods([
         ...browserSessionMethods(),
-        ConnectExecutorRepo: {
+        [ConnectExecutorRepo, {
           listByOwner: control.once(control.returns(Promise.resolve([executorRow()]))),
-        },
-      })
+        }],
+      ])
       .build();
     const response = await env.dinner.request({
       method: 'GET',
@@ -251,14 +255,14 @@ describe('connect executor routes through testDinner (no server, no database)', 
 
   it('GET executor list answers 401 revoked when the session cookie resolves to nothing', async () => {
     const env = await base()
-      .methods({
-        ConnectBrowserSessionRepo: {
+      .methods([
+        [ConnectBrowserSessionRepo, {
           findByTokenHash: control.once(control.returns(Promise.resolve(null))),
-        },
-        ConnectExecutorRepo: {
+        }],
+        [ConnectExecutorRepo, {
           listByOwner: control.never(),
-        },
-      })
+        }],
+      ])
       .build();
     const response = await env.dinner.request({
       method: 'GET',
@@ -274,10 +278,10 @@ describe('connect executor routes through testDinner (no server, no database)', 
 
   it('GET executor list rejects a malformed sessionId as an invalid envelope (400)', async () => {
     const env = await base()
-      .methods({
-        ConnectBrowserSessionRepo: { findByTokenHash: control.never() },
-        ConnectExecutorRepo: { listByOwner: control.never() },
-      })
+      .methods([
+        [ConnectBrowserSessionRepo, { findByTokenHash: control.never() }],
+        [ConnectExecutorRepo, { listByOwner: control.never() }],
+      ])
       .build();
     const response = await env.dinner.request({
       method: 'GET',

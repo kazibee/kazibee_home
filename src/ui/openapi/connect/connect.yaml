@@ -2,6 +2,7 @@ paths:
   /connect:
     get:
       summary: Connect executor management
+      operationId: dashboard
       description: Manage executors owned by the authenticated account
       x-view: pages/connect/main.svelte
       x-controller: controllers/connect_dashboard.svelte.ts
@@ -10,6 +11,7 @@ paths:
   /connect/login:
     get:
       summary: Connect sign in
+      operationId: login
       description: Sign in to an individual Connect account
       x-view: pages/connect/auth.svelte
       x-controller: controllers/connect_auth.svelte.ts
@@ -18,6 +20,7 @@ paths:
   /connect/signup:
     get:
       summary: Connect sign up
+      operationId: signup
       description: Create an individual Connect account
       x-view: pages/connect/auth.svelte
       x-controller: controllers/connect_auth.svelte.ts
@@ -26,6 +29,7 @@ paths:
   /connect/claim/:claimId:
     get:
       summary: Review executor connection request
+      operationId: claim
       description: Accept or deny an authenticated executor claim
       parameters:
         - in: path

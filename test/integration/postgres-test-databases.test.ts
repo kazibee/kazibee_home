@@ -18,6 +18,7 @@ const DURABLE_TABLES = [
   "oauth_connections",
   "oauth_tokens",
   "proper_migrations_durable",
+  "proper_patches",
   "remote_tool_grants",
   "remote_workspaces",
 ];

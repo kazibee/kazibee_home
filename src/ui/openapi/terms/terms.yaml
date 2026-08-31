@@ -1,0 +1,8 @@
+paths:
+  /terms:
+    get:
+      summary: Terms of Service
+      description: The terms governing use of the Kazibee desktop app and website
+      x-view: pages/terms/main.svelte
+      x-layout:
+        - layout/public_layout.svelte

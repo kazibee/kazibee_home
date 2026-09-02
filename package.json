@@ -24,7 +24,9 @@
     "mcp:build": "noego build --config apps/mcp/noego.config.yml --target cloudflare --nodejs-compat --backend-only"
   },
   "dependencies": {
+    "@aws-sdk/client-ecs": "^3.1042.0",
     "@aws-sdk/client-s3": "^3.1042.0",
+    "@aws-sdk/client-ssm": "^3.1042.0",
     "@aws-sdk/s3-request-presigner": "^3.1042.0",
     "@neondatabase/serverless": "^1.1.0",
     "@noego/ioc": "^0.6.1",
@@ -38,7 +40,7 @@
     "pg": "^8.23.0",
     "reflect-metadata": "^0.2.2",
     "sqlite3": "^5.1.7",
-    "sqlstack": "^3.0.0"
+    "sqlstack": "^3.1.0"
   },
   "devDependencies": {
     "@noego/app": "^2.4.0",

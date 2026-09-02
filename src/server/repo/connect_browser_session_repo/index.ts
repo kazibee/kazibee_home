@@ -1,5 +1,5 @@
 import { Component } from "@noego/ioc";
-import { Query, QueryBinder, Single, SqlStackError } from "sqlstack";
+import { Query, QueryBinder, Single, run } from "sqlstack";
 
 export type ConnectBrowserSessionStatus = "active" | "revoked";
 
@@ -31,13 +31,13 @@ export default class ConnectBrowserSessionRepo {
     idle_expires_at: string;
     absolute_expires_at: string;
   }): Promise<void> {
-    throw new SqlStackError("Not implemented");
+    return run();
   }
 
   @Single
   @Query()
   findByTokenHash(_params: { session_token_hash: string }): Promise<ConnectBrowserSession | null> {
-    throw new SqlStackError("Not implemented");
+    return run();
   }
 
   @Query()
@@ -46,11 +46,11 @@ export default class ConnectBrowserSessionRepo {
     last_seen_at: string;
     idle_expires_at: string;
   }): Promise<void> {
-    throw new SqlStackError("Not implemented");
+    return run();
   }
 
   @Query()
   revokeSession(_params: { session_id: string; revoked_at: string }): Promise<void> {
-    throw new SqlStackError("Not implemented");
+    return run();
   }
 }

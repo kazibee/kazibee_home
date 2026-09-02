@@ -1,5 +1,5 @@
 import { Component, LoadAs } from "@noego/ioc";
-import { Query, QueryBinder, Single, SqlStackError } from "sqlstack";
+import { Query, QueryBinder, Single, run } from "sqlstack";
 
 export interface ConnectExecutorCredential {
   credential_id: string;
@@ -16,17 +16,17 @@ export interface ConnectExecutorCredential {
 export default class ConnectExecutorCredentialRepo {
   @Query()
   createCredential(_params: Omit<ConnectExecutorCredential, "status" | "revoked_at">): Promise<void> {
-    throw new SqlStackError("Not implemented");
+    return run();
   }
 
   @Single
   @Query()
   findByTokenHash(_params: { token_hash: string }): Promise<ConnectExecutorCredential | null> {
-    throw new SqlStackError("Not implemented");
+    return run();
   }
 
   @Query()
   revokeForExecutor(_params: { executor_id: string; revoked_at: string }): Promise<void> {
-    throw new SqlStackError("Not implemented");
+    return run();
   }
 }

@@ -90,6 +90,32 @@ describe("UpdateFeedService", () => {
     await expect(new UpdateFeedService(service).createFeed("arm64")).rejects.toBeInstanceOf(NotFoundError);
   });
 
+  it("falls back to the current time when the archive has no lastModified", async () => {
+    const { service } = stubDownloadService({
+      versions: [
+        {
+          version: "v1.4.2",
+          downloads: [
+            { name: "Kazibee-mac-arm64.zip", href: "#", size: 20, lastModified: null },
+          ],
+        },
+      ],
+    });
+    const feed = await new UpdateFeedService(service).createFeed("arm64");
+
+    const pubDate = feed.releases[0].updateTo.pub_date;
+    expect(Number.isNaN(Date.parse(pubDate))).toBe(false);
+    expect(Math.abs(Date.now() - Date.parse(pubDate))).toBeLessThan(60_000);
+  });
+
+  it("falls back to 3600 when KAZIBEE_UPDATE_FEED_EXPIRES_SECONDS is not a positive integer", async () => {
+    process.env.KAZIBEE_UPDATE_FEED_EXPIRES_SECONDS = "not-a-number";
+    const { service, createDownload } = stubDownloadService(versionsFixture());
+    await new UpdateFeedService(service).createFeed("arm64");
+
+    expect(createDownload).toHaveBeenCalledWith("app", "v1.4.2", "Kazibee-mac-arm64.zip", { expiresIn: 3600 });
+  });
+
   it("honours KAZIBEE_UPDATE_FEED_EXPIRES_SECONDS override", async () => {
     process.env.KAZIBEE_UPDATE_FEED_EXPIRES_SECONDS = "7200";
     const { service, createDownload } = stubDownloadService(versionsFixture());

@@ -1,5 +1,5 @@
 import { Component, LoadAs } from "@noego/ioc";
-import { Query, QueryBinder, Single, SqlStackError } from "sqlstack";
+import { Query, QueryBinder, Single, run } from "sqlstack";
 
 export interface RemoteToolGrant {
   grant_id: string;
@@ -30,27 +30,27 @@ export default class RemoteToolGrantRepo {
     created_at: string;
     expires_at: string | null;
   }): Promise<void> {
-    throw new SqlStackError("Not implemented");
+    return run();
   }
 
   @Single
   @Query()
   findByTokenHash(_params: { token_hash: string }): Promise<RemoteToolGrant | null> {
-    throw new SqlStackError("Not implemented");
+    return run();
   }
 
   @Query()
   listByOwner(_params: { owner_user_id: string }): Promise<RemoteToolGrant[]> {
-    throw new SqlStackError("Not implemented");
+    return run();
   }
 
   @Query()
   revokeGrant(_params: { grant_id: string; owner_user_id: string; revoked_at: string }): Promise<void> {
-    throw new SqlStackError("Not implemented");
+    return run();
   }
 
   @Query()
   touchLastUsed(_params: { grant_id: string; last_used_at: string }): Promise<void> {
-    throw new SqlStackError("Not implemented");
+    return run();
   }
 }

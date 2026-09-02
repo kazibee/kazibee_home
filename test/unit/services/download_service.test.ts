@@ -102,6 +102,56 @@ describe('DownloadService (stubbed AWS SDK boundary)', () => {
       expect(v123?.downloads[1].lastModified).toBeNull();
     });
 
+    it('tolerates pages without Contents, objects without a Size, and sorts SHA256SUMS behind names', async () => {
+      stubSend(async (command) => {
+        const input = (command as ListObjectsV2Command).input;
+        if (!input.ContinuationToken) {
+          return { NextContinuationToken: 'page-2' }; // no Contents at all
+        }
+        return {
+          Contents: [
+            { Key: 'cli/v1.2.3/beta.zip' }, // no Size, no LastModified
+            { Key: 'cli/v1.2.3/SHA256SUMS', Size: 1 },
+            { Key: 'cli/v1.2.3/alpha.zip', Size: 2 },
+          ],
+        };
+      });
+
+      const service = new DownloadService();
+      const result = await service.listVersions('cli');
+
+      const [only] = result.versions;
+      expect(only.version).toBe('v1.2.3');
+      expect(only.downloads.map((item) => item.name)).toEqual(['alpha.zip', 'beta.zip', 'SHA256SUMS']);
+      expect(only.downloads.find((item) => item.name === 'beta.zip')).toMatchObject({
+        size: 0,
+        lastModified: null,
+      });
+    });
+
+    it('a slash-only prefix normalizes to the empty prefix', async () => {
+      process.env.KAZIBEE_CLI_PREFIX = '/';
+      stubSend(async (command) => {
+        expect((command as ListObjectsV2Command).input.Prefix).toBe('');
+        return { Contents: [{ Key: 'v1.2.3/root.zip', Size: 3 }] };
+      });
+      const service = new DownloadService();
+      const result = await service.listVersions('cli');
+      expect(result.versions).toEqual([
+        {
+          version: 'v1.2.3',
+          downloads: [
+            {
+              name: 'root.zip',
+              href: '/downloads/binary/cli/v1.2.3/root.zip',
+              size: 3,
+              lastModified: null,
+            },
+          ],
+        },
+      ]);
+    });
+
     it('honors a custom prefix without a trailing slash and an empty bucket throws', async () => {
       process.env.KAZIBEE_CLI_PREFIX = '/custom-cli';
       stubSend(async (command) => {
@@ -160,6 +210,30 @@ describe('DownloadService (stubbed AWS SDK boundary)', () => {
       stubSend(async () => { throw new Error('access denied'); });
       await expect(service.createDownload('cli', 'v1.2.3', 'kazibee-macos.zip'))
         .rejects.toThrow('access denied');
+    });
+
+    it('recognizes NoSuchKey by name and rethrows other S3ServiceExceptions', async () => {
+      stubSend(async () => {
+        throw new S3ServiceException({
+          name: 'NoSuchKey',
+          $fault: 'client',
+          $metadata: { httpStatusCode: 500 },
+        });
+      });
+      const service = new DownloadService();
+      await expect(service.createDownload('cli', 'v1.2.3', 'kazibee-macos.zip'))
+        .rejects.toThrow(NotFoundError);
+
+      vi.restoreAllMocks();
+      stubSend(async () => {
+        throw new S3ServiceException({
+          name: 'SlowDown',
+          $fault: 'server',
+          $metadata: { httpStatusCode: 503 },
+        });
+      });
+      await expect(service.createDownload('cli', 'v1.2.3', 'kazibee-macos.zip'))
+        .rejects.toBeInstanceOf(S3ServiceException);
     });
 
     it('rejects invalid versions and items before touching S3', async () => {

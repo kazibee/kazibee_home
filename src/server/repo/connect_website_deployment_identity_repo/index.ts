@@ -1,5 +1,5 @@
 import { Component, LoadAs } from "@noego/ioc";
-import { Query, QueryBinder, Single, SqlStackError } from "sqlstack";
+import { Query, QueryBinder, Single, run } from "sqlstack";
 
 export interface ConnectWebsiteDeploymentIdentity {
   singleton_key: 1;
@@ -15,12 +15,12 @@ export default class ConnectWebsiteDeploymentIdentityRepo {
     website_deployment_id: string;
     created_at: string;
   }): Promise<void> {
-    throw new SqlStackError("Not implemented");
+    return run();
   }
 
   @Single
   @Query()
   findSingleton(): Promise<ConnectWebsiteDeploymentIdentity | null> {
-    throw new SqlStackError("Not implemented");
+    return run();
   }
 }

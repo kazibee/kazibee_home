@@ -1,5 +1,5 @@
 import { Component, LoadAs } from "@noego/ioc";
-import { Query, QueryBinder, SqlStackError } from "sqlstack";
+import { Query, QueryBinder, run } from "sqlstack";
 
 export type ConnectExecutorAuditKind =
   | "claim.created" | "claim.accepted" | "claim.denied"
@@ -19,6 +19,6 @@ export default class ConnectExecutorAuditRepo {
     occurred_at: string;
     correlation_id: string;
   }): Promise<void> {
-    throw new SqlStackError("Not implemented");
+    return run();
   }
 }

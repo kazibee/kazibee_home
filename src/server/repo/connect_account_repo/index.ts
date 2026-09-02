@@ -1,5 +1,5 @@
 import { Component } from "@noego/ioc";
-import { Query, QueryBinder, Single, SqlStackError } from "sqlstack";
+import { Query, QueryBinder, Single, run } from "sqlstack";
 
 export type ConnectAccountStatus = "active" | "disabled";
 
@@ -28,25 +28,25 @@ export default class ConnectAccountRepo {
     created_at: string;
     updated_at: string;
   }): Promise<void> {
-    throw new SqlStackError("Not implemented");
+    return run();
   }
 
   @Single
   @Query()
   findByUsername(_params: { username: string }): Promise<ConnectAccount | null> {
-    throw new SqlStackError("Not implemented");
+    return run();
   }
 
   @Single
   @Query()
   findByEmail(_params: { email: string }): Promise<ConnectAccount | null> {
-    throw new SqlStackError("Not implemented");
+    return run();
   }
 
   @Single
   @Query()
   findPasswordlessByEmail(_params: { email: string }): Promise<ConnectAccount | null> {
-    throw new SqlStackError("Not implemented");
+    return run();
   }
 
   @Query()
@@ -56,12 +56,12 @@ export default class ConnectAccountRepo {
     password_hash: string;
     updated_at: string;
   }): Promise<void> {
-    throw new SqlStackError("Not implemented");
+    return run();
   }
 
   @Single
   @Query()
   findByUserId(_params: { user_id: string }): Promise<ConnectAccount | null> {
-    throw new SqlStackError("Not implemented");
+    return run();
   }
 }

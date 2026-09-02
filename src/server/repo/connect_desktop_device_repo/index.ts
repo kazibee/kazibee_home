@@ -1,5 +1,5 @@
 import { Component, LoadAs } from "@noego/ioc";
-import { Query, QueryBinder, Single, SqlStackError } from "sqlstack";
+import { Query, QueryBinder, Single, run } from "sqlstack";
 
 export type ConnectDesktopState = "pending" | "active" | "revoked";
 export interface ConnectDesktopDevice {
@@ -23,33 +23,33 @@ export interface ConnectDesktopDevice {
 export default class ConnectDesktopDeviceRepo {
   @Query()
   createDevice(_params: Omit<ConnectDesktopDevice, "owner_user_id" | "claimed_at" | "credential_generation" | "state">): Promise<void> {
-    throw new SqlStackError("Not implemented");
+    return run();
   }
 
   @Single
   @Query()
   findByDeviceId(_params: { device_id: string }): Promise<ConnectDesktopDevice | null> {
-    throw new SqlStackError("Not implemented");
+    return run();
   }
 
   @Query()
   listByOwner(_params: { owner_user_id: string; limit: number }): Promise<ConnectDesktopDevice[]> {
-    throw new SqlStackError("Not implemented");
+    return run();
   }
 
   @Query()
   acceptOwner(_params: { device_id: string; owner_user_id: string; claimed_at: string }): Promise<void> {
-    throw new SqlStackError("Not implemented");
+    return run();
   }
 
   @Query()
   renameOwned(_params: { device_id: string; owner_user_id: string; display_name: string; updated_at: string }): Promise<void> {
-    throw new SqlStackError("Not implemented");
+    return run();
   }
 
   @Query()
   revokeOwned(_params: { device_id: string; owner_user_id: string; updated_at: string }): Promise<void> {
-    throw new SqlStackError("Not implemented");
+    return run();
   }
 
 }

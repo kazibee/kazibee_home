@@ -7,41 +7,15 @@
  */
 import { describe, it, expect } from 'vitest';
 import { testIoc, test as control } from '@noego/testing';
-import PairingLogic from '../../../src/server/logic/pairing.logic';
 import UpdateLogic from '../../../src/server/logic/update.logic';
 import ConnectRelayLogic from '../../../src/server/logic/connect_relay.logic';
 import ConnectServiceReleaseLogic from '../../../src/server/logic/connect_service_release.logic';
 import RawRequest from '../../../src/server/services/raw_request';
-import PairingService from '../../../src/server/services/pairing_service';
 import UpdateFeedService from '../../../src/server/services/update_feed_service';
 import ConnectRelayService from '../../../src/server/services/connect_relay_service';
 import ConnectServiceReleaseResolver from '../../../src/server/services/connect_service_release_resolver';
 
 describe('small logic shims delegate through real IoC', () => {
-  it('PairingLogic forwards all three methods to PairingService', async () => {
-    const registered = { deviceId: 'dev_1' };
-    const claimed = { ok: true };
-    const devices = [{ deviceId: 'dev_1' }];
-    const env = await testIoc()
-      .methods([
-        [PairingService, {
-          registerDevice: control.once(control.returns(registered)),
-          claimPairing: control.once(control.returns(claimed)),
-          getDevicesForUser: control.once(control.returns(devices)),
-        }],
-      ])
-      .build();
-    const logic = await env.get<PairingLogic>(PairingLogic);
-    expect(await logic.registerDevice('Mac', 'desktop')).toBe(registered);
-    expect(await logic.claimPairing('CODE1', 'Mac', 'desktop')).toBe(claimed);
-    expect(await logic.getDevicesForUser('usr_1', 'dev_1')).toBe(devices);
-
-    const claim = control.inspect(env, 'PairingService', 'claimPairing');
-    expect(claim.calls[0].args).toEqual(['CODE1', 'Mac', 'desktop']);
-    await env.verify();
-    await env.dispose();
-  });
-
   it('UpdateLogic forwards feed/releases/package-download to UpdateFeedService', async () => {
     const feed = { currentRelease: '1.0.0' };
     const releases = 'RELEASES';

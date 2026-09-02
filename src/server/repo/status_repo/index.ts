@@ -1,12 +1,12 @@
 import { Component } from "@noego/ioc";
-import { QueryBinder, Query, SqlStackError } from "sqlstack";
+import { QueryBinder, Query, run } from "sqlstack";
 
 @QueryBinder()
 @Component()
 export default class StatusRepo {
   @Query()
   checkDatabase(): Promise<{ result: number }> {
-    throw new SqlStackError("Not implemented");
+    return run();
   }
 
 }

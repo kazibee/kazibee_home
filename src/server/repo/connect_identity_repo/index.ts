@@ -1,5 +1,5 @@
 import { Component } from "@noego/ioc";
-import { Query, QueryBinder, SqlStackError } from "sqlstack";
+import { Query, QueryBinder, run } from "sqlstack";
 
 @QueryBinder()
 @Component()
@@ -12,6 +12,6 @@ export default class ConnectIdentityRepo {
     email: string;
     created_at: string;
   }): Promise<void> {
-    throw new SqlStackError("Not implemented");
+    return run();
   }
 }

@@ -1,5 +1,5 @@
 import { Component, LoadAs } from "@noego/ioc";
-import { Query, QueryBinder, Single, SqlStackError } from "sqlstack";
+import { Query, QueryBinder, Single, run } from "sqlstack";
 
 export type ConnectDesktopClaimStatus = "pending" | "accepted" | "denied";
 export interface ConnectDesktopClaim {
@@ -22,34 +22,34 @@ export interface ConnectDesktopClaim {
 export default class ConnectDesktopClaimRepo {
   @Query()
   createClaim(_params: Omit<ConnectDesktopClaim, "status" | "decided_at" | "decided_by_user_id" | "decision_idempotency_key">): Promise<void> {
-    throw new SqlStackError("Not implemented");
+    return run();
   }
 
   @Single
   @Query()
   findByClaimId(_params: { claim_id: string }): Promise<ConnectDesktopClaim | null> {
-    throw new SqlStackError("Not implemented");
+    return run();
   }
 
   @Single
   @Query()
   findByCodeHash(_params: { short_code_hash: string }): Promise<ConnectDesktopClaim | null> {
-    throw new SqlStackError("Not implemented");
+    return run();
   }
 
   @Single
   @Query()
   findByIdempotencyKey(_params: { idempotency_key: string }): Promise<ConnectDesktopClaim | null> {
-    throw new SqlStackError("Not implemented");
+    return run();
   }
 
   @Query()
   acceptPending(_params: { claim_id: string; decided_at: string; decided_by_user_id: string; decision_idempotency_key: string }): Promise<void> {
-    throw new SqlStackError("Not implemented");
+    return run();
   }
 
   @Query()
   denyPending(_params: { claim_id: string; decided_at: string; decided_by_user_id: string; decision_idempotency_key: string }): Promise<void> {
-    throw new SqlStackError("Not implemented");
+    return run();
   }
 }

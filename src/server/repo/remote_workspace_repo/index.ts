@@ -1,5 +1,5 @@
 import { Component } from "@noego/ioc";
-import { Query, QueryBinder, Single, SqlStackError } from "sqlstack";
+import { Query, QueryBinder, Single, run } from "sqlstack";
 
 export interface RemoteWorkspaceRow {
   remote_workspace_id: string;
@@ -24,7 +24,7 @@ export default class RemoteWorkspaceRepo {
     display_name: string;
     now: string;
   }): Promise<RemoteWorkspaceRow | null> {
-    throw new SqlStackError("Not implemented");
+    return run();
   }
 
   @Single
@@ -32,6 +32,6 @@ export default class RemoteWorkspaceRepo {
   findRemoteWorkspace(_params: {
     remote_workspace_id: string;
   }): Promise<RemoteWorkspaceRow | null> {
-    throw new SqlStackError("Not implemented");
+    return run();
   }
 }

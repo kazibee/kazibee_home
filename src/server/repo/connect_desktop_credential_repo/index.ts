@@ -1,5 +1,5 @@
 import { Component, LoadAs } from "@noego/ioc";
-import { Query, QueryBinder, Single, SqlStackError } from "sqlstack";
+import { Query, QueryBinder, Single, run } from "sqlstack";
 
 export interface ConnectDesktopCredential {
   credential_id: string;
@@ -18,17 +18,17 @@ export interface ConnectDesktopCredential {
 export default class ConnectDesktopCredentialRepo {
   @Query()
   createCredential(_params: Omit<ConnectDesktopCredential, "status" | "revoked_at" | "audience">): Promise<void> {
-    throw new SqlStackError("Not implemented");
+    return run();
   }
 
   @Single
   @Query()
   findByTokenHash(_params: { token_hash: string }): Promise<ConnectDesktopCredential | null> {
-    throw new SqlStackError("Not implemented");
+    return run();
   }
 
   @Query()
   revokeForDevice(_params: { device_id: string; revoked_at: string }): Promise<void> {
-    throw new SqlStackError("Not implemented");
+    return run();
   }
 }

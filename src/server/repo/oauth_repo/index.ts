@@ -1,5 +1,5 @@
 import { Component } from "@noego/ioc";
-import { Query, QueryBinder, Single, SqlStackError } from "sqlstack";
+import { Query, QueryBinder, Single, run } from "sqlstack";
 
 export type OAuthClientKind = "cimd" | "dcr";
 export type OAuthClientStatus = "active" | "disabled";
@@ -118,18 +118,18 @@ export interface RotateRefreshTokenParams {
 export default class OAuthRepo {
   @Query()
   createClient(_params: CreateOAuthClientParams): Promise<void> {
-    throw new SqlStackError("Not implemented");
+    return run();
   }
 
   @Single
   @Query()
   findClientById(_params: { client_id: string }): Promise<OAuthClientRecord | null> {
-    throw new SqlStackError("Not implemented");
+    return run();
   }
 
   @Query()
   createConnection(_params: OAuthConnectionRecord): Promise<void> {
-    throw new SqlStackError("Not implemented");
+    return run();
   }
 
   @Single
@@ -137,17 +137,17 @@ export default class OAuthRepo {
   findActiveConnectionById(_params: {
     connection_id: string;
   }): Promise<OAuthConnectionRecord | null> {
-    throw new SqlStackError("Not implemented");
+    return run();
   }
 
   @Query()
   revokeConnection(_params: { connection_id: string; revoked_at: string }): Promise<void> {
-    throw new SqlStackError("Not implemented");
+    return run();
   }
 
   @Query()
   listConnectionsByUser(_params: { user_id: string }): Promise<OAuthConnectionListRecord[]> {
-    throw new SqlStackError("Not implemented");
+    return run();
   }
 
   /** Owner-driven capability edit; no-op for revoked connections. */
@@ -158,13 +158,13 @@ export default class OAuthRepo {
     allow_shell: boolean;
     allow_web: boolean;
   }): Promise<void> {
-    throw new SqlStackError("Not implemented");
+    return run();
   }
 
   /** Clamps member scopes after the connection's access drops to read. */
   @Query()
   demoteConnectionMemberScopes(_params: { connection_id: string }): Promise<void> {
-    throw new SqlStackError("Not implemented");
+    return run();
   }
 
   /**
@@ -179,7 +179,7 @@ export default class OAuthRepo {
     client_name: string;
     revoked_at: string;
   }): Promise<void> {
-    throw new SqlStackError("Not implemented");
+    return run();
   }
 
   @Query()
@@ -189,7 +189,7 @@ export default class OAuthRepo {
     client_name: string;
     revoked_at: string;
   }): Promise<void> {
-    throw new SqlStackError("Not implemented");
+    return run();
   }
 
   @Query()
@@ -200,7 +200,7 @@ export default class OAuthRepo {
     scope: OAuthConnectionScope;
     added_at: string;
   }): Promise<void> {
-    throw new SqlStackError("Not implemented");
+    return run();
   }
 
   @Query()
@@ -208,19 +208,19 @@ export default class OAuthRepo {
     connection_id: string;
     executor_id: string;
   }): Promise<void> {
-    throw new SqlStackError("Not implemented");
+    return run();
   }
 
   @Query()
   listConnectionExecutors(_params: {
     connection_id: string;
   }): Promise<OAuthConnectionExecutorRecord[]> {
-    throw new SqlStackError("Not implemented");
+    return run();
   }
 
   @Query()
   createCode(_params: OAuthCodeRecord): Promise<void> {
-    throw new SqlStackError("Not implemented");
+    return run();
   }
 
   @Single
@@ -229,12 +229,12 @@ export default class OAuthRepo {
     code_hash: string;
     consumed_at: string;
   }): Promise<OAuthCodeRecord | null> {
-    throw new SqlStackError("Not implemented");
+    return run();
   }
 
   @Query()
   createToken(_params: OAuthTokenRecord): Promise<void> {
-    throw new SqlStackError("Not implemented");
+    return run();
   }
 
   @Single
@@ -242,7 +242,7 @@ export default class OAuthRepo {
   findActiveTokenWithConnection(_params: {
     token_hash: string;
   }): Promise<ActiveTokenWithConnection | null> {
-    throw new SqlStackError("Not implemented");
+    return run();
   }
 
   @Query()
@@ -250,7 +250,7 @@ export default class OAuthRepo {
     connection_id: string;
     revoked_at: string;
   }): Promise<void> {
-    throw new SqlStackError("Not implemented");
+    return run();
   }
 
   @Single
@@ -258,6 +258,6 @@ export default class OAuthRepo {
   rotateRefreshToken(
     _params: RotateRefreshTokenParams,
   ): Promise<OAuthTokenRecord | null> {
-    throw new SqlStackError("Not implemented");
+    return run();
   }
 }

@@ -8,12 +8,27 @@ function fakeResponse() {
   const res = {
     statusCode: 200,
     body: undefined as unknown,
+    redirectedTo: undefined as string | undefined,
+    headers: {} as Record<string, string>,
     status(code: number) {
       this.statusCode = code;
       return this;
     },
     json(payload: unknown) {
       this.body = payload;
+      return this;
+    },
+    setHeader(name: string, value: string) {
+      this.headers[name] = value;
+      return this;
+    },
+    send(payload: unknown) {
+      this.body = payload;
+      return this;
+    },
+    redirect(code: number, url: string) {
+      this.statusCode = code;
+      this.redirectedTo = url;
       return this;
     },
   };
@@ -59,5 +74,47 @@ describe("UpdateController.releasesFeed", () => {
     await controller.releasesFeed({ req: requestFor("arm64"), res });
 
     expect(res.statusCode).toBe(404);
+  });
+});
+
+describe("UpdateController.windowsReleases", () => {
+  it("returns 400 for an invalid arch without touching the logic layer", async () => {
+    const createWindowsReleases = vi.fn();
+    const controller = new UpdateController({ createWindowsReleases } as unknown as UpdateLogic);
+    const res = fakeResponse();
+
+    await controller.windowsReleases({ req: requestFor("ia32"), res });
+
+    expect(createWindowsReleases).not.toHaveBeenCalled();
+    expect(res.statusCode).toBe(400);
+    expect(res.body).toMatchObject({ error: true });
+  });
+});
+
+describe("UpdateController.windowsPackage", () => {
+  it("returns 400 for an invalid arch without touching the logic layer", async () => {
+    const createWindowsPackageDownload = vi.fn();
+    const controller = new UpdateController({ createWindowsPackageDownload } as unknown as UpdateLogic);
+    const res = fakeResponse();
+
+    await controller.windowsPackage({
+      req: { params: { arch: "ia32", file: "Kazibee-full.nupkg" } } as unknown as Request,
+      res,
+    });
+
+    expect(createWindowsPackageDownload).not.toHaveBeenCalled();
+    expect(res.statusCode).toBe(400);
+  });
+
+  it("defaults a missing file param to an empty string and redirects on success", async () => {
+    const createWindowsPackageDownload = vi.fn(async () => "https://signed.example/pkg.nupkg");
+    const controller = new UpdateController({ createWindowsPackageDownload } as unknown as UpdateLogic);
+    const res = fakeResponse();
+
+    await controller.windowsPackage({ req: requestFor("x64"), res });
+
+    expect(createWindowsPackageDownload).toHaveBeenCalledWith("x64", "");
+    expect(res.statusCode).toBe(302);
+    expect(res.redirectedTo).toBe("https://signed.example/pkg.nupkg");
   });
 });

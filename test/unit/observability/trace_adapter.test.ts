@@ -60,6 +60,41 @@ describe("TraceAdapter", () => {
     expect(context.nested.password).toBe(canary);
   });
 
+  it("marks circular references, serializes dates, and redacts debug/warn/error messages", async () => {
+    const canary = "trace-canary-must-not-escape";
+    const circular: Record<string, unknown> = { safe: "visible" };
+    circular.self = circular;
+    const context = {
+      loop: circular,
+      when: new Date("2026-08-31T00:00:00.000Z"),
+    };
+
+    const trace = adapter.forSource("EdgeSource");
+    trace.debug("edge.debug", context, canary);
+    trace.warn("edge.warn", context, canary);
+    trace.error("edge.error", context, canary);
+    await probe.flush();
+
+    for (const eventName of ["edge.debug", "edge.warn", "edge.error"]) {
+      const [event] = probe.query({ source: "EdgeSource", event: eventName });
+      expect(event.message).toBe("[REDACTED]");
+      expect(event.context).toEqual({
+        loop: { safe: "visible", self: "[CIRCULAR]" },
+        when: "2026-08-31T00:00:00.000Z",
+      });
+      expect(JSON.stringify(event)).not.toContain(canary);
+    }
+  });
+
+  it("caches one port per source and passes an absent message through untouched", async () => {
+    expect(adapter.forSource("Cached")).toBe(adapter.forSource("Cached"));
+
+    adapter.forSource("Cached").info("cached.no-message");
+    await probe.flush();
+    const [event] = probe.query({ source: "Cached", event: "cached.no-message" });
+    expect(event.message).toBeUndefined();
+  });
+
   it("supports ordered events, exact counts, and absence assertions", async () => {
     const trace = adapter.forSource("Workflow");
     trace.info("workflow.started");

@@ -7,3 +7,4 @@ stitch:
   - openapi/updates/**/*.yaml
   - openapi/connect/**/*.yaml
   - openapi/oauth/**/*.yaml
+  - openapi/swarms/**/*.yaml

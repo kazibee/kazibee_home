@@ -74,6 +74,8 @@ jobs:
         env:
           AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          SWARM_AWS_ACCESS_KEY_ID: ${{ secrets.SWARM_AWS_ACCESS_KEY_ID }}
+          SWARM_AWS_SECRET_ACCESS_KEY: ${{ secrets.SWARM_AWS_SECRET_ACCESS_KEY }}
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
           GOOGLE_CLIENT_ID: ${{ secrets.GOOGLE_CLIENT_ID }}
           GOOGLE_CLIENT_SECRET: ${{ secrets.GOOGLE_CLIENT_SECRET }}
@@ -86,6 +88,8 @@ jobs:
           secrets: |
             AWS_ACCESS_KEY_ID
             AWS_SECRET_ACCESS_KEY
+            SWARM_AWS_ACCESS_KEY_ID
+            SWARM_AWS_SECRET_ACCESS_KEY
             DATABASE_URL
             GOOGLE_CLIENT_ID
             GOOGLE_CLIENT_SECRET

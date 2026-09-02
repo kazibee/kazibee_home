@@ -49,9 +49,13 @@ deploy:
         bindings:
           - name: EXECUTOR_COORDINATOR
             class_name: ExecutorCoordinator
+          - name: SWARM_MACHINE_COORDINATOR
+            class_name: SwarmMachineCoordinator
       migrations:
         - tag: v1
           new_sqlite_classes: [ExecutorCoordinator]
+        - tag: v2
+          new_sqlite_classes: [SwarmMachineCoordinator]
     environments:
       dev:
         name: kazibee-dev
@@ -67,6 +71,7 @@ deploy:
             # byte-stable per environment (clients cache AS metadata).
             KAZI_MCP_ORIGIN: https://mcp-dev.kazibee.com
             KAZI_WEBSITE_ORIGIN: https://dev.kazibee.com
+            KAZI_SWARM_ENV: dev
       production:
         name: kazibee
         routes:
@@ -77,3 +82,4 @@ deploy:
             KAZI_CONNECT_ACCOUNT_URL: https://kazibee.com/connect
             KAZI_MCP_ORIGIN: https://mcp.kazibee.com
             KAZI_WEBSITE_ORIGIN: https://kazibee.com
+            KAZI_SWARM_ENV: prod

@@ -1,0 +1,206 @@
+module:
+  swarms:
+    basePath: '/v1/swarms'
+    paths:
+      '/':
+        post:
+          x-controller: swarm.controller
+          x-action: create
+          parameters:
+            - $ref: '#/components/parameters/SwarmOwnerSession'
+            - $ref: '#/components/parameters/SwarmCsrfHeader'
+          requestBody:
+            required: true
+            content:
+              application/json:
+                schema:
+                  type: object
+                  additionalProperties: false
+                  required: [env, region, resourceClass]
+                  properties:
+                    env: { type: string, enum: [dev, prod] }
+                    region: { type: string, pattern: '^[a-z]{2}-[a-z]+-[1-9]$' }
+                    resourceClass:
+                      type: string
+                      enum: [head_micro, head_small, head_medium, head_large]
+          responses:
+            '201': { description: Swarm created }
+            '400': { description: Invalid swarm request }
+            '401': { description: Owner authentication required }
+      '/{swarmId}':
+        get:
+          x-controller: swarm.controller
+          x-action: detail
+          parameters:
+            - $ref: '#/components/parameters/SwarmId'
+            - $ref: '#/components/parameters/SwarmOwnerSession'
+          responses:
+            '200': { description: Swarm detail }
+            '401': { description: Owner authentication required }
+            '404': { description: Swarm not found }
+            '503': { description: Coordinator unavailable }
+      '/{swarmId}/machines':
+        post:
+          x-controller: swarm.controller
+          x-action: launchMachine
+          parameters:
+            - $ref: '#/components/parameters/SwarmId'
+            - $ref: '#/components/parameters/SwarmOwnerSession'
+            - $ref: '#/components/parameters/SwarmCsrfHeader'
+          responses:
+            '201': { description: Machine launched }
+            '401': { description: Owner authentication required }
+            '404': { description: Swarm not found }
+            '409': { description: Swarm image not released or swarm inactive }
+            '502': { description: ECS launch failed }
+            '503': { description: Launch configuration unavailable }
+      '/{swarmId}/machines/{machineId}/channel':
+        get:
+          x-controller: swarm.controller
+          x-action: channel
+          parameters:
+            - $ref: '#/components/parameters/SwarmId'
+            - $ref: '#/components/parameters/SwarmMachineId'
+            - in: header
+              name: authorization
+              required: false
+              schema: { type: string }
+            - in: header
+              name: x-kazi-swarm-id
+              required: false
+              schema: { type: string }
+            - in: header
+              name: x-kazi-machine-id
+              required: false
+              schema: { type: string }
+            - in: header
+              name: x-kazi-audience
+              required: false
+              schema: { type: string }
+            - in: header
+              name: x-kazi-protocol-version
+              required: false
+              schema: { type: string }
+          responses:
+            '101': { description: WebSocket channel accepted }
+            '401': { description: Channel authentication failed }
+            '426': { description: WebSocket upgrade required }
+            '503': { description: Coordinator unavailable }
+      '/{swarmId}/machines/{machineId}/send':
+        post:
+          x-controller: swarm.controller
+          x-action: send
+          parameters:
+            - $ref: '#/components/parameters/SwarmId'
+            - $ref: '#/components/parameters/SwarmMachineId'
+            - $ref: '#/components/parameters/SwarmOwnerSession'
+            - $ref: '#/components/parameters/SwarmCsrfHeader'
+          requestBody:
+            required: true
+            content:
+              application/json:
+                schema: { type: object }
+          responses:
+            '200': { description: Frame forwarded }
+            '400': { description: Invalid frame }
+            '401': { description: Owner authentication required }
+            '404': { description: Machine not found }
+            '503': { description: Machine or coordinator unavailable }
+      '/{swarmId}/machines/{machineId}/events':
+        get:
+          x-controller: swarm.controller
+          x-action: events
+          parameters:
+            - $ref: '#/components/parameters/SwarmId'
+            - $ref: '#/components/parameters/SwarmMachineId'
+            - $ref: '#/components/parameters/SwarmOwnerSession'
+            - in: query
+              name: after
+              required: false
+              schema: { type: integer, minimum: 0, default: 0 }
+            - in: query
+              name: limit
+              required: false
+              schema: { type: integer, minimum: 1, maximum: 100, default: 100 }
+          responses:
+            '200': { description: Buffered machine events }
+            '401': { description: Owner authentication required }
+            '404': { description: Machine not found }
+            '503': { description: Coordinator unavailable }
+      '/{swarmId}/liveness':
+        post:
+          x-controller: swarm.controller
+          x-action: liveness
+          parameters:
+            - $ref: '#/components/parameters/SwarmId'
+            - $ref: '#/components/parameters/SwarmOwnerSession'
+            - $ref: '#/components/parameters/SwarmCsrfHeader'
+          requestBody:
+            required: true
+            content:
+              application/json:
+                schema:
+                  type: object
+                  additionalProperties: false
+                  required: [desktopSeenAt]
+                  properties:
+                    desktopSeenAt: { type: string, format: date-time }
+          responses:
+            '200': { description: Desktop liveness relayed }
+            '400': { description: Invalid liveness timestamp }
+            '401': { description: Owner authentication required }
+            '404': { description: Swarm not found }
+            '503': { description: Coordinator unavailable }
+      '/{swarmId}/machines/{machineId}/stop':
+        post:
+          x-controller: swarm.controller
+          x-action: stopMachine
+          parameters:
+            - $ref: '#/components/parameters/SwarmId'
+            - $ref: '#/components/parameters/SwarmMachineId'
+            - $ref: '#/components/parameters/SwarmOwnerSession'
+            - $ref: '#/components/parameters/SwarmCsrfHeader'
+          responses:
+            '200': { description: Machine stopped }
+            '401': { description: Owner authentication required }
+            '404': { description: Machine not found }
+            '502': { description: Machine stop failed }
+            '503': { description: Coordinator unavailable }
+      '/{swarmId}/stop':
+        post:
+          x-controller: swarm.controller
+          x-action: stop
+          parameters:
+            - $ref: '#/components/parameters/SwarmId'
+            - $ref: '#/components/parameters/SwarmOwnerSession'
+            - $ref: '#/components/parameters/SwarmCsrfHeader'
+          responses:
+            '200': { description: Swarm stopped }
+            '401': { description: Owner authentication required }
+            '404': { description: Swarm not found }
+            '502': { description: Swarm stop failed }
+            '503': { description: Coordinator unavailable }
+    components: &swarmComponents
+      parameters:
+        SwarmId:
+          in: path
+          name: swarmId
+          required: true
+          schema: { type: string, pattern: '^swm_[A-Za-z0-9]{8,64}$' }
+        SwarmMachineId:
+          in: path
+          name: machineId
+          required: true
+          schema: { type: string, pattern: '^mch_[A-Za-z0-9]{8,64}$' }
+        SwarmOwnerSession:
+          in: query
+          name: sessionId
+          required: false
+          schema: { type: string, pattern: '^ses_[A-Za-z0-9]{8,64}$' }
+        SwarmCsrfHeader:
+          in: header
+          name: x-csrf-token
+          required: false
+          schema: { type: string, minLength: 16, maxLength: 256 }
+components:
+  <<: *swarmComponents

@@ -23,6 +23,8 @@
  * in DO storage. No timers, no outbound connections.
  */
 
+import { MACHINE_ID, SWARM_HEAD_PROTOCOL_VERSION, SWARM_ID, parseHeadInboundFrame, parseHeadOutboundFrame } from "../shared/swarm_head_protocol";
+
 // Minimal ambient declarations for the Workers runtime APIs used here, so
 // `tsc --noEmit` passes without pulling in @cloudflare/workers-types (this
 // module is only bundled/executed in cloudflare builds).
@@ -451,5 +453,265 @@ export class ExecutorCoordinator {
         route.reject("EXECUTOR_OFFLINE", "The channel closed during dispatch.");
       }
     });
+  }
+}
+
+
+const SWARM_PRESENCE_KEY = "swarm-presence";
+const SWARM_EVENTS_KEY = "swarm-events";
+const SWARM_CURSOR_KEY = "swarm-cursor";
+const SWARM_EVENT_LIMIT = 500;
+
+interface SwarmChannelAttachment {
+  swarmId: string;
+  machineId: string;
+  fence: string;
+  helloAt: number;
+}
+
+interface SwarmPresenceRecord {
+  swarmId: string;
+  machineId: string;
+  fence: string;
+  lastSeenAt: number;
+  helloAt: number;
+  headVersion: string | null;
+  headClass: string | null;
+  headState: string | null;
+}
+
+interface StoredSwarmFrame {
+  cursor: number;
+  receivedAt: string;
+  frame: Record<string, unknown>;
+}
+
+/**
+ * One hibernation-safe runtime-control channel per swarm machine.
+ *
+ * The object owns the channel fence, machine presence, and a bounded replay
+ * buffer. It deliberately does not own authorization or database state.
+ */
+export class SwarmMachineCoordinator {
+  private readonly state: CoordinatorState;
+
+  constructor(state: CoordinatorState) {
+    this.state = state;
+    this.state.setWebSocketAutoResponse(new WebSocketRequestResponsePair("ping", "pong"));
+  }
+
+  async fetch(request: Request): Promise<Response> {
+    const url = new URL(request.url);
+    if (request.headers.get("Upgrade")?.toLowerCase() === "websocket") {
+      return this.acceptChannel(request);
+    }
+    if (request.method === "GET" && url.pathname === "/presence") return this.presence();
+    if (request.method === "GET" && url.pathname === "/events") return this.events(url);
+    if (request.method === "POST" && url.pathname === "/send") return this.send(request);
+    if (request.method === "POST" && url.pathname === "/liveness") return this.liveness(request);
+    return new Response("not found", { status: 404 });
+  }
+
+  async webSocketMessage(ws: CoordinatorSocket, message: string | ArrayBuffer): Promise<void> {
+    if (typeof message !== "string") return;
+    const attachment = ws.deserializeAttachment() as SwarmChannelAttachment | null;
+    if (!attachment) {
+      ws.close(1008, "unidentified channel");
+      return;
+    }
+    const parsed = parseHeadOutboundFrame(message, attachment.machineId);
+    if (!parsed || (parsed.kind === "head.hello" && parsed.swarmId !== attachment.swarmId)) {
+      ws.send(JSON.stringify({
+        kind: "channel.error",
+        protocolVersion: SWARM_HEAD_PROTOCOL_VERSION,
+        code: "HEAD_PROTOCOL_VIOLATION",
+        message: "invalid head frame",
+        fatal: true,
+      }));
+      ws.close(1008, "invalid head frame");
+      return;
+    }
+
+    if (parsed.kind === "head.hello") {
+      const helloAt = Date.now();
+      const nextAttachment = { ...attachment, helloAt };
+      ws.serializeAttachment(nextAttachment satisfies SwarmChannelAttachment);
+      await this.state.storage.put<SwarmPresenceRecord>(SWARM_PRESENCE_KEY, {
+        swarmId: attachment.swarmId,
+        machineId: attachment.machineId,
+        fence: attachment.fence,
+        lastSeenAt: helloAt,
+        helloAt,
+        headVersion: parsed.headVersion,
+        headClass: parsed.headClass,
+        headState: "booting",
+      });
+      ws.send(JSON.stringify({
+        kind: "head.hello.ack",
+        protocolVersion: SWARM_HEAD_PROTOCOL_VERSION,
+        machineId: attachment.machineId,
+        machineFence: attachment.fence,
+        correlationId: parsed.correlationId,
+        acceptedAt: new Date(helloAt).toISOString(),
+      }));
+      return;
+    }
+
+    await this.touchPresence(attachment, parsed.kind === "head.heartbeat" ? parsed.state : undefined);
+    if (this.shouldBuffer(parsed.kind)) {
+      await this.appendFrame(parsed as unknown as Record<string, unknown>);
+    }
+  }
+
+  async webSocketClose(ws: CoordinatorSocket): Promise<void> {
+    const attachment = ws.deserializeAttachment() as SwarmChannelAttachment | null;
+    if (!attachment) return;
+    const record = await this.state.storage.get<SwarmPresenceRecord>(SWARM_PRESENCE_KEY);
+    if (record?.fence === attachment.fence) {
+      await this.state.storage.put<SwarmPresenceRecord>(SWARM_PRESENCE_KEY, {
+        ...record,
+        lastSeenAt: Date.now(),
+      });
+    }
+  }
+
+  private acceptChannel(request: Request): Response {
+    const swarmId = request.headers.get("x-kazi-swarm-id");
+    const machineId = request.headers.get("x-kazi-machine-id");
+    if (!swarmId || !SWARM_ID.test(swarmId) || !machineId || !MACHINE_ID.test(machineId)) {
+      return new Response("missing channel identity", { status: 400 });
+    }
+    const fence = "fence_" + crypto.randomUUID().replace(/-/g, "");
+    for (const existing of this.state.getWebSockets()) {
+      try {
+        existing.close(1012, "replaced by newer channel");
+      } catch {
+        // The runtime reaps sockets that are already closing.
+      }
+    }
+    const pair = new WebSocketPair();
+    this.state.acceptWebSocket(pair[1]);
+    pair[1].serializeAttachment({ swarmId, machineId, fence, helloAt: 0 } satisfies SwarmChannelAttachment);
+    return new Response(null, { status: 101, webSocket: pair[0] } as ResponseInit & {
+      webSocket: CoordinatorSocket;
+    });
+  }
+
+  private async touchPresence(attachment: SwarmChannelAttachment, headState?: string): Promise<void> {
+    const current = await this.state.storage.get<SwarmPresenceRecord>(SWARM_PRESENCE_KEY);
+    if (!current || current.fence !== attachment.fence) return;
+    await this.state.storage.put<SwarmPresenceRecord>(SWARM_PRESENCE_KEY, {
+      ...current,
+      lastSeenAt: Date.now(),
+      headState: headState ?? current.headState,
+    });
+  }
+
+  private shouldBuffer(kind: string): boolean {
+    return kind === "head.heartbeat"
+      || kind === "thread.state"
+      || kind === "thread.event"
+      || kind === "thread.turn.result"
+      || kind === "credential.accepted"
+      || kind === "credential.rejected";
+  }
+
+  private async appendFrame(frame: Record<string, unknown>): Promise<void> {
+    const cursor = (await this.state.storage.get<number>(SWARM_CURSOR_KEY) ?? 0) + 1;
+    const current = await this.state.storage.get<StoredSwarmFrame[]>(SWARM_EVENTS_KEY) ?? [];
+    current.push({ cursor, receivedAt: new Date().toISOString(), frame });
+    await this.state.storage.put(SWARM_CURSOR_KEY, cursor);
+    await this.state.storage.put(SWARM_EVENTS_KEY, current.slice(-SWARM_EVENT_LIMIT));
+  }
+
+  private liveSocket(record: SwarmPresenceRecord | undefined): CoordinatorSocket | null {
+    if (!record) return null;
+    for (const socket of this.state.getWebSockets()) {
+      const attachment = socket.deserializeAttachment() as SwarmChannelAttachment | null;
+      if (attachment?.fence === record.fence) return socket;
+    }
+    return null;
+  }
+
+  private async presence(): Promise<Response> {
+    const record = await this.state.storage.get<SwarmPresenceRecord>(SWARM_PRESENCE_KEY);
+    const socket = this.liveSocket(record);
+    let lastSeenAt = record?.lastSeenAt ?? null;
+    if (record && socket) {
+      const answeredAt = this.state.getWebSocketAutoResponseTimestamp(socket);
+      if (answeredAt) lastSeenAt = Math.max(lastSeenAt ?? 0, answeredAt.getTime());
+    }
+    return Response.json({
+      state: socket ? "online" : "offline",
+      swarmId: record?.swarmId ?? null,
+      machineId: record?.machineId ?? null,
+      fence: record?.fence ?? null,
+      helloAt: record?.helloAt ? new Date(record.helloAt).toISOString() : null,
+      lastSeenAt: lastSeenAt === null ? null : new Date(lastSeenAt).toISOString(),
+      headVersion: record?.headVersion ?? null,
+      headClass: record?.headClass ?? null,
+      headState: record?.headState ?? null,
+    });
+  }
+
+  private async events(url: URL): Promise<Response> {
+    const rawAfter = Number(url.searchParams.get("after") ?? "0");
+    const rawLimit = Number(url.searchParams.get("limit") ?? "100");
+    const after = Number.isSafeInteger(rawAfter) && rawAfter >= 0 ? rawAfter : 0;
+    const limit = Number.isSafeInteger(rawLimit) ? Math.min(Math.max(rawLimit, 1), 100) : 100;
+    const stored = await this.state.storage.get<StoredSwarmFrame[]>(SWARM_EVENTS_KEY) ?? [];
+    const events = stored.filter((entry) => entry.cursor > after).slice(0, limit);
+    return Response.json({
+      events,
+      nextCursor: events.at(-1)?.cursor ?? after,
+    });
+  }
+
+  private async send(request: Request): Promise<Response> {
+    let frame: unknown;
+    try {
+      frame = await request.json();
+    } catch {
+      return Response.json({ code: "INVALID_FRAME" }, { status: 400 });
+    }
+    const record = await this.state.storage.get<SwarmPresenceRecord>(SWARM_PRESENCE_KEY);
+    const candidateMachineId = record?.machineId
+      ?? (frame && typeof frame === "object" ? (frame as { machineId?: unknown }).machineId : null);
+    if (typeof candidateMachineId !== "string"
+      || !MACHINE_ID.test(candidateMachineId)
+      || !parseHeadInboundFrame(JSON.stringify(frame), candidateMachineId)) {
+      return Response.json({ code: "INVALID_FRAME" }, { status: 400 });
+    }
+    const socket = this.liveSocket(record);
+    if (!record || !socket) return Response.json({ code: "MACHINE_OFFLINE" }, { status: 503 });
+    try {
+      socket.send(JSON.stringify(frame));
+      return Response.json({ ok: true });
+    } catch {
+      return Response.json({ code: "MACHINE_OFFLINE" }, { status: 503 });
+    }
+  }
+
+  private async liveness(request: Request): Promise<Response> {
+    let desktopSeenAt: unknown;
+    try {
+      desktopSeenAt = (await request.json() as { desktopSeenAt?: unknown }).desktopSeenAt;
+    } catch {
+      return Response.json({ code: "INVALID_FRAME" }, { status: 400 });
+    }
+    if (typeof desktopSeenAt !== "string" || !Number.isFinite(Date.parse(desktopSeenAt))) {
+      return Response.json({ code: "INVALID_FRAME" }, { status: 400 });
+    }
+    const record = await this.state.storage.get<SwarmPresenceRecord>(SWARM_PRESENCE_KEY);
+    const socket = this.liveSocket(record);
+    if (!record || !socket) return Response.json({ code: "MACHINE_OFFLINE" }, { status: 503 });
+    socket.send(JSON.stringify({
+      kind: "desktop.liveness",
+      protocolVersion: SWARM_HEAD_PROTOCOL_VERSION,
+      machineId: record.machineId,
+      desktopSeenAt,
+      sentAt: new Date().toISOString(),
+    }));
+    return Response.json({ ok: true });
   }
 }

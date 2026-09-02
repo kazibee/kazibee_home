@@ -11,12 +11,6 @@
     data: OAuthConsentData;
     input: OAuthConsentInput;
   } = $props();
-
-  const selectedCount = $derived(data.selectedExecutorIds.length);
-
-  function chooseExecutor(event: Event) {
-    input.toggleExecutor((event.currentTarget as HTMLInputElement).value);
-  }
 </script>
 
 <svelte:head>
@@ -42,7 +36,7 @@
       {:else if data.status === 'signed_out'}
         <h1 class="text-2xl font-bold tracking-tight text-ink">Sign in to continue</h1>
         <p class="mt-3 text-sm leading-6 text-ink-muted">
-          Sign in to your Kazibee account to choose which machines this application may reach.
+          Sign in to your Kazibee account to let this application use your machines.
         </p>
         <a
           href={data.loginHref}
@@ -66,77 +60,58 @@
           Allow {data.client?.name} to use your machines?
         </h1>
         <p class="mt-3 text-sm leading-6 text-ink-muted">
-          It will be able to run
-          {data.requestedAccess === 'read_write' ? 'read and write' : 'read-only'}
-          workspace tools on the machines you pick. You can add or remove machines
-          any time from your Connect page.
+          It will act as you: every machine linked to your account — now or later — is
+          reachable through this connection. Revoke a machine or this connection any
+          time from your Connect page.
         </p>
 
-        <fieldset class="mt-6">
-          <legend class="text-sm font-semibold text-ink">Your machines</legend>
+        <div class="mt-6">
+          <h2 class="text-sm font-semibold text-ink">Your machines</h2>
           {#if data.executors.length === 0}
             <p class="mt-3 rounded-xl border border-neutral-200 bg-neutral-50 p-4 text-sm text-ink-muted" data-test-id="oauth-consent-empty">
-              No machines are linked to your account yet. Run the Kazibee tool
-              service on a machine and accept its claim first.
+              No machines are linked to your account yet. You can still allow access;
+              link a machine from the Kazibee app and it will appear on the next call.
             </p>
-          {/if}
-          <div class="mt-3 flex flex-col gap-3">
-            {#each data.executors as executor (executor.executor_id)}
-              <label class="flex flex-col gap-3 rounded-2xl border border-neutral-200 bg-white p-4 transition has-checked:border-blue-400 has-checked:bg-blue-50/40">
-                <span class="flex items-center gap-3">
-                  <input
-                    type="checkbox"
-                    value={executor.executor_id}
-                    checked={data.selectedExecutorIds.includes(executor.executor_id)}
-                    onchange={chooseExecutor}
-                    class="h-4 w-4 rounded border-neutral-300"
-                    data-test-id={`oauth-consent-machine-${executor.executor_id}`}
-                  />
+          {:else}
+            <ul class="mt-3 flex flex-col gap-2" data-test-id="oauth-consent-machines">
+              {#each data.executors as executor (executor.executor_id)}
+                <li class="flex items-center gap-3 rounded-2xl border border-neutral-200 bg-white px-4 py-3" data-test-id={`oauth-consent-machine-${executor.executor_id}`}>
                   <span class="font-semibold text-ink">{executor.display_name}</span>
                   <span class={`ml-auto inline-flex items-center gap-1.5 text-xs font-semibold ${executor.presence === 'online' ? 'text-emerald-600' : 'text-ink-faint'}`}>
                     <span class={`h-1.5 w-1.5 rounded-full ${executor.presence === 'online' ? 'bg-emerald-500' : 'bg-neutral-300'}`}></span>
                     {executor.presence}
                   </span>
-                </span>
-                {#if data.selectedExecutorIds.includes(executor.executor_id)}
-                  <span class="flex flex-col gap-2 pl-7 sm:flex-row sm:items-center sm:gap-4">
-                    <select
-                      value={data.workspaceChoices[executor.executor_id] ?? ''}
-                      onchange={(event) => input.setWorkspace(executor.executor_id, (event.currentTarget as HTMLSelectElement).value)}
-                      class="rounded-lg border border-neutral-300 bg-white px-2.5 py-1.5 text-sm text-ink"
-                      data-test-id={`oauth-consent-workspace-${executor.executor_id}`}
-                    >
-                      <option value="*">All workspaces</option>
-                      {#each executor.workspaces as workspace (workspace.workspace_id)}
-                        <option value={workspace.workspace_id}>{workspace.display_name}</option>
-                      {/each}
-                    </select>
-                    {#if data.requestedAccess === 'read_write'}
-                      <span class="flex items-center gap-3 text-sm text-ink-muted">
-                        <label class="flex items-center gap-1.5">
-                          <input
-                            type="radio"
-                            name={`scope-${executor.executor_id}`}
-                            checked={(data.executorScopes[executor.executor_id] ?? 'read_write') === 'read_write'}
-                            onchange={() => input.setExecutorScope(executor.executor_id, 'read_write')}
-                          />
-                          Read &amp; write
-                        </label>
-                        <label class="flex items-center gap-1.5">
-                          <input
-                            type="radio"
-                            name={`scope-${executor.executor_id}`}
-                            checked={data.executorScopes[executor.executor_id] === 'read'}
-                            onchange={() => input.setExecutorScope(executor.executor_id, 'read')}
-                          />
-                          Read only
-                        </label>
-                      </span>
-                    {/if}
-                  </span>
-                {/if}
+                </li>
+              {/each}
+            </ul>
+          {/if}
+        </div>
+
+        <fieldset class="mt-6">
+          <legend class="text-sm font-semibold text-ink">Workspace access</legend>
+          <div class="mt-3 flex gap-2">
+            <label class="flex items-center gap-2 rounded-lg border border-neutral-300 px-3 py-2 text-xs font-bold text-ink">
+              <input
+                type="radio"
+                name="access"
+                checked={!data.allowWrite}
+                onchange={() => input.setAccess('read')}
+                data-test-id="oauth-consent-access-read"
+              />
+              Read only
+            </label>
+            {#if data.requestedAccess === 'read_write'}
+              <label class="flex items-center gap-2 rounded-lg border border-neutral-300 px-3 py-2 text-xs font-bold text-ink">
+                <input
+                  type="radio"
+                  name="access"
+                  checked={data.allowWrite}
+                  onchange={() => input.setAccess('read_write')}
+                  data-test-id="oauth-consent-access-write"
+                />
+                Read &amp; write
               </label>
-            {/each}
+            {/if}
           </div>
         </fieldset>
 
@@ -157,7 +132,7 @@
               <span class="flex flex-col gap-0.5">
                 <span class="font-semibold text-ink">Run shell commands</span>
                 <span class="text-xs leading-5 text-ink-muted">
-                  Lets {data.client?.name} run commands as your user on the machines you pick.
+                  Lets {data.client?.name} run commands as your user on your machines.
                   This is full command execution on the machine, not limited to a single folder.
                 </span>
               </span>
@@ -200,11 +175,11 @@
           <button
             type="button"
             onclick={() => input.approve()}
-            disabled={data.status === 'submitting' || selectedCount === 0}
+            disabled={data.status === 'submitting'}
             class="rounded-xl bg-ink px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-neutral-800 disabled:opacity-50"
             data-test-id="oauth-consent-approve"
           >
-            {data.status === 'submitting' ? 'Working…' : `Allow access (${selectedCount})`}
+            {data.status === 'submitting' ? 'Working…' : 'Allow access'}
           </button>
         </div>
       {/if}

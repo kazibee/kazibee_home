@@ -18,7 +18,6 @@ import { test as control } from '@noego/testing';
 import OAuthAuthorizeController from '../../../src/server/controller/oauth_authorize.controller';
 import OAuthAuthorizeService from '../../../src/server/services/oauth_authorize_service';
 import OAuthRepo from '../../../src/server/repo/oauth_repo';
-import ConnectExecutorRepo from '../../../src/server/repo/connect_executor_repo';
 import ConnectBrowserSessionRepo from '../../../src/server/repo/connect_browser_session_repo';
 import ConnectAccountRepo from '../../../src/server/repo/connect_account_repo';
 
@@ -82,13 +81,6 @@ const activeAccount = {
   status: 'active',
   username: 'shavyg2',
   email: 'shavyg2@gmail.com',
-};
-
-const executor = {
-  executor_id: 'exe_1',
-  display_name: 'Work laptop',
-  state: 'active',
-  owner_user_id: 'usr_1',
 };
 
 const authedHeaders = {
@@ -379,7 +371,6 @@ describe('oauth authorize negative flows through testDinner', () => {
         ...validParams,
         scope: 'kazibee:read',
         approved_scope: 'kazibee:read kazibee:write',
-        machines: [{ executor_id: 'exe_1', workspace_id: 'ws_1' }],
       },
     });
     expect(response.status).toBe(400);
@@ -391,120 +382,17 @@ describe('oauth authorize negative flows through testDinner', () => {
     await env.dispose();
   });
 
-  it('approve without a machines field at all is invalid_request', async () => {
-    const env = await base()
-      .methods([
-        ...sessionStubs(),
-        [OAuthRepo, {
-          findClientById: control.returns(Promise.resolve(dcrClient)),
-          createConnection: control.never(),
-        }],
-      ])
-      .build();
-    const response = await env.dinner.request({
-      method: 'POST',
-      path: '/oauth/consent/approve',
-      headers: authedHeaders,
-      body: { sessionId: 'ses_1', ...validParams, approved_scope: 'kazibee:read' },
-    });
-    expect(response.status).toBe(400);
-    expect(await response.json()).toEqual({
-      error: 'invalid_request',
-      message: 'At least one machine is required',
-    });
-    await env.verify();
-    await env.dispose();
-  });
-
-  it('a read_write approval caps each member by its explicit choice', async () => {
+  it('compensation still fails safe when revoke also fails after code issuance fails', async () => {
     const env = await base()
       .methods([
         ...sessionStubs(),
         [OAuthRepo, {
           findClientById: control.returns(Promise.resolve(dcrClient)),
           createConnection: control.once(control.returns(Promise.resolve(undefined))),
-          // Two members: one explicitly capped to read, one keeping read_write.
-          addConnectionExecutor: control.returns(Promise.resolve(undefined)),
-          createCode: control.once(control.returns(Promise.resolve(undefined))),
-          revokeSupersededConnectionTokens: control.once(control.returns(Promise.resolve(undefined))),
-          revokeSupersededConnections: control.once(control.returns(Promise.resolve(undefined))),
-          revokeConnection: control.never(),
-        }],
-        [ConnectExecutorRepo, {
-          findByExecutorId: control.returns(Promise.resolve(executor)),
-        }],
-      ])
-      .build();
-    const rwScope = 'kazibee:read kazibee:write';
-    const response = await env.dinner.request({
-      method: 'POST',
-      path: '/oauth/consent/approve',
-      headers: authedHeaders,
-      body: {
-        sessionId: 'ses_1',
-        ...validParams,
-        scope: rwScope,
-        approved_scope: rwScope,
-        machines: [
-          { executor_id: 'exe_1', workspace_id: 'ws_1', scope: 'read' },
-          { executor_id: 'exe_2', workspace_id: 'ws_2', scope: 'read_write' },
-        ],
-      },
-    });
-    expect(response.status).toBe(200);
-    const payload = await response.json();
-    expect(new URL(payload.redirect_to).searchParams.get('code')).toBeTruthy();
-    await env.verify();
-    await env.dispose();
-  });
-
-  it('compensation still fails safe when the revoke itself also fails (membership arm)', async () => {
-    const env = await base()
-      .methods([
-        ...sessionStubs(),
-        [OAuthRepo, {
-          findClientById: control.returns(Promise.resolve(dcrClient)),
-          createConnection: control.once(control.returns(Promise.resolve(undefined))),
-          addConnectionExecutor: control.once(control.throws(new Error('membership write failed'))),
-          revokeConnection: control.once(control.returns(rejected('revoke also failed'))),
-          createCode: control.never(),
-        }],
-        [ConnectExecutorRepo, {
-          findByExecutorId: control.once(control.returns(Promise.resolve(executor))),
-        }],
-      ])
-      .build();
-    const response = await env.dinner.request({
-      method: 'POST',
-      path: '/oauth/consent/approve',
-      headers: authedHeaders,
-      body: {
-        sessionId: 'ses_1',
-        ...validParams,
-        approved_scope: 'kazibee:read',
-        machines: [{ executor_id: 'exe_1', workspace_id: 'ws_1' }],
-      },
-    });
-    expect(response.status).toBe(500);
-    await env.verify();
-    await env.dispose();
-  });
-
-  it('compensation still fails safe when the revoke also fails (code-issuance arm)', async () => {
-    const env = await base()
-      .methods([
-        ...sessionStubs(),
-        [OAuthRepo, {
-          findClientById: control.returns(Promise.resolve(dcrClient)),
-          createConnection: control.once(control.returns(Promise.resolve(undefined))),
-          addConnectionExecutor: control.once(control.returns(Promise.resolve(undefined))),
           createCode: control.once(control.throws(new Error('code write failed'))),
           revokeConnection: control.once(control.returns(rejected('revoke also failed'))),
           revokeSupersededConnections: control.never(),
         }],
-        [ConnectExecutorRepo, {
-          findByExecutorId: control.once(control.returns(Promise.resolve(executor))),
-        }],
       ])
       .build();
     const response = await env.dinner.request({
@@ -515,7 +403,6 @@ describe('oauth authorize negative flows through testDinner', () => {
         sessionId: 'ses_1',
         ...validParams,
         approved_scope: 'kazibee:read',
-        machines: [{ executor_id: 'exe_1', workspace_id: 'ws_1' }],
       },
     });
     expect(response.status).toBe(500);
@@ -546,14 +433,10 @@ describe('oauth authorize negative flows through testDinner', () => {
         [OAuthRepo, {
           findClientById: control.returns(Promise.resolve(dcrClient)),
           createConnection: control.once(control.returns(Promise.resolve(undefined))),
-          addConnectionExecutor: control.once(control.returns(Promise.resolve(undefined))),
           createCode: control.once(control.returns(Promise.resolve(undefined))),
           revokeSupersededConnectionTokens: control.once(control.returns(rejected('supersede tokens failed'))),
           revokeSupersededConnections: control.once(control.returns(rejected('supersede connections failed'))),
           revokeConnection: control.never(),
-        }],
-        [ConnectExecutorRepo, {
-          findByExecutorId: control.once(control.returns(Promise.resolve(executor))),
         }],
       ])
       .build();
@@ -565,7 +448,6 @@ describe('oauth authorize negative flows through testDinner', () => {
         sessionId: 'ses_1',
         ...validParams,
         approved_scope: 'kazibee:read',
-        machines: [{ executor_id: 'exe_1', workspace_id: 'ws_1' }],
       },
     });
     expect(response.status).toBe(200);

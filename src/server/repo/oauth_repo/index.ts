@@ -57,18 +57,6 @@ export interface OAuthConnectionRecord {
 
 export interface OAuthConnectionListRecord extends OAuthConnectionRecord {
   client_name: string | null;
-  member_count: number;
-}
-
-export interface OAuthConnectionExecutorRecord {
-  connection_id: string;
-  executor_id: string;
-  workspace_id: string;
-  scope: OAuthConnectionScope;
-  added_at: string;
-  executor_display_name: string;
-  executor_state: "pending" | "active" | "revoked";
-  executor_owner_user_id: string | null;
 }
 
 export interface OAuthCodeRecord {
@@ -161,12 +149,6 @@ export default class OAuthRepo {
     return run();
   }
 
-  /** Clamps member scopes after the connection's access drops to read. */
-  @Query()
-  demoteConnectionMemberScopes(_params: { connection_id: string }): Promise<void> {
-    return run();
-  }
-
   /**
    * Supersede: kills tokens of the user's OTHER active connections whose
    * client shares this display name (clients re-register per connect, so the
@@ -189,32 +171,6 @@ export default class OAuthRepo {
     client_name: string;
     revoked_at: string;
   }): Promise<void> {
-    return run();
-  }
-
-  @Query()
-  addConnectionExecutor(_params: {
-    connection_id: string;
-    executor_id: string;
-    workspace_id: string;
-    scope: OAuthConnectionScope;
-    added_at: string;
-  }): Promise<void> {
-    return run();
-  }
-
-  @Query()
-  removeConnectionExecutor(_params: {
-    connection_id: string;
-    executor_id: string;
-  }): Promise<void> {
-    return run();
-  }
-
-  @Query()
-  listConnectionExecutors(_params: {
-    connection_id: string;
-  }): Promise<OAuthConnectionExecutorRecord[]> {
     return run();
   }
 

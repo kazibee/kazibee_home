@@ -17,6 +17,7 @@ import OAuthController from '../../../src/server/controller/oauth.controller';
 import OAuthTokenAuthService, { InvalidOAuthTokenError } from '../../../src/server/services/oauth_token_auth_service';
 import { tokenMatchesResource } from '../../../src/server/services/oauth_flow_service';
 import formBody from '../../../src/middleware/form_body';
+import ConnectExecutorRepo from '../../../src/server/repo/connect_executor_repo';
 import OAuthRepo from '../../../src/server/repo/oauth_repo';
 
 const oauthSource = parseYaml(
@@ -323,19 +324,25 @@ describe('oauth authorization_code remaining branches', () => {
   });
 });
 
-describe('OAuthTokenAuthService at service depth (real hashing, stubbed repo)', () => {
-  const ACCESS_TOKEN = `${'B'.repeat(32)}${RESOURCE_TAG}`;
+describe('OAuthTokenAuthService at service depth (real hashing, stubbed repos)', () => {
+  const ACCESS_TOKEN = `BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB${RESOURCE_TAG}`;
   const accessRow = (overrides: Record<string, unknown> = {}) =>
     refreshRow({ kind: 'access', ...overrides });
-  const memberRow = (overrides: Record<string, unknown> = {}) => ({
-    connection_id: 'ocn_1',
+  const executorRow = (overrides: Record<string, unknown> = {}) => ({
     executor_id: 'exe_1',
-    workspace_id: 'ws_1',
-    scope: 'read_write',
-    added_at: now.toISOString(),
-    executor_state: 'active',
-    executor_owner_user_id: 'usr_1',
-    executor_display_name: 'Work laptop',
+    device_id: 'dev_1',
+    owner_user_id: 'usr_1',
+    display_name: 'Work laptop',
+    platform: 'macos',
+    architecture: 'arm64',
+    executor_version: '1.0.0',
+    key_fingerprint: 'fingerprint',
+    state: 'active',
+    credential_generation: 1,
+    created_at: '2025-01-01T00:00:00.000Z',
+    claimed_at: '2025-01-02T00:00:00.000Z',
+    updated_at: '2025-01-02T00:00:00.000Z',
+    last_seen_at: '2025-01-02T00:00:00.000Z',
     ...overrides,
   });
 
@@ -350,17 +357,36 @@ describe('OAuthTokenAuthService at service depth (real hashing, stubbed repo)', 
     await env.dispose();
   });
 
-  it('authenticate resolves the principal with live members, capping member scopes', async () => {
+  it('authenticate derives active owner executors live in oldest-link order', async () => {
     const env = await base()
       .methods([
         [OAuthRepo, {
           findActiveTokenWithConnection: control.once(
             control.returns(Promise.resolve(accessRow({ approved_scope: 'read' }))),
           ),
-          listConnectionExecutors: control.once(control.returns(Promise.resolve([
-            memberRow(),
-            memberRow({ executor_id: 'exe_gone', executor_state: 'revoked' }),
-            memberRow({ executor_id: 'exe_foreign', executor_owner_user_id: 'usr_other' }),
+        }],
+        [ConnectExecutorRepo, {
+          listByOwner: control.once(control.returns(Promise.resolve([
+            executorRow({
+              executor_id: 'exe_newer',
+              display_name: 'Newer laptop',
+              claimed_at: '2025-01-03T00:00:00.000Z',
+            }),
+            executorRow({
+              executor_id: 'exe_revoked',
+              state: 'revoked',
+              claimed_at: '2024-12-01T00:00:00.000Z',
+            }),
+            executorRow({
+              executor_id: 'exe_older',
+              display_name: 'Older laptop',
+              claimed_at: '2025-01-01T00:00:00.000Z',
+            }),
+            executorRow({
+              executor_id: 'exe_pending',
+              state: 'pending',
+              claimed_at: '2024-11-01T00:00:00.000Z',
+            }),
           ]))),
         }],
       ])
@@ -375,14 +401,20 @@ describe('OAuthTokenAuthService at service depth (real hashing, stubbed repo)', 
       allow_shell: true,
       allow_web: false,
     });
-    // read_write member capped to read by the connection's read ceiling; the
-    // revoked and foreign executors drop out.
-    expect(principal.members).toEqual([{
-      executor_id: 'exe_1',
-      workspace_id: 'ws_1',
-      scope: 'read',
-      display_name: 'Work laptop',
-    }]);
+    expect(principal.members).toEqual([
+      {
+        executor_id: 'exe_older',
+        workspace_id: '*',
+        scope: 'read',
+        display_name: 'Older laptop',
+      },
+      {
+        executor_id: 'exe_newer',
+        workspace_id: '*',
+        scope: 'read',
+        display_name: 'Newer laptop',
+      },
+    ]);
     await env.verify();
     await env.dispose();
   });
@@ -396,8 +428,8 @@ describe('OAuthTokenAuthService at service depth (real hashing, stubbed repo)', 
             control.returns(Promise.resolve(accessRow({ expires_at: past }))),
             control.returns(Promise.resolve(accessRow({ kind: 'refresh' }))),
           ]),
-          listConnectionExecutors: control.never(),
         }],
+        [ConnectExecutorRepo, { listByOwner: control.never() }],
       ])
       .build();
     const service = await env.get<OAuthTokenAuthService>(OAuthTokenAuthService);

@@ -8,9 +8,9 @@ import OAuthTokenAuthService, {
   InvalidOAuthTokenError,
   type OAuthPrincipal,
 } from "../services/oauth_token_auth_service";
+import OAuthConnectionMachinesService from "../services/oauth_connection_machines_service";
 import { connectionScopeToToolScopes } from "../services/oauth_scopes";
 import OAuthRepo from "../repo/oauth_repo";
-import ConnectExecutorRepo from "../repo/connect_executor_repo";
 import RemoteWorkspaceRepo from "../repo/remote_workspace_repo";
 import { randomBytes } from "node:crypto";
 
@@ -61,7 +61,8 @@ export default class RemoteToolsController {
     @Inject(OAuthTokenAuthService) private readonly oauthTokens: OAuthTokenAuthService,
     @Inject(OAuthOrigins) private readonly origins: OAuthOrigins,
     @Inject(OAuthRepo) private readonly oauth: OAuthRepo,
-    @Inject(ConnectExecutorRepo) private readonly executors: ConnectExecutorRepo,
+    @Inject(OAuthConnectionMachinesService)
+    private readonly machines: OAuthConnectionMachinesService,
     @Inject(RemoteWorkspaceRepo) private readonly remoteWorkspaces: RemoteWorkspaceRepo,
   ) {}
 
@@ -69,8 +70,8 @@ export default class RemoteToolsController {
 
   /**
    * Resolves the bearer into a dispatch route. OAuth access tokens (resource-
-   * tagged, minted for a connection) resolve their membership live — adding
-   * or removing machines takes effect on the next call; legacy PAT grants
+   * tagged, minted for a connection) act as the user: their machines are the
+   * user's active executors, resolved live on every call; legacy PAT grants
    * keep their original static binding.
    */
   private async resolveCaller(req: Request): Promise<
@@ -117,10 +118,13 @@ export default class RemoteToolsController {
     // machines can never collide or spoof each other's workspaces.
     let member = null;
     let remoteWorkspaceId: string | null = null;
+    // The machine-local workspace the executor should bind this call to;
+    // '*' means unbound (gateway-level or machine-level tools).
+    let targetWorkspaceId = "*";
     if (toolName === "list_workspaces" && typeof args.machineId === "string" && args.machineId) {
       member = principal.members.find((candidate) => candidate.executor_id === args.machineId) ?? null;
       if (!member) {
-        return { ok: false, code: "WORKSPACE_UNAVAILABLE", message: "That machine is not on this connection. Call list_machines." };
+        return { ok: false, code: "WORKSPACE_UNAVAILABLE", message: "That machine is not linked to your account. Call list_machines." };
       }
       // Routing-only argument; the executor tool does not take it.
       args = Object.fromEntries(Object.entries(args).filter(([key]) => key !== "machineId"));
@@ -132,27 +136,27 @@ export default class RemoteToolsController {
       if (!row || row.user_id !== principal.user_id) {
         return { ok: false, code: "WORKSPACE_UNAVAILABLE", message: "Unknown workspace id. Call list_workspaces." };
       }
-      member = principal.members.find((candidate) =>
-        candidate.executor_id === row.executor_id
-        && (candidate.workspace_id === "*" || candidate.workspace_id === row.local_workspace_id)) ?? null;
+      // The minted id names a machine the user owned when it was listed; the
+      // machine must still be one of theirs (not revoked since).
+      member = principal.members.find((candidate) => candidate.executor_id === row.executor_id) ?? null;
       if (!member) {
-        return { ok: false, code: "WORKSPACE_UNAVAILABLE", message: "That workspace is not covered by this connection." };
+        return { ok: false, code: "WORKSPACE_UNAVAILABLE", message: "That workspace's machine is no longer linked to your account." };
       }
+      targetWorkspaceId = row.local_workspace_id;
       args = { ...args, workspaceId: row.local_workspace_id };
     } else {
       member = await this.pickMember(principal.members);
       if (!member) {
-        return { ok: false, code: "EXECUTOR_OFFLINE", message: "No machine on this connection is online." };
+        return { ok: false, code: "EXECUTOR_OFFLINE", message: "None of your linked machines is online." };
       }
-      if (typeof args.workspaceId === "string" && args.workspaceId
-        && member.workspace_id !== "*" && member.workspace_id !== args.workspaceId) {
-        return { ok: false, code: "WORKSPACE_UNAVAILABLE", message: "Unknown workspace id. Call list_workspaces." };
+      if (typeof args.workspaceId === "string" && args.workspaceId) {
+        targetWorkspaceId = args.workspaceId;
       }
     }
 
     const outcome = await this.dispatch.callTarget({
       executorId: member.executor_id,
-      workspaceId: member.workspace_id,
+      workspaceId: targetWorkspaceId,
       scopes: connectionScopeToToolScopes(member.scope, principal),
       grantId: principal.connection_id,
       toolSessionId: `rts_${principal.connection_id.slice(4)}`,
@@ -194,8 +198,9 @@ export default class RemoteToolsController {
   }
 
   /**
-   * Deterministic default: members in added_at order, first one online. A
-   * single member routes directly — dispatch itself reports EXECUTOR_OFFLINE.
+   * Deterministic default: the user's machines oldest-link first, first one
+   * online. A single machine routes directly — dispatch itself reports
+   * EXECUTOR_OFFLINE.
    */
   private async pickMember(members: OAuthPrincipal["members"]) {
     if (members.length === 0) return null;
@@ -414,8 +419,9 @@ export default class RemoteToolsController {
   }
 
   // ------------------------------------------------------------ connections
-  // OAuth connections are living objects: machines can be added and removed
-  // after consent; MCP calls resolve the membership live on every request.
+  // OAuth connections are owner-scoped: a connection reaches every machine
+  // its user owns, so there is no membership to manage. `members` in the
+  // listing is the live derivation, shown so the owner sees what an app sees.
 
   async listConnections({ req, res }: Context) {
     const sessionId = typeof req.query.sessionId === "string" ? req.query.sessionId : "";
@@ -433,80 +439,21 @@ export default class RemoteToolsController {
       allowWeb: connection.allow_web,
       status: connection.status,
       createdAt: connection.created_at,
-      members: (await this.oauth.listConnectionExecutors({
-        connection_id: connection.connection_id,
-      })).map((member) => ({
-        executorId: member.executor_id,
-        displayName: member.executor_display_name,
-        workspaceId: member.workspace_id,
-        scope: member.scope,
-        addedAt: member.added_at,
-      })),
+      members: (await this.machines.listForUser(userId, connection.approved_scope))
+        .map((member) => ({
+          executorId: member.executor_id,
+          displayName: member.display_name,
+          workspaceId: member.workspace_id,
+          scope: member.scope,
+        })),
     })));
     return res.json({ connections: withMembers });
-  }
-
-  async addConnectionMember({ req, res }: Context) {
-    const sessionId = typeof req.query.sessionId === "string" ? req.query.sessionId : "";
-    const actor = await this.actors.browser(req, sessionId, true);
-    if (!actor.ok) return res.status(401).json({ error: true, message: "Not signed in." });
-    const userId = (actor.actor as { userId: string }).userId;
-
-    const connection = await this.ownedConnection(req.params?.connectionId, userId);
-    if (!connection) return res.status(404).json({ error: true, message: "Connection not found." });
-
-    const body = req.body as { executorId?: string; workspaceId?: string; scope?: string } | undefined;
-    if (!body || typeof body.executorId !== "string" || typeof body.workspaceId !== "string") {
-      return res.status(400).json({ error: true, message: "executorId and workspaceId are required." });
-    }
-    const scope = body.scope === "read" || body.scope === "read_write"
-      ? body.scope
-      : connection.approved_scope;
-    if (scope === "read_write" && connection.approved_scope !== "read_write") {
-      return res.status(400).json({ error: true, message: "Member scope exceeds the connection's approved scope." });
-    }
-    const executor = await this.executors.findByExecutorId({ executor_id: body.executorId });
-    if (!executor || executor.state !== "active" || executor.owner_user_id !== userId) {
-      return res.status(404).json({ error: true, message: "Machine not found." });
-    }
-    try {
-      await this.oauth.addConnectionExecutor({
-        connection_id: connection.connection_id,
-        executor_id: body.executorId,
-        workspace_id: body.workspaceId,
-        scope,
-        added_at: new Date().toISOString(),
-      });
-    } catch {
-      return res.status(409).json({ error: true, message: "That machine is already on this connection." });
-    }
-    return res.status(201).json({ ok: true });
-  }
-
-  async removeConnectionMember({ req, res }: Context) {
-    const sessionId = typeof req.query.sessionId === "string" ? req.query.sessionId : "";
-    const actor = await this.actors.browser(req, sessionId, true);
-    if (!actor.ok) return res.status(401).json({ error: true, message: "Not signed in." });
-    const userId = (actor.actor as { userId: string }).userId;
-
-    const connection = await this.ownedConnection(req.params?.connectionId, userId);
-    if (!connection) return res.status(404).json({ error: true, message: "Connection not found." });
-    const executorId = req.params?.executorId;
-    if (typeof executorId !== "string" || !/^exe_[A-Za-z0-9]{8,64}$/.test(executorId)) {
-      return res.status(400).json({ error: true, message: "Invalid executor id." });
-    }
-    await this.oauth.removeConnectionExecutor({
-      connection_id: connection.connection_id,
-      executor_id: executorId,
-    });
-    return res.json({ ok: true });
   }
 
   /**
    * Owner-driven settings edit: access level and the shell/web families can
    * change after consent (the owner outranks the client's original request;
    * doc 06 tool scopes are recomputed from these flags on every MCP call).
-   * Dropping access to read also clamps every member's scope.
    */
   async updateConnection({ req, res }: Context) {
     const sessionId = typeof req.query.sessionId === "string" ? req.query.sessionId : "";
@@ -530,9 +477,6 @@ export default class RemoteToolsController {
       allow_shell: allowShell,
       allow_web: allowWeb,
     });
-    if (access === "read" && connection.approved_scope === "read_write") {
-      await this.oauth.demoteConnectionMemberScopes({ connection_id: connection.connection_id });
-    }
     return res.json({
       ok: true,
       connection: {

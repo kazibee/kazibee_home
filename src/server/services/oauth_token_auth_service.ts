@@ -4,16 +4,14 @@ import OAuthRepo, {
   type OAuthConnectionScope,
 } from "../repo/oauth_repo";
 import { ConnectClock, ConnectCredentials } from "./connect_auth_primitives";
+import OAuthConnectionMachinesService, {
+  type OAuthConnectionMember,
+} from "./oauth_connection_machines_service";
 import { tokenMatchesResource } from "./oauth_flow_service";
 
 export class InvalidOAuthTokenError extends Error {}
 
-export interface OAuthConnectionMember {
-  executor_id: string;
-  workspace_id: string;
-  scope: OAuthConnectionScope;
-  display_name: string;
-}
+export type { OAuthConnectionMember };
 
 export interface OAuthPrincipal {
   user_id: string;
@@ -22,7 +20,10 @@ export interface OAuthPrincipal {
   approved_scope: OAuthConnectionScope;
   allow_shell: boolean;
   allow_web: boolean;
-  /** Ordered by added_at ASC — the deterministic routing order. */
+  /**
+   * Every active executor the connection's user owns, oldest link first — the
+   * deterministic routing order. Resolved live on every call.
+   */
   members: OAuthConnectionMember[];
 }
 
@@ -33,6 +34,8 @@ const TOKEN_SHAPE = /^[A-Za-z0-9_-]{20,}$/;
 export default class OAuthTokenAuthService {
   constructor(
     @Inject(OAuthRepo) private readonly oauth: OAuthRepo,
+    @Inject(OAuthConnectionMachinesService)
+    private readonly machines: OAuthConnectionMachinesService,
     @Inject(ConnectCredentials) private readonly credentials: ConnectCredentials,
     @Inject(ConnectClock) private readonly clock: ConnectClock,
   ) {}
@@ -67,21 +70,10 @@ export default class OAuthTokenAuthService {
       throw new InvalidOAuthTokenError("Invalid OAuth token");
     }
 
-    // Membership resolves live at every call: adding or removing machines on
-    // the connection takes effect without re-consent or token re-issue, and
-    // an executor the user no longer owns drops out immediately.
-    const rows = await this.oauth.listConnectionExecutors({
-      connection_id: record.connection_id,
-    });
-    const members: OAuthConnectionMember[] = rows
-      .filter((row) => row.executor_state === "active"
-        && row.executor_owner_user_id === record.user_id)
-      .map((row) => ({
-        executor_id: row.executor_id,
-        workspace_id: row.workspace_id,
-        scope: capScope(row.scope, record.approved_scope),
-        display_name: row.executor_display_name,
-      }));
+    // The connection acts as the user: its machines are the user's executors,
+    // resolved live so newly linked machines appear and revoked ones vanish
+    // without re-consent or token re-issue.
+    const members = await this.machines.listForUser(record.user_id, record.approved_scope);
 
     return {
       user_id: record.user_id,
@@ -93,15 +85,6 @@ export default class OAuthTokenAuthService {
       members,
     };
   }
-}
-
-function capScope(
-  member: OAuthConnectionScope,
-  ceiling: OAuthConnectionScope,
-): OAuthConnectionScope {
-  return member === "read_write" && ceiling === "read_write"
-    ? "read_write"
-    : "read";
 }
 
 function activeAccessToken(

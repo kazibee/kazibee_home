@@ -1,14 +1,14 @@
 /**
  * OAuthRepo against REAL SQL.
  *
- * Direct repo-level coverage for the oauth provider tables. The HTTP-facing
+ * Direct repo-level coverage for the OAuth provider tables. The HTTP-facing
  * flows are pinned in the unit tier (oauth*.testdinner.test.ts) on schema
  * doubles; this file pins the repo methods those flows never reach against
- * the production migration DDL: connection listing/aggregation, capability
- * edits, member scope demotion, supersede revocation (tokens then
- * connections), executor membership, code issue/consume (fresh, replayed,
- * expired), token revocation by connection, and every @Single null path.
- * Ids follow the DDL check constraints (oac_/ocn_ + 32 hex, 64-hex hashes).
+ * the production migration DDL: connection listing and capability edits,
+ * supersede revocation (tokens then connections), code issue/consume (fresh,
+ * replayed, expired), token revocation by connection, and every @Single null
+ * path. Ids follow the DDL check constraints (oac_/ocn_ + 32 hex, 64-hex
+ * hashes).
  *
  * Harness matches connect-website-deployment-identity.service.test.ts:
  * "full" migrated template database via test-db.ts and plain `new` repos.
@@ -18,12 +18,10 @@ import type { Database } from "sqlstack";
 import { closeTestDatabase, resetTestDatabase } from "../helpers/test-db";
 import OAuthRepo, { toCreateOAuthClientParams } from "../../src/server/repo/oauth_repo";
 import type { OAuthClientRecord } from "../../src/server/repo/oauth_repo";
-import ConnectExecutorRepo from "../../src/server/repo/connect_executor_repo";
 
 let database: Database;
 
 const repo = new OAuthRepo();
-const executorRepo = new ConnectExecutorRepo();
 
 const NOW = "2026-01-01T00:00:00.000Z";
 const FUTURE = "2999-01-01T00:00:00.000Z";
@@ -76,20 +74,6 @@ async function insertAccount(userId: string): Promise<void> {
   );
 }
 
-async function insertExecutor(executorId: string): Promise<void> {
-  await executorRepo.createExecutor({
-    executor_id: executorId,
-    device_id: `dev_${executorId.slice(4)}`,
-    display_name: `Executor ${executorId}`,
-    platform: "linux",
-    architecture: "x64",
-    executor_version: "1.0.0",
-    key_fingerprint: "f".repeat(64),
-    created_at: NOW,
-    updated_at: NOW,
-    last_seen_at: NOW,
-  });
-}
 
 function connection(
   id: string,
@@ -140,7 +124,7 @@ describe("OAuthRepo clients", () => {
 });
 
 describe("OAuthRepo connections", () => {
-  it("creates, lists with member counts, edits capabilities, and revokes", async () => {
+  it("creates, lists, edits capabilities, and revokes", async () => {
     await connection(CON_LIST_1, CLI_MAIN, { created_at: PAST });
     await connection(CON_LIST_2, CLI_MAIN);
     await connection(CON_REVOKED, CLI_MAIN, { status: "revoked", revoked_at: NOW });
@@ -150,48 +134,21 @@ describe("OAuthRepo connections", () => {
     expect(await repo.findActiveConnectionById({ connection_id: CON_REVOKED })).toBeNull();
     expect(await repo.findActiveConnectionById({ connection_id: connectionId("9") })).toBeNull();
 
-    await insertExecutor("exe_oauth00001");
-    await insertExecutor("exe_oauth00002");
-    await repo.addConnectionExecutor({
-      connection_id: CON_LIST_1, executor_id: "exe_oauth00001",
-      workspace_id: "wrk_oauth00001", scope: "read_write", added_at: NOW,
-    });
-    await repo.addConnectionExecutor({
-      connection_id: CON_LIST_1, executor_id: "exe_oauth00002",
-      workspace_id: "wrk_oauth00002", scope: "read", added_at: FUTURE,
-    });
-
     const listed = await repo.listConnectionsByUser({ user_id: USER });
-    expect(listed.map((row) => [row.connection_id, row.member_count])).toEqual([
-      [CON_LIST_2, 0],
-      [CON_LIST_1, 2],
-    ]);
-    expect(listed[1]).toMatchObject({ client_name: "Kazibee CLI", status: "active" });
+    expect(listed.map((row) => row.connection_id)).toEqual([CON_LIST_2, CON_LIST_1]);
+    expect(listed[1]).toMatchObject({
+      client_name: "Kazibee CLI",
+      status: "active",
+      approved_scope: "read_write",
+    });
     expect(await repo.listConnectionsByUser({ user_id: OTHER_USER })).toEqual([]);
 
-    const members = await repo.listConnectionExecutors({ connection_id: CON_LIST_1 });
-    expect(members.map((member) => member.executor_id))
-      .toEqual(["exe_oauth00001", "exe_oauth00002"]);
-    expect(members[0]).toMatchObject({
-      workspace_id: "wrk_oauth00001",
-      scope: "read_write",
-      executor_display_name: "Executor exe_oauth00001",
-      executor_state: "pending",
-      executor_owner_user_id: null,
-    });
-
-    // Access drops to read: capability edit plus member scope clamp.
     await repo.updateConnectionCapabilities({
       connection_id: CON_LIST_1, approved_scope: "read",
       allow_shell: false, allow_web: true,
     });
-    await repo.demoteConnectionMemberScopes({ connection_id: CON_LIST_1 });
     expect(await repo.findActiveConnectionById({ connection_id: CON_LIST_1 }))
       .toMatchObject({ approved_scope: "read", allow_shell: false, allow_web: true });
-    expect(
-      (await repo.listConnectionExecutors({ connection_id: CON_LIST_1 }))
-        .map((member) => member.scope),
-    ).toEqual(["read", "read"]);
 
     // Capability edits never resurrect or touch revoked connections.
     await repo.updateConnectionCapabilities({
@@ -199,15 +156,6 @@ describe("OAuthRepo connections", () => {
       allow_shell: false, allow_web: false,
     });
     expect(await repo.findActiveConnectionById({ connection_id: CON_REVOKED })).toBeNull();
-
-    await repo.removeConnectionExecutor({
-      connection_id: CON_LIST_1, executor_id: "exe_oauth00002",
-    });
-    expect(
-      (await repo.listConnectionExecutors({ connection_id: CON_LIST_1 }))
-        .map((member) => member.executor_id),
-    ).toEqual(["exe_oauth00001"]);
-    expect(await repo.listConnectionExecutors({ connection_id: connectionId("9") })).toEqual([]);
 
     await repo.revokeConnection({ connection_id: CON_LIST_2, revoked_at: NOW });
     expect(await repo.findActiveConnectionById({ connection_id: CON_LIST_2 })).toBeNull();

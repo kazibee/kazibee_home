@@ -155,11 +155,13 @@
                 {#if connection.allowWeb}<span class="rounded-full bg-blue-50 px-2.5 py-1 text-xs font-bold text-blue-700">Web & browser</span>{/if}
               </div>
 
-              {#if connection.members.length > 0}
-                <p class="mt-3 text-xs text-ink-faint">
-                  Machines: {connection.members.map((member) => member.displayName).join(', ')}
-                </p>
-              {/if}
+              <p class="mt-3 text-xs text-ink-faint" data-test-id="connection-machines">
+                {#if connection.members.length > 0}
+                  Reaches all your linked machines: {connection.members.map((member) => member.displayName).join(', ')}
+                {:else}
+                  Reaches all your linked machines — none linked yet.
+                {/if}
+              </p>
 
               {#if data.editConnectionId === connection.connectionId}
                 <form class="mt-5 border-t border-neutral-100 pt-5" onsubmit={(event) => { event.preventDefault(); input.saveConnection(); }} data-test-id="connection-edit-form">

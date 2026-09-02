@@ -98,14 +98,6 @@ const tokenRecord = (overrides: Record<string, unknown> = {}) => ({
   ...overrides,
 });
 
-const memberRow = (overrides: Record<string, unknown> = {}) => ({
-  connection_id: CONNECTION_ID, executor_id: EXECUTOR_ID, workspace_id: '*',
-  scope: 'read_write', added_at: '2026-01-02T00:00:00.000Z',
-  executor_display_name: 'Build Box', executor_state: 'active',
-  executor_owner_user_id: USER_ID,
-  ...overrides,
-});
-
 const connectionRow = (overrides: Record<string, unknown> = {}) => ({
   connection_id: CONNECTION_ID, user_id: USER_ID, client_id: 'cli_demo0001',
   approved_scope: 'read_write', allow_shell: true, allow_web: false,
@@ -120,10 +112,12 @@ const patAuthMethods = (): Methods => ([
   }],
 ]);
 
-const oauthAuthMethods = (members: unknown[] = [memberRow()]): Methods => ([
+const oauthAuthMethods = (executors: unknown[] = [executorRow()]): Methods => ([
   [OAuthRepo, {
     findActiveTokenWithConnection: returns(tokenRecord()),
-    listConnectionExecutors: returns(members),
+  }],
+  [ConnectExecutorRepo, {
+    listByOwner: returns(executors),
   }],
 ]);
 
@@ -147,7 +141,6 @@ const base = () =>
     .hooks({});
 
 type Methods = readonly (readonly [unknown, Record<string, unknown>])[];
-
 async function request(
   methods: Methods,
   init: { method: string; path: string; headers?: Record<string, string>; query?: Record<string, string>; body?: unknown },
@@ -273,11 +266,16 @@ describe('MCP over an OAuth connection bearer', () => {
     expect(listWorkspaces.inputSchema.properties!.machineId).toMatchObject({ pattern: '^exe_[A-Za-z0-9]{8,64}$' });
   });
 
-  it('list_machines reports the connection membership with live presence', async () => {
+  it('list_machines reports active owner machines with live presence', async () => {
     const { payload } = await mcp([
       ...oauthAuthMethods([
-        memberRow(),
-        memberRow({ executor_id: EXECUTOR_ID_2, executor_display_name: 'Laptop', workspace_id: 'wrk_only00001', scope: 'read' }),
+        executorRow(),
+        executorRow({
+          executor_id: EXECUTOR_ID_2,
+          device_id: 'dev_machine02',
+          display_name: 'Laptop',
+          claimed_at: '2026-01-03T00:00:00.000Z',
+        }),
       ]),
       [RemoteToolDispatchService, {
         presence: control.calls([returns('online'), returns(null)]),
@@ -290,14 +288,64 @@ describe('MCP over an OAuth connection bearer', () => {
           ok: true,
           machines: [
             { machineId: EXECUTOR_ID, name: 'Build Box', presence: 'online', workspaceAccess: 'all', scope: 'read_write' },
-            { machineId: EXECUTOR_ID_2, name: 'Laptop', presence: 'offline', workspaceAccess: 'wrk_only00001', scope: 'read' },
+            { machineId: EXECUTOR_ID_2, name: 'Laptop', presence: 'offline', workspaceAccess: 'all', scope: 'read_write' },
           ],
         },
       },
     });
   });
 
-  it('routes an rws_ workspace call to its member and translates the id back', async () => {
+  it('list_machines includes a machine linked after consent on the next call', async () => {
+    const env = await base()
+      .methods([
+        [OAuthRepo, {
+          findActiveTokenWithConnection: control.times(2, returns(tokenRecord())),
+        }],
+        [ConnectExecutorRepo, {
+          listByOwner: control.calls([
+            returns([executorRow()]),
+            returns([
+              executorRow(),
+              executorRow({
+                executor_id: EXECUTOR_ID_2,
+                device_id: 'dev_machine02',
+                display_name: 'Laptop',
+                claimed_at: '2026-01-03T00:00:00.000Z',
+              }),
+            ]),
+          ]),
+        }],
+        [RemoteToolDispatchService, {
+          presence: control.calls([returns('online'), returns('online'), returns('online')]),
+        }],
+      ])
+      .build();
+    try {
+      const first = await env.dinner.request({
+        method: 'POST',
+        path: '/v1/remote-tools/mcp',
+        headers: { authorization: `Bearer ${OAUTH_TOKEN}` },
+        body: rpc('tools/call', { name: 'list_machines', arguments: {} }),
+      });
+      expect((await first.json()).result.structuredContent.machines).toHaveLength(1);
+
+      const second = await env.dinner.request({
+        method: 'POST',
+        path: '/v1/remote-tools/mcp',
+        headers: { authorization: `Bearer ${OAUTH_TOKEN}` },
+        body: rpc('tools/call', { name: 'list_machines', arguments: {} }),
+      });
+      expect((await second.json()).result.structuredContent.machines).toMatchObject([
+        { machineId: EXECUTOR_ID },
+        { machineId: EXECUTOR_ID_2 },
+      ]);
+      await env.verify();
+    } finally {
+      await env.dispose();
+    }
+  });
+
+  it('routes an rws_ workspace call to its owner machine and translates the id back', async () => {
     const { payload } = await mcp([
       ...oauthAuthMethods(),
       [RemoteWorkspaceRepo, {
@@ -330,9 +378,9 @@ describe('MCP over an OAuth connection bearer', () => {
     });
   });
 
-  it('rejects an rws_ workspace whose executor is not on the connection', async () => {
+  it('rejects an rws_ workspace whose machine is no longer owned and active', async () => {
     const { payload } = await mcp([
-      ...oauthAuthMethods([memberRow({ executor_id: EXECUTOR_ID_2 })]),
+      ...oauthAuthMethods([executorRow({ state: 'revoked' })]),
       [RemoteWorkspaceRepo, {
         findRemoteWorkspace: control.once(returns({
           remote_workspace_id: RWS_ID, user_id: USER_ID, executor_id: EXECUTOR_ID,
@@ -343,11 +391,17 @@ describe('MCP over an OAuth connection bearer', () => {
       [RemoteToolDispatchService, { callTarget: control.never() }],
     ], rpc('tools/call', { name: 'list_files', arguments: { workspaceId: RWS_ID } }), OAUTH_TOKEN);
     expect(payload).toMatchObject({
-      result: { isError: true, structuredContent: { code: 'WORKSPACE_UNAVAILABLE' } },
+      result: {
+        isError: true,
+        structuredContent: {
+          code: 'WORKSPACE_UNAVAILABLE',
+          message: "That workspace's machine is no longer linked to your account.",
+        },
+      },
     });
   });
 
-  it('rejects list_workspaces for a machine that is not on the connection', async () => {
+  it('rejects list_workspaces for a machine that is not linked to the account', async () => {
     const { payload } = await mcp([
       ...oauthAuthMethods(),
       [RemoteToolDispatchService, { callTarget: control.never() }],
@@ -385,27 +439,29 @@ describe('MCP over an OAuth connection bearer', () => {
     });
   });
 
-  it('routes directly through a single member and guards mismatched plain workspace ids', async () => {
-    const success = await mcp([
-      ...oauthAuthMethods([memberRow({ workspace_id: 'wrk_pinned0001' })]),
+  it('routes both unbound calls and plain workspace ids through an online owner machine', async () => {
+    const unbound = await mcp([
+      ...oauthAuthMethods(),
       [RemoteToolDispatchService, {
         callTarget: control.once(returns({ ok: true, status: 'succeeded', payload: { ok: 1 }, effectState: 'none' })),
       }],
     ], rpc('tools/call', { name: 'tool_help', arguments: {} }), OAUTH_TOKEN);
-    expect(success.payload).toMatchObject({ result: { isError: false } });
+    expect(unbound.payload).toMatchObject({ result: { isError: false } });
 
-    const mismatch = await mcp([
-      ...oauthAuthMethods([memberRow({ workspace_id: 'wrk_pinned0001' })]),
-      [RemoteToolDispatchService, { callTarget: control.never() }],
+    const plainWorkspace = await mcp([
+      ...oauthAuthMethods(),
+      [RemoteToolDispatchService, {
+        callTarget: control.once(returns({ ok: true, status: 'succeeded', payload: { ok: 1 }, effectState: 'none' })),
+      }],
     ], rpc('tools/call', { name: 'list_files', arguments: { workspaceId: 'wrk_other00001' } }), OAUTH_TOKEN);
-    expect(mismatch.payload).toMatchObject({
-      result: { isError: true, structuredContent: { code: 'WORKSPACE_UNAVAILABLE' } },
+    expect(plainWorkspace.payload).toMatchObject({
+      result: { isError: false, structuredContent: { ok: 1 } },
     });
   });
 
-  it('reports EXECUTOR_OFFLINE when no member of a multi-machine connection is online', async () => {
+  it('reports EXECUTOR_OFFLINE when none of the owner machines is online', async () => {
     const { payload } = await mcp([
-      ...oauthAuthMethods([memberRow(), memberRow({ executor_id: EXECUTOR_ID_2 })]),
+      ...oauthAuthMethods([executorRow(), executorRow({ executor_id: EXECUTOR_ID_2 })]),
       [RemoteToolDispatchService, {
         presence: control.calls([returns('offline'), returns(null)]),
         callTarget: control.never(),
@@ -416,9 +472,9 @@ describe('MCP over an OAuth connection bearer', () => {
     });
   });
 
-  it('routes to the first online member of a multi-machine connection', async () => {
+  it('routes to the first online owner machine in link order', async () => {
     const { payload } = await mcp([
-      ...oauthAuthMethods([memberRow(), memberRow({ executor_id: EXECUTOR_ID_2 })]),
+      ...oauthAuthMethods([executorRow(), executorRow({ executor_id: EXECUTOR_ID_2 })]),
       [RemoteToolDispatchService, {
         presence: control.calls([returns('offline'), returns('online')]),
         callTarget: control.once(returns({ ok: true, status: 'succeeded', payload: { ok: 1 }, effectState: 'none' })),
@@ -487,14 +543,16 @@ describe('grant management', () => {
 });
 
 describe('OAuth connection management', () => {
-  it('GET /connections lists connections with their memberships', async () => {
+  it('GET /connections lists connections with live owner machines', async () => {
     const { status, payload } = await request([
       ...browserSessionMethods(),
       [OAuthRepo, {
         listConnectionsByUser: control.once(returns([
-          { ...connectionRow(), client_name: 'ChatGPT', member_count: 1 },
+          { ...connectionRow(), client_name: 'ChatGPT' },
         ])),
-        listConnectionExecutors: control.once(returns([memberRow()])),
+      }],
+      [ConnectExecutorRepo, {
+        listByOwner: control.once(returns([executorRow()])),
       }],
     ], {
       method: 'GET', path: '/v1/remote-tools/connections',
@@ -509,7 +567,7 @@ describe('OAuth connection management', () => {
         status: 'active', createdAt: '2026-01-01T00:00:00.000Z',
         members: [{
           executorId: EXECUTOR_ID, displayName: 'Build Box', workspaceId: '*',
-          scope: 'read_write', addedAt: '2026-01-02T00:00:00.000Z',
+          scope: 'read_write',
         }],
       }],
     });
@@ -527,13 +585,12 @@ describe('OAuth connection management', () => {
     expect(status).toBe(401);
   });
 
-  it('POST update demotes member scopes when access drops from read_write to read', async () => {
+  it('POST update changes the owner-scoped connection capabilities', async () => {
     const { status, payload } = await request([
       ...browserSessionMethods(),
       [OAuthRepo, {
         findActiveConnectionById: control.once(returns(connectionRow())),
         updateConnectionCapabilities: control.once(returns(undefined)),
-        demoteConnectionMemberScopes: control.once(returns(undefined)),
       }],
     ], {
       method: 'POST', path: `/v1/remote-tools/connections/${CONNECTION_ID}/update`,
@@ -550,13 +607,12 @@ describe('OAuth connection management', () => {
     });
   });
 
-  it('POST update keeps existing capabilities for an empty body and skips the demotion', async () => {
+  it('POST update keeps existing capabilities for an empty body', async () => {
     const { status, payload } = await request([
       ...browserSessionMethods(),
       [OAuthRepo, {
         findActiveConnectionById: control.once(returns(connectionRow({ approved_scope: 'read' }))),
         updateConnectionCapabilities: control.once(returns(undefined)),
-        demoteConnectionMemberScopes: control.never(),
       }],
     ], {
       method: 'POST', path: `/v1/remote-tools/connections/${CONNECTION_ID}/update`,
@@ -579,89 +635,6 @@ describe('OAuth connection management', () => {
       headers: ownerHeaders(), query: { sessionId: SESSION_ID }, body: {},
     });
     expect(status).toBe(404);
-  });
-
-  it('POST members adds an owned active machine to the connection', async () => {
-    const { status, payload } = await request([
-      ...browserSessionMethods(),
-      [OAuthRepo, {
-        findActiveConnectionById: control.once(returns(connectionRow())),
-        addConnectionExecutor: control.once(returns(undefined)),
-      }],
-      [ConnectExecutorRepo, { findByExecutorId: control.once(returns(executorRow())) }],
-    ], {
-      method: 'POST', path: `/v1/remote-tools/connections/${CONNECTION_ID}/members`,
-      headers: ownerHeaders(), query: { sessionId: SESSION_ID },
-      body: { executorId: EXECUTOR_ID, workspaceId: '*', scope: 'read' },
-    });
-    expect(status).toBe(201);
-    expect(payload).toEqual({ ok: true });
-  });
-
-  it('POST members rejects a member scope beyond the approved connection scope', async () => {
-    const { status, payload } = await request([
-      ...browserSessionMethods(),
-      [OAuthRepo, {
-        findActiveConnectionById: control.once(returns(connectionRow({ approved_scope: 'read' }))),
-        addConnectionExecutor: control.never(),
-      }],
-    ], {
-      method: 'POST', path: `/v1/remote-tools/connections/${CONNECTION_ID}/members`,
-      headers: ownerHeaders(), query: { sessionId: SESSION_ID },
-      body: { executorId: EXECUTOR_ID, workspaceId: '*', scope: 'read_write' },
-    });
-    expect(status).toBe(400);
-    expect(payload).toMatchObject({ message: "Member scope exceeds the connection's approved scope." });
-  });
-
-  it('POST members answers 404 for a machine the user does not own', async () => {
-    const { status } = await request([
-      ...browserSessionMethods(),
-      [OAuthRepo, {
-        findActiveConnectionById: control.once(returns(connectionRow())),
-        addConnectionExecutor: control.never(),
-      }],
-      [ConnectExecutorRepo, {
-        findByExecutorId: control.once(returns(executorRow({ owner_user_id: 'usr_other0001' }))),
-      }],
-    ], {
-      method: 'POST', path: `/v1/remote-tools/connections/${CONNECTION_ID}/members`,
-      headers: ownerHeaders(), query: { sessionId: SESSION_ID },
-      body: { executorId: EXECUTOR_ID, workspaceId: '*' },
-    });
-    expect(status).toBe(404);
-  });
-
-  it('POST members answers 409 when the machine is already on the connection', async () => {
-    const { status } = await request([
-      ...browserSessionMethods(),
-      [OAuthRepo, {
-        findActiveConnectionById: control.once(returns(connectionRow())),
-        addConnectionExecutor: control.throws(new Error('UNIQUE constraint failed')),
-      }],
-      [ConnectExecutorRepo, { findByExecutorId: control.once(returns(executorRow())) }],
-    ], {
-      method: 'POST', path: `/v1/remote-tools/connections/${CONNECTION_ID}/members`,
-      headers: ownerHeaders(), query: { sessionId: SESSION_ID },
-      body: { executorId: EXECUTOR_ID, workspaceId: '*' },
-    });
-    expect(status).toBe(409);
-  });
-
-  it('POST members remove detaches the machine', async () => {
-    const { status, payload } = await request([
-      ...browserSessionMethods(),
-      [OAuthRepo, {
-        findActiveConnectionById: control.once(returns(connectionRow())),
-        removeConnectionExecutor: control.once(returns(undefined)),
-      }],
-    ], {
-      method: 'POST',
-      path: `/v1/remote-tools/connections/${CONNECTION_ID}/members/${EXECUTOR_ID}/remove`,
-      headers: ownerHeaders(), query: { sessionId: SESSION_ID },
-    });
-    expect(status).toBe(200);
-    expect(payload).toEqual({ ok: true });
   });
 
   it('POST revoke kills the connection and all of its tokens', async () => {

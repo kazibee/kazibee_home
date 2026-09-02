@@ -7,7 +7,6 @@ import ConnectExecutorActorResolver from "../services/connect_executor_actor_res
 import OAuthAuthorizeService, {
   type OAuthAuthorizationFailure,
   type OAuthAuthorizationParams,
-  type OAuthExecutorSelection,
 } from "../services/oauth_authorize_service";
 
 type ActionArgs = { req: Request; res: Response };
@@ -33,26 +32,6 @@ function authorizationParams(source: unknown): OAuthAuthorizationParams {
   return Object.fromEntries(
     OAUTH_PARAM_NAMES.map((name) => [name, recordString(source, name)]),
   ) as unknown as OAuthAuthorizationParams;
-}
-
-/** Accepts `machines: {executor_id, workspace_id, scope?}[]`. */
-function bodySelections(req: Request): OAuthExecutorSelection[] {
-  const body = req.body && typeof req.body === "object"
-    ? req.body as Record<string, unknown>
-    : {};
-  if (!Array.isArray(body.machines)) return [];
-  return body.machines.flatMap((entry): OAuthExecutorSelection[] => {
-    if (!entry || typeof entry !== "object") return [];
-    const value = entry as Record<string, unknown>;
-    if (typeof value.executor_id !== "string" || typeof value.workspace_id !== "string") return [];
-    return [{
-      executor_id: value.executor_id,
-      workspace_id: value.workspace_id,
-      ...(value.scope === "read" || value.scope === "read_write"
-        ? { scope: value.scope }
-        : {}),
-    }];
-  });
 }
 
 @Component()
@@ -120,7 +99,6 @@ export default class OAuthAuthorizeController {
       const result = await this.oauth.approve(
         (actor.actor as { userId: string }).userId,
         authorizationParams(req.body),
-        bodySelections(req),
         recordString(req.body, "approved_scope"),
       );
       if (!result.ok) return this.jsonOAuthError(res, result);

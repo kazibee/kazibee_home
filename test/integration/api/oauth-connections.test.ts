@@ -184,13 +184,12 @@ describe("OAuth connections end to end", () => {
     expect(context.body.requested_shell).toBe(true);
     expect(context.body.requested_web).toBe(true);
 
-    // Approve creates the connection + membership + one-minute code.
+    // Approve creates the owner-scoped connection and one-minute code.
     const approve = await testApp.agent.post("/oauth/consent/approve")
       .set("x-csrf-token", csrf)
       .send({
         ...oauthParams,
         sessionId,
-        machines: [{ executor_id: claim.executorId, workspace_id: WORKSPACE_ID, scope: "read_write" }],
         approved_scope: "kazibee:read kazibee:write kazibee:shell kazibee:web",
       });
     expect(approve.status, JSON.stringify(approve.body)).toBe(200);
@@ -220,7 +219,7 @@ describe("OAuth connections end to end", () => {
     });
     expect(replay.ok).toBe(false);
 
-    // The access token drives the MCP endpoint end to end.
+    // The access token drives an unbound MCP call end to end.
     const call = await testApp.agent.post("/v1/remote-tools/mcp")
       .set("authorization", `Bearer ${tokens.access_token}`)
       .send({
@@ -232,7 +231,7 @@ describe("OAuth connections end to end", () => {
     expect(call.body.result.structuredContent.content).toBe("# OAuth demo");
     const dispatchedPayload = (coordinator.dispatched.at(-1) as { payload: { scopes: string[]; workspaceId: string } }).payload;
     expect(dispatchedPayload.scopes).toEqual(["workspace.read", "workspace.write", "shell.execute", "web.read", "browser.fetch"]);
-    expect(dispatchedPayload.workspaceId).toBe(WORKSPACE_ID);
+    expect(dispatchedPayload.workspaceId).toBe("*");
 
     // Workspace identity is server-minted: list_workspaces returns rws_ ids,
     // and addressing by that id dispatches with the machine-local id.

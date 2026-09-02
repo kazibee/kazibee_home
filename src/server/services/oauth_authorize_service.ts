@@ -79,13 +79,6 @@ export type OAuthApproveResult =
   | { ok: true; redirectTo: string }
   | OAuthAuthorizationFailure;
 
-export interface OAuthExecutorSelection {
-  executor_id: string;
-  workspace_id: string;
-  /** Explicit per-executor choice; defaults to the overall approved scope. */
-  scope?: OAuthConnectionScope;
-}
-
 @Component()
 export default class OAuthAuthorizeService {
   constructor(
@@ -215,15 +208,16 @@ export default class OAuthAuthorizeService {
   }
 
   /**
-   * Re-validates every OAuth value and the user's live executor ownership
-   * before persisting a connection or issuing an authorization code. Write
-   * order is connection -> memberships -> code so any mid-sequence failure
-   * leaves only an inert connection with no code and no tokens.
+   * Re-validates every OAuth value before persisting a connection or issuing
+   * an authorization code. The connection is owner-scoped: it carries no
+   * machine list, because the machines it can reach are simply the user's
+   * executors, resolved live on every MCP call. Write order is connection ->
+   * code so a mid-sequence failure leaves only an inert connection with no
+   * code and no tokens.
    */
   async approve(
     userId: string,
     params: OAuthAuthorizationParams,
-    selections: OAuthExecutorSelection[],
     approvedScopeValue: string,
   ): Promise<OAuthApproveResult> {
     const validated = await this.validate(params);
@@ -243,41 +237,6 @@ export default class OAuthAuthorizeService {
       );
     }
 
-    const uniqueSelections = new Map<string, OAuthExecutorSelection>();
-    for (const selection of selections) {
-      if (selection.executor_id && selection.workspace_id) {
-        uniqueSelections.set(selection.executor_id, selection);
-      }
-    }
-    if (uniqueSelections.size === 0) {
-      return failure(
-        "invalid_request",
-        "At least one machine is required",
-        safeRedirect(validated),
-      );
-    }
-
-    // Live ownership check per selection; scope defaults to the approved
-    // scope and is always capped by it.
-    const members: Array<{ executor_id: string; workspace_id: string; scope: OAuthConnectionScope }> = [];
-    for (const selection of uniqueSelections.values()) {
-      const executor = await this.executors.findByExecutorId({
-        executor_id: selection.executor_id,
-      });
-      if (!executor || executor.state !== "active" || executor.owner_user_id !== userId) {
-        return failure(
-          "invalid_scope",
-          "No access to a selected machine",
-          safeRedirect(validated),
-        );
-      }
-      members.push({
-        executor_id: selection.executor_id,
-        workspace_id: selection.workspace_id,
-        scope: capScope(approvedScope.access, selection.scope ?? approvedScope.access),
-      });
-    }
-
     const connectionId = `ocn_${randomBytes(16).toString("hex")}`;
     const createdAt = this.clock.now().toISOString();
     await this.oauth.createConnection({
@@ -291,23 +250,6 @@ export default class OAuthAuthorizeService {
       created_at: createdAt,
       revoked_at: null,
     });
-    try {
-      for (const member of members) {
-        await this.oauth.addConnectionExecutor({
-          connection_id: connectionId,
-          executor_id: member.executor_id,
-          workspace_id: member.workspace_id,
-          scope: member.scope,
-          added_at: createdAt,
-        });
-      }
-    } catch (error) {
-      await this.oauth.revokeConnection({
-        connection_id: connectionId,
-        revoked_at: this.clock.now().toISOString(),
-      }).catch(() => undefined);
-      throw error;
-    }
 
     let code: string;
     try {
@@ -400,15 +342,6 @@ function safeRedirect(
     redirectUri: validation.params.redirect_uri,
     state: validation.params.state,
   };
-}
-
-function capScope(
-  ceiling: OAuthConnectionScope,
-  chosen: OAuthConnectionScope,
-): OAuthConnectionScope {
-  return ceiling === "read_write" && chosen === "read_write"
-    ? "read_write"
-    : "read";
 }
 
 function validRedirectTarget(value: string): boolean {

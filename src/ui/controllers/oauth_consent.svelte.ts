@@ -39,22 +39,21 @@ export interface OAuthConsentData {
   /** Families the client asked for beyond workspace access. */
   requestedShell: boolean;
   requestedWeb: boolean;
-  /** User's toggles; capped by the requested families. */
+  /** User's toggles; the owner may grant families the app did not request. */
   allowShell: boolean;
   allowWeb: boolean;
+  /** Owner's write choice; capped by the requested access. */
+  allowWrite: boolean;
+  /**
+   * Informational: the machines the app will reach today. A connection acts
+   * as the user, so it also reaches machines linked later — nothing is picked.
+   */
   executors: ConsentExecutor[];
-  selectedExecutorIds: string[];
-  /** Chosen workspace per executor; required to grant that machine. */
-  workspaceChoices: Record<string, string>;
-  /** Per-machine chosen access; defaults to the requested access. */
-  executorScopes: Record<string, 'read' | 'read_write'>;
   loginHref: string;
 }
 
 export interface OAuthConsentInput {
-  toggleExecutor(executorId: string): void;
-  setWorkspace(executorId: string, workspaceId: string): void;
-  setExecutorScope(executorId: string, scope: 'read' | 'read_write'): void;
+  setAccess(access: 'read' | 'read_write'): void;
   setFamily(family: 'shell' | 'web', enabled: boolean): void;
   approve(): Promise<void>;
   deny(): Promise<void>;
@@ -72,10 +71,8 @@ implements PageController<OAuthConsentData, OAuthConsentInput> {
     requestedWeb: false,
     allowShell: false,
     allowWeb: false,
+    allowWrite: false,
     executors: [],
-    selectedExecutorIds: [],
-    workspaceChoices: {},
-    executorScopes: {},
     loginHref: '/connect/login',
   });
 
@@ -87,28 +84,11 @@ implements PageController<OAuthConsentData, OAuthConsentInput> {
   }
 
   input: OAuthConsentInput = {
-    toggleExecutor: (executorId) => {
-      if (!this.data.executors.some((executor) => executor.executor_id === executorId)) {
-        return;
-      }
-      this.data.selectedExecutorIds = this.data.selectedExecutorIds.includes(executorId)
-        ? this.data.selectedExecutorIds.filter((id) => id !== executorId)
-        : [...this.data.selectedExecutorIds, executorId];
-    },
-
-    setWorkspace: (executorId, workspaceId) => {
-      const executor = this.data.executors.find(
-        (candidate) => candidate.executor_id === executorId,
-      );
-      if (!executor) return;
-      if (workspaceId !== '*'
-        && !executor.workspaces.some((workspace) => workspace.workspace_id === workspaceId)) {
-        return;
-      }
-      this.data.workspaceChoices = {
-        ...this.data.workspaceChoices,
-        [executorId]: workspaceId,
-      };
+    setAccess: (access) => {
+      // Write access is capped by the request: an app that asked to read
+      // must not silently gain writes.
+      if (access === 'read_write' && this.data.requestedAccess !== 'read_write') return;
+      this.data.allowWrite = access === 'read_write';
     },
 
     setFamily: (family, enabled) => {
@@ -121,36 +101,12 @@ implements PageController<OAuthConsentData, OAuthConsentInput> {
       }
     },
 
-    setExecutorScope: (executorId, scope) => {
-      if (scope === 'read_write' && this.data.requestedAccess !== 'read_write') return;
-      this.data.executorScopes = {
-        ...this.data.executorScopes,
-        [executorId]: scope,
-      };
-    },
-
     approve: async () => {
-      const machines = this.data.selectedExecutorIds.flatMap((executorId) => {
-        const workspaceId = this.data.workspaceChoices[executorId];
-        if (!workspaceId) return [];
-        return [{
-          executor_id: executorId,
-          workspace_id: workspaceId,
-          scope: this.data.executorScopes[executorId] ?? this.data.requestedAccess,
-        }];
-      });
-      if (machines.length === 0) {
-        this.data.error = 'Choose at least one machine (and its workspace) before approving access.';
-        return;
-      }
-      const wantsWrite = this.data.requestedAccess === 'read_write'
-        && machines.some((machine) => machine.scope === 'read_write');
       const parts = ['kazibee:read'];
-      if (wantsWrite) parts.push('kazibee:write');
+      if (this.data.allowWrite && this.data.requestedAccess === 'read_write') parts.push('kazibee:write');
       if (this.data.allowShell) parts.push('kazibee:shell');
       if (this.data.allowWeb) parts.push('kazibee:web');
       await this.submit('/oauth/consent/approve', {
-        machines,
         approved_scope: parts.join(' '),
       });
     },
@@ -211,32 +167,8 @@ implements PageController<OAuthConsentData, OAuthConsentInput> {
       this.data.requestedWeb = context.requested_web === true;
       this.data.allowShell = this.data.requestedShell;
       this.data.allowWeb = this.data.requestedWeb;
+      this.data.allowWrite = context.requested_access === 'read_write';
       this.data.executors = context.executors;
-
-      const online = context.executors.filter((executor) => executor.presence === 'online');
-      const retained = this.data.selectedExecutorIds.filter((id) =>
-        context.executors.some((executor) => executor.executor_id === id),
-      );
-      this.data.selectedExecutorIds = retained.length > 0
-        ? retained
-        : online[0]
-          ? [online[0].executor_id]
-          : [];
-      const workspaces: Record<string, string> = {};
-      const scopes: Record<string, 'read' | 'read_write'> = {};
-      for (const executor of context.executors) {
-        const kept = this.data.workspaceChoices[executor.executor_id];
-        // '*' (all workspaces) is always offered — it also covers machines
-        // that are offline and cannot report their workspace list yet.
-        workspaces[executor.executor_id] = kept === '*'
-          || (kept && executor.workspaces.some((workspace) => workspace.workspace_id === kept))
-          ? kept
-          : '*';
-        const keptScope = this.data.executorScopes[executor.executor_id];
-        scopes[executor.executor_id] = keptScope === 'read' ? 'read' : context.requested_access;
-      }
-      this.data.workspaceChoices = workspaces;
-      this.data.executorScopes = scopes;
       this.data.status = 'ready';
     } catch (error) {
       this.data.status = 'error';

@@ -98,14 +98,6 @@ const tokenRecord = () => ({
   connection_revoked_at: null,
 });
 
-const memberRow = (overrides: Record<string, unknown> = {}) => ({
-  connection_id: CONNECTION_ID, executor_id: EXECUTOR_ID, workspace_id: '*',
-  scope: 'read_write', added_at: '2026-01-02T00:00:00.000Z',
-  executor_display_name: 'Build Box', executor_state: 'active',
-  executor_owner_user_id: USER_ID,
-  ...overrides,
-});
-
 const connectionRow = (overrides: Record<string, unknown> = {}) => ({
   connection_id: CONNECTION_ID, user_id: USER_ID, client_id: 'cli_demo0001',
   approved_scope: 'read_write', allow_shell: true, allow_web: false,
@@ -127,10 +119,12 @@ const patAuthMethods = (): Methods => ([
   }],
 ]);
 
-const oauthAuthMethods = (members: unknown[] = [memberRow()]): Methods => ([
+const oauthAuthMethods = (executors: unknown[] = [executorRow()]): Methods => ([
   [OAuthRepo, {
     findActiveTokenWithConnection: returns(tokenRecord()),
-    listConnectionExecutors: returns(members),
+  }],
+  [ConnectExecutorRepo, {
+    listByOwner: returns(executors),
   }],
 ]);
 
@@ -256,7 +250,7 @@ describe('MCP dispatch result edge cases over a PAT grant', () => {
 });
 
 describe('OAuth connection routing edge cases', () => {
-  it('reports EXECUTOR_OFFLINE for a connection with no members at all', async () => {
+  it('reports EXECUTOR_OFFLINE when the owner has no active machines', async () => {
     const { payload } = await mcp([
       ...oauthAuthMethods([]),
       [RemoteToolDispatchService, { callTarget: control.never() }],
@@ -266,9 +260,9 @@ describe('OAuth connection routing edge cases', () => {
     });
   });
 
-  it('routes an rws_ workspace to a member pinned to that exact local workspace', async () => {
+  it('routes an rws_ workspace to its active owner machine', async () => {
     const { payload } = await mcp([
-      ...oauthAuthMethods([memberRow({ workspace_id: 'wrk_local0001' })]),
+      ...oauthAuthMethods([executorRow()]),
       [RemoteWorkspaceRepo, { findRemoteWorkspace: control.once(returns(remoteWorkspaceRow())) }],
       [RemoteToolDispatchService, {
         callTarget: control.once(returns({
@@ -410,60 +404,6 @@ describe('OAuth connection management negative paths', () => {
     expect(status).toBe(401);
   });
 
-  it('POST members answers 401 without a sessionId query', async () => {
-    const { status } = await request([
-      [ConnectBrowserSessionRepo, { findByTokenHash: returns(null) }],
-      [OAuthRepo, { addConnectionExecutor: control.never() }],
-    ], {
-      method: 'POST', path: `/v1/remote-tools/connections/${CONNECTION_ID}/members`,
-      headers: ownerHeaders(),
-      body: { executorId: EXECUTOR_ID, workspaceId: '*' },
-    });
-    expect(status).toBe(401);
-  });
-
-  it('POST members answers 404 for an unknown connection', async () => {
-    const { status } = await request([
-      ...browserSessionMethods(),
-      [OAuthRepo, {
-        findActiveConnectionById: control.once(returns(null)),
-        addConnectionExecutor: control.never(),
-      }],
-    ], {
-      method: 'POST', path: `/v1/remote-tools/connections/${CONNECTION_ID}/members`,
-      headers: ownerHeaders(), query: { sessionId: SESSION_ID },
-      body: { executorId: EXECUTOR_ID, workspaceId: '*' },
-    });
-    expect(status).toBe(404);
-  });
-
-  it('POST members remove answers 401 without a sessionId query', async () => {
-    const { status } = await request([
-      [ConnectBrowserSessionRepo, { findByTokenHash: returns(null) }],
-      [OAuthRepo, { removeConnectionExecutor: control.never() }],
-    ], {
-      method: 'POST',
-      path: `/v1/remote-tools/connections/${CONNECTION_ID}/members/${EXECUTOR_ID}/remove`,
-      headers: ownerHeaders(),
-    });
-    expect(status).toBe(401);
-  });
-
-  it('POST members remove answers 404 for an unknown connection', async () => {
-    const { status } = await request([
-      ...browserSessionMethods(),
-      [OAuthRepo, {
-        findActiveConnectionById: control.once(returns(null)),
-        removeConnectionExecutor: control.never(),
-      }],
-    ], {
-      method: 'POST',
-      path: `/v1/remote-tools/connections/${CONNECTION_ID}/members/${EXECUTOR_ID}/remove`,
-      headers: ownerHeaders(), query: { sessionId: SESSION_ID },
-    });
-    expect(status).toBe(404);
-  });
-
   it('POST update answers 401 without a sessionId query', async () => {
     const { status } = await request([
       [ConnectBrowserSessionRepo, { findByTokenHash: returns(null) }],
@@ -481,7 +421,6 @@ describe('OAuth connection management negative paths', () => {
       [OAuthRepo, {
         findActiveConnectionById: control.once(returns(connectionRow())),
         updateConnectionCapabilities: control.once(returns(undefined)),
-        demoteConnectionMemberScopes: control.never(),
       }],
     ], {
       method: 'POST', path: `/v1/remote-tools/connections/${CONNECTION_ID}/update`,

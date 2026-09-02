@@ -2,9 +2,9 @@
  * Direct unit coverage for the small pure helpers of the OAuth module:
  * scope-string mapping (oauth_scopes), resource-tag checks
  * (oauth_flow_service.tokenMatchesResource), and the body/param coercion
- * helpers of the two OAuth controllers (fields()/recordString()/
- * bodySelections() non-object arms), exercised through plain controller
- * instances with hand-rolled fakes. No server, no database, no IoC.
+ * helpers of the two OAuth controllers (fields()/recordString()), exercised
+ * through plain controller instances with hand-rolled fakes. No server,
+ * database, or IoC.
  */
 import { describe, it, expect } from "vitest";
 import {
@@ -125,15 +125,15 @@ describe("OAuthController.fields() body coercion arms", () => {
 });
 
 describe("OAuthAuthorizeController body coercion arms", () => {
-  it("a non-object body yields an empty sessionId and empty selections", async () => {
-    const seen: { selections?: unknown } = {};
+  it("a non-object body yields an empty sessionId and approved scope", async () => {
+    const seen: { approvedScope?: unknown } = {};
     const oauth = {
       approve: async (
         _userId: string,
         _params: unknown,
-        selections: unknown,
+        approvedScope: unknown,
       ) => {
-        seen.selections = selections;
+        seen.approvedScope = approvedScope;
         return { ok: false as const, error: "invalid_request" as const, message: "nope" };
       },
     };
@@ -148,7 +148,7 @@ describe("OAuthAuthorizeController body coercion arms", () => {
     const { res, out } = fakeRes();
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     await controller.approve({ req: { body: "raw-string-body" }, res } as any);
-    expect(seen.selections).toEqual([]);
+    expect(seen.approvedScope).toBe("");
     expect(out.status).toBe(400);
     expect(out.json).toEqual({ error: "invalid_request", message: "nope" });
   });

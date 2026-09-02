@@ -2,10 +2,10 @@
  * OAuth authorization deep flows through testDinner (no server, no database).
  *
  * Extends oauth_authorize.testdinner.test.ts with the consent APPROVE happy
- * path (createConnection -> memberships -> code issuance), its compensation
- * branches, the consent context projection, remaining validate() branches, and
- * the CIMD https client-id resolution path (global fetch stubbed via
- * vi.stubGlobal; restored after every test).
+ * path (connection -> code issuance), its compensation branch, the consent
+ * context projection, remaining validate() branches, and the CIMD https
+ * client-id resolution path (global fetch stubbed via vi.stubGlobal; restored
+ * after every test).
  */
 import { afterEach, describe, it, expect, vi } from 'vitest';
 import { readFileSync } from 'node:fs';
@@ -113,7 +113,7 @@ afterEach(() => {
 });
 
 describe('oauth authorize deep flows through testDinner', () => {
-  it('POST /oauth/consent/approve happy path persists connection, memberships, code — in order', async () => {
+  it('POST /oauth/consent/approve succeeds with zero linked machines and writes connection then code', async () => {
     const written: string[] = [];
     const recorded = <T>(name: string, value: T) =>
       control.returns((async () => { written.push(name); return value; })());
@@ -123,15 +123,12 @@ describe('oauth authorize deep flows through testDinner', () => {
         [OAuthRepo, {
           findClientById: control.returns(Promise.resolve(dcrClient)),
           createConnection: control.once(recorded('connection', undefined)),
-          addConnectionExecutor: control.once(recorded('member', undefined)),
           createCode: control.once(recorded('code', undefined)),
           revokeSupersededConnectionTokens: control.once(recorded('supersede-tokens', undefined)),
           revokeSupersededConnections: control.once(recorded('supersede-connections', undefined)),
           revokeConnection: control.never(),
         }],
-        [ConnectExecutorRepo, {
-          findByExecutorId: control.once(control.returns(Promise.resolve(executor))),
-        }],
+        [ConnectExecutorRepo, { findByExecutorId: control.never() }],
       ])
       .build();
     const response = await env.dinner.request({
@@ -142,7 +139,6 @@ describe('oauth authorize deep flows through testDinner', () => {
         sessionId: 'ses_1',
         ...validParams,
         approved_scope: 'kazibee:read',
-        machines: [{ executor_id: 'exe_1', workspace_id: 'ws_1' }],
       },
     });
     expect(response.status).toBe(200);
@@ -153,63 +149,23 @@ describe('oauth authorize deep flows through testDinner', () => {
     expect(url.searchParams.get('state')).toBe('state-123');
     expect(url.searchParams.get('iss')).toBe('https://mcp.kazibee.com');
     expect(written).toEqual([
-      'connection', 'member', 'code', 'supersede-tokens', 'supersede-connections',
+      'connection', 'code', 'supersede-tokens', 'supersede-connections',
     ]);
     await env.verify();
     await env.dispose();
   });
 
-  it('approve compensates: a failed membership write revokes the connection and maps to 500', async () => {
+  it('approve compensates: a failed code issuance revokes the fresh connection', async () => {
     const env = await base()
       .methods([
         ...sessionStubs(),
         [OAuthRepo, {
           findClientById: control.returns(Promise.resolve(dcrClient)),
           createConnection: control.once(control.returns(Promise.resolve(undefined))),
-          addConnectionExecutor: control.once(control.throws(new Error('membership write failed'))),
-          revokeConnection: control.once(control.returns(Promise.resolve(undefined))),
-          createCode: control.never(),
-        }],
-        [ConnectExecutorRepo, {
-          findByExecutorId: control.once(control.returns(Promise.resolve(executor))),
-        }],
-      ])
-      .build();
-    const response = await env.dinner.request({
-      method: 'POST',
-      path: '/oauth/consent/approve',
-      headers: authedHeaders,
-      body: {
-        sessionId: 'ses_1',
-        ...validParams,
-        approved_scope: 'kazibee:read',
-        machines: [{ executor_id: 'exe_1', workspace_id: 'ws_1' }],
-      },
-    });
-    expect(response.status).toBe(500);
-    expect(await response.json()).toEqual({
-      error: 'server_error',
-      message: 'Could not approve authorization',
-    });
-    await env.verify();
-    await env.dispose();
-  });
-
-  it('approve compensates: a failed code issuance also revokes the fresh connection', async () => {
-    const env = await base()
-      .methods([
-        ...sessionStubs(),
-        [OAuthRepo, {
-          findClientById: control.returns(Promise.resolve(dcrClient)),
-          createConnection: control.once(control.returns(Promise.resolve(undefined))),
-          addConnectionExecutor: control.once(control.returns(Promise.resolve(undefined))),
           createCode: control.once(control.throws(new Error('code write failed'))),
           revokeConnection: control.once(control.returns(Promise.resolve(undefined))),
           revokeSupersededConnections: control.never(),
         }],
-        [ConnectExecutorRepo, {
-          findByExecutorId: control.once(control.returns(Promise.resolve(executor))),
-        }],
       ])
       .build();
     const response = await env.dinner.request({
@@ -220,7 +176,6 @@ describe('oauth authorize deep flows through testDinner', () => {
         sessionId: 'ses_1',
         ...validParams,
         approved_scope: 'kazibee:read',
-        machines: [{ executor_id: 'exe_1', workspace_id: 'ws_1' }],
       },
     });
     expect(response.status).toBe(500);
@@ -246,79 +201,12 @@ describe('oauth authorize deep flows through testDinner', () => {
         sessionId: 'ses_1',
         ...validParams,
         approved_scope: 'kazibee:read_write',
-        machines: [{ executor_id: 'exe_1', workspace_id: 'ws_1' }],
       },
     });
     expect(response.status).toBe(400);
     expect(await response.json()).toEqual({
       error: 'invalid_scope',
       message: 'Approved scope exceeds the requested scope',
-    });
-    await env.verify();
-    await env.dispose();
-  });
-
-  it('approve without any machine selection is invalid_request', async () => {
-    const env = await base()
-      .methods([
-        ...sessionStubs(),
-        [OAuthRepo, {
-          findClientById: control.returns(Promise.resolve(dcrClient)),
-          createConnection: control.never(),
-        }],
-      ])
-      .build();
-    const response = await env.dinner.request({
-      method: 'POST',
-      path: '/oauth/consent/approve',
-      headers: authedHeaders,
-      body: {
-        sessionId: 'ses_1',
-        ...validParams,
-        approved_scope: 'kazibee:read',
-        machines: [{ executor_id: '', workspace_id: 'ws_1' }, 'garbage', { executor_id: 42 }],
-      },
-    });
-    expect(response.status).toBe(400);
-    expect(await response.json()).toEqual({
-      error: 'invalid_request',
-      message: 'At least one machine is required',
-    });
-    await env.verify();
-    await env.dispose();
-  });
-
-  it('approve rejects a machine the user does not own', async () => {
-    const env = await base()
-      .methods([
-        ...sessionStubs(),
-        [OAuthRepo, {
-          findClientById: control.returns(Promise.resolve(dcrClient)),
-          createConnection: control.never(),
-        }],
-        [ConnectExecutorRepo, {
-          findByExecutorId: control.once(control.returns(Promise.resolve({
-            ...executor,
-            owner_user_id: 'usr_someone_else',
-          }))),
-        }],
-      ])
-      .build();
-    const response = await env.dinner.request({
-      method: 'POST',
-      path: '/oauth/consent/approve',
-      headers: authedHeaders,
-      body: {
-        sessionId: 'ses_1',
-        ...validParams,
-        approved_scope: 'kazibee:read',
-        machines: [{ executor_id: 'exe_1', workspace_id: 'ws_1', scope: 'read' }],
-      },
-    });
-    expect(response.status).toBe(400);
-    expect(await response.json()).toEqual({
-      error: 'invalid_scope',
-      message: 'No access to a selected machine',
     });
     await env.verify();
     await env.dispose();

@@ -1,0 +1,11 @@
+-- Owner-scoped MCP connections.
+--
+-- A connection authenticates an app AS THE USER, so the machines it can reach
+-- are the user's executors — all of them, resolved live on every call — not a
+-- list pinned at consent time. Pinning meant a newly linked machine was
+-- invisible to existing connections and a revoked one left them stranded
+-- (EXECUTOR_OFFLINE with an Online executor sitting right there).
+--
+-- Every existing connection is fixed by this migration: with the membership
+-- table gone, each one now sees every active executor its owner has.
+DROP TABLE IF EXISTS oauth_connection_executors;

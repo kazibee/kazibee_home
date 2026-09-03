@@ -23,7 +23,7 @@ const oauthSource = parseYaml(
   readFileSync(path.resolve(__dirname, '../../../src/mcp/openapi/oauth.yaml'), 'utf8')
 ) as Record<string, unknown>;
 
-const RESOURCE = 'https://mcp.kazibee.com/mcp';
+const RESOURCE = 'https://mcp-dev.kazibee.com/mcp';
 const CODE_VERIFIER = 'test-verifier-0123456789-0123456789-0123456789';
 const CODE_CHALLENGE = createHash('sha256')
   .update(CODE_VERIFIER, 'utf8')
@@ -86,7 +86,7 @@ describe('oauth token/metadata/register routes through testDinner (no server, no
     const payload = await response.json();
     expect(payload).toMatchObject({
       resource: RESOURCE,
-      authorization_servers: ['https://mcp.kazibee.com'],
+      authorization_servers: ['https://mcp-dev.kazibee.com'],
       bearer_methods_supported: ['header'],
     });
     expect(payload.scopes_supported).toContain('kazibee:read');
@@ -101,9 +101,9 @@ describe('oauth token/metadata/register routes through testDinner (no server, no
     });
     expect(response.status).toBe(200);
     expect(await response.json()).toMatchObject({
-      issuer: 'https://mcp.kazibee.com',
-      authorization_endpoint: 'https://kazibee.com/oauth/authorize',
-      token_endpoint: 'https://mcp.kazibee.com/oauth/token',
+      issuer: 'https://mcp-dev.kazibee.com',
+      authorization_endpoint: 'https://dev.kazibee.com/oauth/authorize',
+      token_endpoint: 'https://mcp-dev.kazibee.com/oauth/token',
       response_types_supported: ['code'],
       grant_types_supported: ['authorization_code', 'refresh_token'],
       code_challenge_methods_supported: ['S256'],

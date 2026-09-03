@@ -14,8 +14,10 @@ import Env from "./env";
 export default class OAuthOrigins {
   constructor(@Inject(Env) private readonly env: Env) {}
 
+  // Pre-release default: every unconfigured deployment is the dev pair.
+  // Production sets both KAZI_MCP_ORIGIN and KAZI_WEBSITE_ORIGIN explicitly.
   get issuer(): string {
-    return this.origin("KAZI_MCP_ORIGIN", "https://mcp.kazibee.com");
+    return this.origin("KAZI_MCP_ORIGIN", "https://mcp-dev.kazibee.com");
   }
 
   get resource(): string {
@@ -23,7 +25,7 @@ export default class OAuthOrigins {
   }
 
   get websiteOrigin(): string {
-    return this.origin("KAZI_WEBSITE_ORIGIN", "https://kazibee.com");
+    return this.origin("KAZI_WEBSITE_ORIGIN", "https://dev.kazibee.com");
   }
 
   get authorizationEndpoint(): string {

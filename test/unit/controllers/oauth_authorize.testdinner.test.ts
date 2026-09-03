@@ -28,7 +28,7 @@ const authorizeSource = parseYaml(
   )
 ) as Record<string, unknown>;
 
-const RESOURCE = 'https://mcp.kazibee.com/mcp';
+const RESOURCE = 'https://mcp-dev.kazibee.com/mcp';
 const REDIRECT_URI = 'https://client.example/callback';
 
 const base = () =>
@@ -148,7 +148,7 @@ describe('oauth authorize/consent routes through testDinner (no server, no datab
     expect(url.origin + url.pathname).toBe(REDIRECT_URI);
     expect(url.searchParams.get('error')).toBe('unsupported_response_type');
     expect(url.searchParams.get('state')).toBe('state-123');
-    expect(url.searchParams.get('iss')).toBe('https://mcp.kazibee.com');
+    expect(url.searchParams.get('iss')).toBe('https://mcp-dev.kazibee.com');
     await env.verify();
     await env.dispose();
   });
@@ -234,7 +234,7 @@ describe('oauth authorize/consent routes through testDinner (no server, no datab
     expect(url.origin + url.pathname).toBe(REDIRECT_URI);
     expect(url.searchParams.get('error')).toBe('access_denied');
     expect(url.searchParams.get('state')).toBe('state-123');
-    expect(url.searchParams.get('iss')).toBe('https://mcp.kazibee.com');
+    expect(url.searchParams.get('iss')).toBe('https://mcp-dev.kazibee.com');
     await env.verify();
     await env.dispose();
   });

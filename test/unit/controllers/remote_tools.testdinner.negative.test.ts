@@ -50,7 +50,7 @@ const PAST = '2000-01-01T00:00:00.000Z';
 
 // OAuth access tokens are resource-tagged: sha256(resource) base64url, first
 // 16 chars, appended to the random part (oauth_flow_service.resourceTag).
-const RESOURCE = 'https://mcp.kazibee.com/mcp';
+const RESOURCE = 'https://mcp-dev.kazibee.com/mcp';
 const RESOURCE_TAG = createHash('sha256').update(RESOURCE, 'utf8').digest('base64url').slice(0, 16);
 const OAUTH_TOKEN = `${'O'.repeat(27)}${RESOURCE_TAG}`;
 

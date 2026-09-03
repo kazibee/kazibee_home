@@ -24,7 +24,7 @@ const oauthSource = parseYaml(
   readFileSync(path.resolve(__dirname, '../../../src/mcp/openapi/oauth.yaml'), 'utf8')
 ) as Record<string, unknown>;
 
-const RESOURCE = 'https://mcp.kazibee.com/mcp';
+const RESOURCE = 'https://mcp-dev.kazibee.com/mcp';
 const RESOURCE_TAG = createHash('sha256').update(RESOURCE, 'utf8').digest('base64url').slice(0, 16);
 // A syntactically valid, resource-bound refresh token (random part + audience tag).
 const REFRESH_TOKEN = `${'A'.repeat(32)}${RESOURCE_TAG}`;

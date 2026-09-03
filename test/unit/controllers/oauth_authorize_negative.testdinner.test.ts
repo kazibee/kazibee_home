@@ -28,7 +28,7 @@ const authorizeSource = parseYaml(
   )
 ) as Record<string, unknown>;
 
-const RESOURCE = 'https://mcp.kazibee.com/mcp';
+const RESOURCE = 'https://mcp-dev.kazibee.com/mcp';
 const REDIRECT_URI = 'https://client.example/callback';
 
 const base = () =>

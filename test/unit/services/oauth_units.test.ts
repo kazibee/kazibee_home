@@ -51,10 +51,10 @@ describe("oauth_scopes remaining helpers", () => {
 
 describe("oauth_flow_service.tokenMatchesResource", () => {
   it("rejects malformed tokens and empty resources before any tag check", () => {
-    expect(tokenMatchesResource("too short", "https://mcp.kazibee.com/mcp")).toBe(false);
+    expect(tokenMatchesResource("too short", "https://mcp-dev.kazibee.com/mcp")).toBe(false);
     expect(tokenMatchesResource("A".repeat(48), "")).toBe(false);
     // Well-shaped but bound to a different audience.
-    expect(tokenMatchesResource("A".repeat(48), "https://mcp.kazibee.com/mcp")).toBe(false);
+    expect(tokenMatchesResource("A".repeat(48), "https://mcp-dev.kazibee.com/mcp")).toBe(false);
   });
 });
 

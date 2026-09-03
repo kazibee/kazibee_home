@@ -28,7 +28,7 @@ const authorizeSource = parseYaml(
   )
 ) as Record<string, unknown>;
 
-const RESOURCE = 'https://mcp.kazibee.com/mcp';
+const RESOURCE = 'https://mcp-dev.kazibee.com/mcp';
 const REDIRECT_URI = 'https://client.example/callback';
 
 const base = () =>
@@ -147,7 +147,7 @@ describe('oauth authorize deep flows through testDinner', () => {
     expect(url.origin + url.pathname).toBe(REDIRECT_URI);
     expect(url.searchParams.get('code')).toBeTruthy();
     expect(url.searchParams.get('state')).toBe('state-123');
-    expect(url.searchParams.get('iss')).toBe('https://mcp.kazibee.com');
+    expect(url.searchParams.get('iss')).toBe('https://mcp-dev.kazibee.com');
     expect(written).toEqual([
       'connection', 'code', 'supersede-tokens', 'supersede-connections',
     ]);

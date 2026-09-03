@@ -93,7 +93,7 @@ describe('OAuthFlowService PKCE method guard', () => {
       codeChallenge: 'a'.repeat(43),
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       codeChallengeMethod: 'plain' as any,
-      resource: 'https://mcp.kazibee.com/mcp',
+      resource: 'https://mcp-dev.kazibee.com/mcp',
     })).rejects.toThrow(RangeError);
     await env.verify();
     await env.dispose();

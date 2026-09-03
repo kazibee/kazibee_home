@@ -109,6 +109,11 @@ export default class RemoteToolDispatchService {
       scopes: string[];
       grantId: string;
       toolSessionId: string;
+      /**
+       * Opaque executor-verified bearer (e.g. `swarm:<token>`); the website
+       * never inspects it and the executor resolves it locally.
+       */
+      authorization?: string;
     },
     toolName: string,
     args: Record<string, unknown>,
@@ -144,6 +149,7 @@ export default class RemoteToolDispatchService {
         toolSessionId: target.toolSessionId,
         grantId: target.grantId,
         grantGeneration: 1,
+        ...(target.authorization ? { authorization: target.authorization } : {}),
         deadlineAt: new Date(Date.now() + DEFAULT_DEADLINE_MS).toISOString(),
       },
     };

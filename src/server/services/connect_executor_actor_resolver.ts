@@ -8,7 +8,7 @@ import { ConnectCredentials } from "./connect_auth_primitives";
 
 export type ConnectExecutorActor =
   | { role: "browser_session"; userId: string; sessionId: string }
-  | { role: "executor_device"; executorId: string; deviceId: string; generation: number };
+  | { role: "executor_device"; executorId: string; deviceId: string; generation: number; userId?: string };
 export type ActorResolution = { ok: true; actor: ConnectExecutorActor } | {
   ok: false; reason: "unauthorized" | "csrf";
 };
@@ -60,6 +60,7 @@ export default class ConnectExecutorActorResolver {
       actor: {
         role: "executor_device", executorId: executor.executor_id,
         deviceId: executor.device_id, generation: credential.generation,
+        ...(executor.owner_user_id ? { userId: executor.owner_user_id } : {}),
       },
     };
   }

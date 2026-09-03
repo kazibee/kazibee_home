@@ -8,6 +8,7 @@ module:
           x-action: create
           parameters:
             - $ref: '#/components/parameters/SwarmOwnerSession'
+            - $ref: '#/components/parameters/SwarmOwnerBearer'
             - $ref: '#/components/parameters/SwarmCsrfHeader'
           requestBody:
             required: true
@@ -23,10 +24,14 @@ module:
                     resourceClass:
                       type: string
                       enum: [head_micro, head_small, head_medium, head_large]
+                    clientSwarmId: { type: string, pattern: '^swm_[A-Za-z0-9]{8,64}$' }
+                    idempotencyKey: { type: string, minLength: 8, maxLength: 128 }
           responses:
+            '200': { description: Existing idempotent swarm returned }
             '201': { description: Swarm created }
             '400': { description: Invalid swarm request }
             '401': { description: Owner authentication required }
+            '409': { description: Idempotency conflict or swarm ID already taken }
       '/{swarmId}':
         get:
           x-controller: swarm.controller
@@ -34,6 +39,7 @@ module:
           parameters:
             - $ref: '#/components/parameters/SwarmId'
             - $ref: '#/components/parameters/SwarmOwnerSession'
+            - $ref: '#/components/parameters/SwarmOwnerBearer'
           responses:
             '200': { description: Swarm detail }
             '401': { description: Owner authentication required }
@@ -46,6 +52,7 @@ module:
           parameters:
             - $ref: '#/components/parameters/SwarmId'
             - $ref: '#/components/parameters/SwarmOwnerSession'
+            - $ref: '#/components/parameters/SwarmOwnerBearer'
             - $ref: '#/components/parameters/SwarmCsrfHeader'
           responses:
             '201': { description: Machine launched }
@@ -94,6 +101,7 @@ module:
             - $ref: '#/components/parameters/SwarmId'
             - $ref: '#/components/parameters/SwarmMachineId'
             - $ref: '#/components/parameters/SwarmOwnerSession'
+            - $ref: '#/components/parameters/SwarmOwnerBearer'
             - $ref: '#/components/parameters/SwarmCsrfHeader'
           requestBody:
             required: true
@@ -114,6 +122,7 @@ module:
             - $ref: '#/components/parameters/SwarmId'
             - $ref: '#/components/parameters/SwarmMachineId'
             - $ref: '#/components/parameters/SwarmOwnerSession'
+            - $ref: '#/components/parameters/SwarmOwnerBearer'
             - in: query
               name: after
               required: false
@@ -127,6 +136,34 @@ module:
             '401': { description: Owner authentication required }
             '404': { description: Machine not found }
             '503': { description: Coordinator unavailable }
+      '/{swarmId}/mcp':
+        post:
+          # MCP over Streamable HTTP (JSON response mode) for swarm member
+          # threads on Fargate heads. Bearer = opaque `swarm:<token>` runtime
+          # binding verified by the owning Desktop; the website only relays.
+          x-controller: swarm_mcp.controller
+          x-action: mcp
+          parameters:
+            - $ref: '#/components/parameters/SwarmId'
+            - in: header
+              name: authorization
+              required: false
+              schema: { type: string, pattern: '^Bearer swarm:[A-Za-z0-9_-]{16,256}$' }
+          requestBody:
+            required: true
+            content:
+              application/json:
+                schema:
+                  # JSON-RPC envelope; method-level validation happens in the
+                  # controller because params vary per method.
+                  type: object
+          responses:
+            '200': { description: JSON-RPC response }
+            '202': { description: Notification acknowledged }
+            '400': { description: Invalid JSON-RPC request }
+            '401': { description: Swarm bearer required }
+            '404': { description: Swarm not found or not active }
+            '409': { description: Swarm has no bound Desktop executor }
       '/{swarmId}/liveness':
         post:
           x-controller: swarm.controller
@@ -134,6 +171,7 @@ module:
           parameters:
             - $ref: '#/components/parameters/SwarmId'
             - $ref: '#/components/parameters/SwarmOwnerSession'
+            - $ref: '#/components/parameters/SwarmOwnerBearer'
             - $ref: '#/components/parameters/SwarmCsrfHeader'
           requestBody:
             required: true
@@ -159,6 +197,7 @@ module:
             - $ref: '#/components/parameters/SwarmId'
             - $ref: '#/components/parameters/SwarmMachineId'
             - $ref: '#/components/parameters/SwarmOwnerSession'
+            - $ref: '#/components/parameters/SwarmOwnerBearer'
             - $ref: '#/components/parameters/SwarmCsrfHeader'
           responses:
             '200': { description: Machine stopped }
@@ -173,6 +212,7 @@ module:
           parameters:
             - $ref: '#/components/parameters/SwarmId'
             - $ref: '#/components/parameters/SwarmOwnerSession'
+            - $ref: '#/components/parameters/SwarmOwnerBearer'
             - $ref: '#/components/parameters/SwarmCsrfHeader'
           responses:
             '200': { description: Swarm stopped }
@@ -197,6 +237,11 @@ module:
           name: sessionId
           required: false
           schema: { type: string, pattern: '^ses_[A-Za-z0-9]{8,64}$' }
+        SwarmOwnerBearer:
+          in: header
+          name: authorization
+          required: false
+          schema: { type: string, pattern: '^Bearer [A-Za-z0-9_-]{16,200}$' }
         SwarmCsrfHeader:
           in: header
           name: x-csrf-token

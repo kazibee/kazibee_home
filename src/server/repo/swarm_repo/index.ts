@@ -8,6 +8,10 @@ export interface Swarm {
   region: string;
   resource_class: string;
   state: "active" | "stopping" | "stopped";
+  client_swarm_id: string | null;
+  idempotency_key: string | null;
+  /** Desktop executor that owns this swarm's runtime bindings; relay target. */
+  executor_id: string | null;
   created_at: string;
   stopped_at: string | null;
 }
@@ -15,11 +19,13 @@ export interface Swarm {
 @QueryBinder()
 @Component({ scope: LoadAs.Singleton })
 export default class SwarmRepo {
+  @Single
   @Query()
   createSwarm(_params: {
     swarm_id: string; owner_user_id: string; env: string; region: string;
-    resource_class: string; created_at: string;
-  }): Promise<void> { return run(); }
+    resource_class: string; client_swarm_id: string | null; idempotency_key: string | null;
+    executor_id: string | null; created_at: string;
+  }): Promise<Swarm | null> { return run(); }
 
   @Single
   @Query()
@@ -28,6 +34,14 @@ export default class SwarmRepo {
   @Single
   @Query()
   findByIdAndOwner(_params: { swarm_id: string; owner_user_id: string }): Promise<Swarm | null> {
+    return run();
+  }
+
+  @Single
+  @Query()
+  findByOwnerAndIdempotencyKey(
+    _params: { owner_user_id: string; idempotency_key: string },
+  ): Promise<Swarm | null> {
     return run();
   }
 

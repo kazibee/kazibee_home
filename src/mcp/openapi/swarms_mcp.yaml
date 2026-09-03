@@ -1,0 +1,35 @@
+module:
+  swarmsMcp:
+    basePath: '/v1/swarms'
+    paths:
+      '/{swarmId}/mcp':
+        post:
+          # MCP over Streamable HTTP (JSON response mode) for swarm member
+          # threads on Fargate heads, served on the MCP host
+          # (mcp-dev.kazibee.com / mcp.kazibee.com). Same controller as the
+          # main site's /v1/swarms/{swarmId}/mcp; bearer = opaque
+          # `swarm:<token>` runtime binding verified by the owning Desktop.
+          x-controller: swarm_mcp.controller
+          x-action: mcp
+          parameters:
+            - in: path
+              name: swarmId
+              required: true
+              schema: { type: string, pattern: '^swm_[A-Za-z0-9]{8,64}$' }
+            - in: header
+              name: authorization
+              required: false
+              schema: { type: string, pattern: '^Bearer swarm:[A-Za-z0-9_-]{16,256}$' }
+          requestBody:
+            required: true
+            content:
+              application/json:
+                schema:
+                  type: object
+          responses:
+            '200': { description: JSON-RPC response }
+            '202': { description: Notification acknowledged }
+            '400': { description: Invalid JSON-RPC request }
+            '401': { description: Swarm bearer required }
+            '404': { description: Swarm not found or not active }
+            '409': { description: Swarm has no bound Desktop executor }

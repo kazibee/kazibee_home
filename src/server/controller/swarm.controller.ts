@@ -60,23 +60,67 @@ export default class SwarmController {
   async create({ req, res }: Context) {
     const owner = await this.owner(req, true);
     if (!owner) return this.error(res, 401, "OWNER_AUTH_REQUIRED");
-    const body = req.body as { env?: unknown; region?: unknown; resourceClass?: unknown } | undefined;
+    const body = req.body as {
+      env?: unknown;
+      region?: unknown;
+      resourceClass?: unknown;
+      clientSwarmId?: unknown;
+      idempotencyKey?: unknown;
+    } | undefined;
     const ownEnv = this.deploymentEnv();
     if (!body || body.env !== ownEnv || typeof body.region !== "string"
       || !/^[a-z]{2}-[a-z]+-[1-9]$/.test(body.region)
-      || typeof body.resourceClass !== "string" || !HEAD_CLASSES.has(body.resourceClass as HeadClass)) {
+      || typeof body.resourceClass !== "string" || !HEAD_CLASSES.has(body.resourceClass as HeadClass)
+      || (body.clientSwarmId !== undefined
+        && (typeof body.clientSwarmId !== "string" || !SWARM_ID.test(body.clientSwarmId)))
+      || (body.idempotencyKey !== undefined
+        && (typeof body.idempotencyKey !== "string"
+          || body.idempotencyKey.length < 8 || body.idempotencyKey.length > 128))) {
       return this.error(res, 400, "INVALID_SWARM_REQUEST");
     }
-    const swarmId = this.id("swm");
-    await this.swarms.createSwarm({
+    const clientSwarmId = typeof body.clientSwarmId === "string" ? body.clientSwarmId : null;
+    const idempotencyKey = typeof body.idempotencyKey === "string" ? body.idempotencyKey : null;
+    const matchesRequest = (swarm: Swarm) => swarm.env === ownEnv
+      && swarm.region === body.region
+      && swarm.resource_class === body.resourceClass
+      && swarm.client_swarm_id === clientSwarmId;
+
+    if (idempotencyKey) {
+      const existing = await this.swarms.findByOwnerAndIdempotencyKey({
+        owner_user_id: owner.userId,
+        idempotency_key: idempotencyKey,
+      });
+      if (existing) {
+        if (!matchesRequest(existing)) return this.error(res, 409, "IDEMPOTENCY_CONFLICT");
+        return res.status(200).json({ swarmId: existing.swarm_id, state: existing.state });
+      }
+    }
+
+    const swarmId = clientSwarmId ?? this.id("swm");
+    const created = await this.swarms.createSwarm({
       swarm_id: swarmId,
       owner_user_id: owner.userId,
       env: ownEnv,
       region: body.region,
       resource_class: body.resourceClass,
+      client_swarm_id: clientSwarmId,
+      idempotency_key: idempotencyKey,
+      executor_id: owner.sessionId.startsWith("executor:") ? owner.sessionId.slice("executor:".length) : null,
       created_at: new Date().toISOString(),
     });
-    return res.status(201).json({ swarmId, state: "active" });
+    if (created) return res.status(201).json({ swarmId, state: created.state });
+
+    if (idempotencyKey) {
+      const existing = await this.swarms.findByOwnerAndIdempotencyKey({
+        owner_user_id: owner.userId,
+        idempotency_key: idempotencyKey,
+      });
+      if (existing) {
+        if (!matchesRequest(existing)) return this.error(res, 409, "IDEMPOTENCY_CONFLICT");
+        return res.status(200).json({ swarmId: existing.swarm_id, state: existing.state });
+      }
+    }
+    return this.error(res, 409, "SWARM_ID_TAKEN");
   }
 
   async launchMachine({ req, res }: Context) {
@@ -269,10 +313,19 @@ export default class SwarmController {
 
   private async owner(req: Request, mutation: boolean): Promise<Owner | null> {
     const sessionId = typeof req.query.sessionId === "string" ? req.query.sessionId : null;
-    if (!sessionId) return null;
-    const result = await this.actors.browser(req, sessionId, mutation);
-    if (!result.ok || result.actor.role !== "browser_session") return null;
-    return { userId: result.actor.userId, sessionId: result.actor.sessionId };
+    if (sessionId) {
+      const result = await this.actors.browser(req, sessionId, mutation);
+      if (!result.ok || result.actor.role !== "browser_session") return null;
+      return { userId: result.actor.userId, sessionId: result.actor.sessionId };
+    }
+
+    const authorization = req.headers.authorization;
+    const token = typeof authorization === "string" && authorization.startsWith("Bearer ")
+      ? authorization.slice("Bearer ".length)
+      : null;
+    const result = await this.actors.device(token);
+    if (!result.ok || result.actor.role !== "executor_device" || !result.actor.userId) return null;
+    return { userId: result.actor.userId, sessionId: "executor:" + result.actor.executorId };
   }
 
   private async ownedSwarm(req: Request, owner: Owner): Promise<Swarm | null> {

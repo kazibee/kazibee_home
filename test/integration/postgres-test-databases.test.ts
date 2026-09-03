@@ -51,7 +51,7 @@ describe("PostgreSQL test database templates", () => {
       const relayHistory = await first.pool.query(
         "SELECT count(*)::int AS count FROM proper_migrations_relay",
       );
-      expect(durableHistory.rows[0]?.count).toBe(17); // through 1788360000000_owner_scoped_oauth_connections
+      expect(durableHistory.rows[0]?.count).toBe(19); // through 1788404952199_add_swarm_executor_id
       expect(relayHistory.rows[0]?.count).toBe(8);
 
       const tables = await first.pool.query(LIST_TABLES_SQL);
@@ -88,7 +88,7 @@ describe("PostgreSQL test database templates", () => {
       const relayTable = await database.pool.query(
         "SELECT to_regclass('public.sessions') AS table_name",
       );
-      expect(durableHistory.rows[0]?.count).toBe(17); // through 1788360000000_owner_scoped_oauth_connections
+      expect(durableHistory.rows[0]?.count).toBe(19); // through 1788404952199_add_swarm_executor_id
       expect(relayTable.rows[0]?.table_name).toBeNull();
 
       const tables = await database.pool.query(LIST_TABLES_SQL);

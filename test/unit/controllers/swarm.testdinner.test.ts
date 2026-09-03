@@ -79,7 +79,18 @@ describe("swarm controller authentication through testDinner", () => {
           }))),
         }],
         [Env, { string: control.returns("dev") }],
-        [SwarmRepo, { createSwarm: control.once(control.returns(Promise.resolve())) }],
+        [SwarmRepo, { createSwarm: control.once(control.returns(Promise.resolve({
+          swarm_id: SWARM_ID,
+          owner_user_id: "usr_12345678",
+          env: "dev",
+          region: "us-east-1",
+          resource_class: "head_micro",
+          state: "active",
+          client_swarm_id: null,
+          idempotency_key: null,
+          created_at: "2026-09-02T10:00:00.000Z",
+          stopped_at: null,
+        }))) }],
       ])
       .build();
     const response = await env.dinner.request({
@@ -144,4 +155,300 @@ describe("swarm controller authentication through testDinner", () => {
     await env.verify();
     await env.dispose();
   });
+});
+
+
+describe("swarm executor ownership and idempotency", () => {
+  const executorActor = {
+    ok: true as const,
+    actor: {
+      role: "executor_device" as const,
+      executorId: "exe_12345678",
+      deviceId: "dev_12345678",
+      generation: 1,
+      userId: "usr_12345678",
+    },
+  };
+  const existing = (overrides: Record<string, unknown> = {}) => ({
+    swarm_id: SWARM_ID,
+    owner_user_id: "usr_12345678",
+    env: "dev",
+    region: "us-east-1",
+    resource_class: "head_micro",
+    state: "active",
+    client_swarm_id: null,
+    idempotency_key: "desktop-key-123",
+    created_at: "2026-09-02T10:00:00.000Z",
+    stopped_at: null,
+    ...overrides,
+  });
+  const authorization = { authorization: "Bearer executor-credential-token-123" };
+
+  it("creates a swarm for an authenticated executor device", async () => {
+    const created = existing({ client_swarm_id: SWARM_ID });
+    const env = await route("post", "/v1/swarms/")
+      .methods([
+        [ConnectExecutorActorResolver, {
+          device: control.once(control.returns(Promise.resolve(executorActor))),
+        }],
+        [Env, { string: control.returns("dev") }],
+        [SwarmRepo, {
+          findByOwnerAndIdempotencyKey: control.once(control.returns(Promise.resolve(null))),
+          createSwarm: control.once(control.returns(Promise.resolve(created))),
+        }],
+      ])
+      .build();
+    const response = await env.dinner.request({
+      method: "POST",
+      path: "/v1/swarms/",
+      headers: authorization,
+      body: {
+        env: "dev",
+        region: "us-east-1",
+        resourceClass: "head_micro",
+        clientSwarmId: SWARM_ID,
+        idempotencyKey: "desktop-key-123",
+      },
+    });
+    expect(response.status).toBe(201);
+    expect(await response.json()).toEqual({ swarmId: SWARM_ID, state: "active" });
+    await env.verify();
+    await env.dispose();
+  });
+
+  it("replays an idempotent create without inserting", async () => {
+    const env = await route("post", "/v1/swarms/")
+      .methods([
+        [ConnectExecutorActorResolver, {
+          device: control.once(control.returns(Promise.resolve(executorActor))),
+        }],
+        [Env, { string: control.returns("dev") }],
+        [SwarmRepo, {
+          findByOwnerAndIdempotencyKey: control.once(control.returns(Promise.resolve(existing()))),
+          createSwarm: control.never(),
+        }],
+      ])
+      .build();
+    const response = await env.dinner.request({
+      method: "POST",
+      path: "/v1/swarms/",
+      headers: authorization,
+      body: {
+        env: "dev", region: "us-east-1", resourceClass: "head_micro",
+        idempotencyKey: "desktop-key-123",
+      },
+    });
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ swarmId: SWARM_ID, state: "active" });
+    await env.verify();
+    await env.dispose();
+  });
+
+  it("rejects a different create body under the same idempotency key", async () => {
+    const env = await route("post", "/v1/swarms/")
+      .methods([
+        [ConnectExecutorActorResolver, {
+          device: control.once(control.returns(Promise.resolve(executorActor))),
+        }],
+        [Env, { string: control.returns("dev") }],
+        [SwarmRepo, {
+          findByOwnerAndIdempotencyKey: control.once(control.returns(Promise.resolve(existing()))),
+          createSwarm: control.never(),
+        }],
+      ])
+      .build();
+    const response = await env.dinner.request({
+      method: "POST",
+      path: "/v1/swarms/",
+      headers: authorization,
+      body: {
+        env: "dev", region: "us-west-2", resourceClass: "head_micro",
+        idempotencyKey: "desktop-key-123",
+      },
+    });
+    expect(response.status).toBe(409);
+    expect(await response.json()).toEqual({ error: true, code: "IDEMPOTENCY_CONFLICT" });
+    await env.verify();
+    await env.dispose();
+  });
+
+  it("rejects a duplicate client swarm id", async () => {
+    const env = await route("post", "/v1/swarms/")
+      .methods([
+        [ConnectExecutorActorResolver, {
+          device: control.once(control.returns(Promise.resolve(executorActor))),
+        }],
+        [Env, { string: control.returns("dev") }],
+        [SwarmRepo, {
+          createSwarm: control.once(control.returns(Promise.resolve(null))),
+        }],
+      ])
+      .build();
+    const response = await env.dinner.request({
+      method: "POST",
+      path: "/v1/swarms/",
+      headers: authorization,
+      body: {
+        env: "dev", region: "us-east-1", resourceClass: "head_micro", clientSwarmId: SWARM_ID,
+      },
+    });
+    expect(response.status).toBe(409);
+    expect(await response.json()).toEqual({ error: true, code: "SWARM_ID_TAKEN" });
+    await env.verify();
+    await env.dispose();
+  });
+
+  it("hides another user's swarm from an executor", async () => {
+    const env = await route("get", "/v1/swarms/{swarmId}")
+      .methods([
+        [ConnectExecutorActorResolver, {
+          device: control.once(control.returns(Promise.resolve(executorActor))),
+        }],
+        [SwarmRepo, {
+          findByIdAndOwner: control.once(control.returns(Promise.resolve(null))),
+        }],
+      ])
+      .build();
+    const response = await env.dinner.request({
+      method: "GET",
+      path: "/v1/swarms/" + SWARM_ID,
+      headers: authorization,
+    });
+    expect(response.status).toBe(404);
+    expect(await response.json()).toEqual({ error: true, code: "SWARM_NOT_FOUND" });
+    await env.verify();
+    await env.dispose();
+  });
+
+  it("accepts executor liveness for its own swarm", async () => {
+    const coordinator = {
+      idFromName: (_name: string) => "unused",
+      get: (_id: unknown) => ({ fetch: async () => Response.json({}) }),
+    };
+    const env = await route("post", "/v1/swarms/{swarmId}/liveness")
+      .methods([
+        [ConnectExecutorActorResolver, {
+          device: control.once(control.returns(Promise.resolve(executorActor))),
+        }],
+        [SwarmRepo, {
+          findByIdAndOwner: control.once(control.returns(Promise.resolve(existing()))),
+        }],
+        [SwarmMachineRepo, {
+          listNonStoppedBySwarm: control.once(control.returns(Promise.resolve([]))),
+        }],
+        [Env, { get: control.once(control.returns(coordinator)) }],
+      ])
+      .build();
+    const response = await env.dinner.request({
+      method: "POST",
+      path: "/v1/swarms/" + SWARM_ID + "/liveness",
+      headers: authorization,
+      body: { desktopSeenAt: "2026-09-02T10:00:00.000Z" },
+    });
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ ok: true, delivered: 0, total: 0 });
+    await env.verify();
+    await env.dispose();
+  });
+
+  it("lets an executor launch a machine in its own swarm", async () => {
+    const env = await route("post", "/v1/swarms/{swarmId}/machines")
+      .methods([
+        [ConnectExecutorActorResolver, {
+          device: control.once(control.returns(Promise.resolve(executorActor))),
+        }],
+        [SwarmRepo, {
+          findByIdAndOwner: control.once(control.returns(Promise.resolve(existing()))),
+        }],
+        [SwarmAwsService, {
+          launchConfig: control.once(control.returns(Promise.resolve({
+            clusterArn: "arn:cluster",
+            subnetIds: ["subnet-1"],
+            securityGroupId: "sg-1",
+            taskDefinitionArn: "arn:task-def",
+          }))),
+          launch: control.once(control.returns(Promise.resolve({
+            taskArn: "arn:task",
+            taskDefinitionArn: "arn:task-def",
+          }))),
+        }],
+        [SwarmMachineRepo, {
+          createMachine: control.once(control.returns(Promise.resolve())),
+          markRunning: control.once(control.returns(Promise.resolve())),
+        }],
+      ])
+      .build();
+    const response = await env.dinner.request({
+      method: "POST",
+      path: "/v1/swarms/" + SWARM_ID + "/machines",
+      headers: authorization,
+    });
+    expect(response.status).toBe(201);
+    expect(await response.json()).toMatchObject({ ecsTaskArn: "arn:task" });
+    await env.verify();
+    await env.dispose();
+  });
+
+  it("lets an executor read its own swarm detail", async () => {
+    const coordinator = {
+      idFromName: (_name: string) => "unused",
+      get: (_id: unknown) => ({ fetch: async () => Response.json({}) }),
+    };
+    const env = await route("get", "/v1/swarms/{swarmId}")
+      .methods([
+        [ConnectExecutorActorResolver, {
+          device: control.once(control.returns(Promise.resolve(executorActor))),
+        }],
+        [SwarmRepo, {
+          findByIdAndOwner: control.once(control.returns(Promise.resolve(existing()))),
+        }],
+        [SwarmMachineRepo, {
+          listBySwarm: control.once(control.returns(Promise.resolve([]))),
+        }],
+        [Env, { get: control.returns(coordinator) }],
+      ])
+      .build();
+    const response = await env.dinner.request({
+      method: "GET",
+      path: "/v1/swarms/" + SWARM_ID,
+      headers: authorization,
+    });
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({ swarmId: SWARM_ID, machines: [] });
+    await env.verify();
+    await env.dispose();
+  });
+
+  it("lets an executor stop its own swarm", async () => {
+    const coordinator = {
+      idFromName: (_name: string) => "unused",
+      get: (_id: unknown) => ({ fetch: async () => Response.json({}) }),
+    };
+    const env = await route("post", "/v1/swarms/{swarmId}/stop")
+      .methods([
+        [ConnectExecutorActorResolver, {
+          device: control.once(control.returns(Promise.resolve(executorActor))),
+        }],
+        [SwarmRepo, {
+          findByIdAndOwner: control.once(control.returns(Promise.resolve(existing()))),
+          markStopping: control.once(control.returns(Promise.resolve())),
+          markStopped: control.once(control.returns(Promise.resolve())),
+        }],
+        [SwarmMachineRepo, {
+          listNonStoppedBySwarm: control.once(control.returns(Promise.resolve([]))),
+        }],
+        [Env, { get: control.returns(coordinator) }],
+      ])
+      .build();
+    const response = await env.dinner.request({
+      method: "POST",
+      path: "/v1/swarms/" + SWARM_ID + "/stop",
+      headers: authorization,
+    });
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ swarmId: SWARM_ID, state: "stopped" });
+    await env.verify();
+    await env.dispose();
+  });
+
 });

@@ -1,0 +1,51 @@
+version: 1
+root: ../..
+output: apps/agent/dist
+target: node
+
+development:
+  port: 3200
+
+server:
+  main: src/agent/server.ts
+  controllers: src/server/controller
+  middleware: src/middleware
+  openapi: src/agent/stitch.yaml
+
+assets:
+  - apps/agent/renderer/**
+  - migrations/**/*.sql
+
+deploy:
+  cloudflare:
+    wrangler:
+      workers_dev: false
+    environments:
+      dev:
+        name: kazibee-agent-dev
+        routes:
+          - pattern: agent-dev.kazibee.com
+            customDomain: true
+        wrangler:
+          vars:
+            KAZI_AGENT_ORIGIN: https://agent-dev.kazibee.com
+            KAZI_WEBSITE_ORIGIN: https://dev.kazibee.com
+          durable_objects:
+            bindings:
+              - name: EXECUTOR_COORDINATOR
+                class_name: ExecutorCoordinator
+                script_name: kazibee-dev
+      production:
+        name: kazibee-agent
+        routes:
+          - pattern: agent.kazibee.com
+            customDomain: true
+        wrangler:
+          vars:
+            KAZI_AGENT_ORIGIN: https://agent.kazibee.com
+            KAZI_WEBSITE_ORIGIN: https://kazibee.com
+          durable_objects:
+            bindings:
+              - name: EXECUTOR_COORDINATOR
+                class_name: ExecutorCoordinator
+                script_name: kazibee

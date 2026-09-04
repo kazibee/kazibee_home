@@ -55,18 +55,48 @@ const PROTOCOL_VERSION = "1.1";
 const MAX_INFLIGHT_ROUTES = 32;
 const ACCEPT_TIMEOUT_MS = 5_000;
 const RESULT_FRAME_LIMIT = 192 * 1024;
+const SESSION_FRAME_LIMIT = 160 * 1024;
+const SESSION_CHUNK_LIMIT = 128 * 1024;
+const SESSION_PENDING_BYTES = 8 * 1024 * 1024;
+const SESSION_PENDING_FRAMES = 64;
+const MAX_EPHEMERAL_INVOKES = 8;
+const SESSION_INVOKE_TIMEOUT_MS = 30_000;
 const STALE_AFTER_MS = 60_000;
 const OFFLINE_AFTER_MS = 120_000;
 
 const PRESENCE_KEY = "presence";
 
 interface ChannelAttachment {
+  /** Absent on hibernation-restored legacy executor sockets. */
+  role?: "executor";
   executorId: string;
   deviceId: string;
   credentialGeneration: number;
   fence: string;
   helloAt: number;
 }
+
+interface ViewerAttachment {
+  role: "viewer";
+  executorId: string;
+  accountRef: string;
+  sessionId: string;
+}
+
+interface PendingSessionFrame {
+  chunkCount: number;
+  nextIndex: number;
+  payload: string[];
+  bytes: number;
+}
+
+interface EphemeralInvoke {
+  id: string;
+  resolve(response: Response): void;
+  timer: ReturnType<typeof setTimeout>;
+}
+
+type SocketAttachment = ChannelAttachment | ViewerAttachment;
 
 interface PresenceRecord {
   executorId: string;
@@ -128,9 +158,45 @@ function errorFrame(code: string, message: string, fatal: boolean): string {
   });
 }
 
+function isViewerAttachment(value: unknown): value is ViewerAttachment {
+  return !!value && typeof value === "object"
+    && (value as { role?: unknown }).role === "viewer";
+}
+
+function sessionFrameId(counter: number): string {
+  return `sf_${Date.now().toString(36)}_${counter.toString(36)}`;
+}
+
+function utf8Chunks(value: string): string[] {
+  const encoder = new TextEncoder();
+  const chunks: string[] = [];
+  let chunk = "";
+  let bytes = 0;
+  for (const point of value) {
+    const size = encoder.encode(point).byteLength;
+    if (bytes + size > SESSION_CHUNK_LIMIT && chunk) {
+      chunks.push(chunk);
+      chunk = "";
+      bytes = 0;
+    }
+    chunk += point;
+    bytes += size;
+  }
+  if (chunk || chunks.length === 0) chunks.push(chunk);
+  return chunks;
+}
+
 export class ExecutorCoordinator {
   private readonly state: CoordinatorState;
   private readonly routes = new Map<string, InflightRoute>();
+  /**
+   * Reassembly is intentionally in-memory. Viewer socket identity survives
+   * hibernation through attachments; incomplete chunk groups do not and must be
+   * retried by the LocalService client.
+   */
+  private readonly sessionFrames = new Map<string, Map<string, PendingSessionFrame>>();
+  private readonly ephemeral = new Map<string, EphemeralInvoke>();
+  private frameCounter = 0;
 
   constructor(state: CoordinatorState) {
     this.state = state;
@@ -142,13 +208,15 @@ export class ExecutorCoordinator {
     const url = new URL(request.url);
 
     if (request.headers.get("Upgrade")?.toLowerCase() === "websocket") {
-      return this.acceptChannel(request);
+      return url.pathname === "/viewer" ? this.acceptViewer(request) : this.acceptChannel(request);
     }
 
-    // Internal-binding surface. Only reachable from an approved Kazibee worker;
-    // the public site's browser relay cannot construct these.
+    // Internal-binding surface. Only reachable from an approved Kazibee worker.
     if (request.method === "POST" && url.pathname === "/dispatch") {
       return this.dispatch(request);
+    }
+    if (request.method === "POST" && url.pathname === "/session-invoke") {
+      return this.sessionInvoke(request);
     }
     if (request.method === "GET" && url.pathname === "/presence") {
       return this.presence();
@@ -167,20 +235,29 @@ export class ExecutorCoordinator {
       return new Response("missing channel identity", { status: 400 });
     }
 
-    // One fence at a time. A newer authenticated channel replaces the old one;
-    // frames arriving on the retired fence are ignored rather than raced.
+    // One executor fence at a time. Viewer sockets are not executor channels;
+    // notify and close them when the executor is replaced.
     const fence = `fence_${crypto.randomUUID().replace(/-/g, "")}`;
     for (const existing of this.state.getWebSockets()) {
+      const attachment = existing.deserializeAttachment() as SocketAttachment | null;
       try {
-        existing.close(1012, "replaced by newer channel");
+        if (isViewerAttachment(attachment)) {
+          existing.send(JSON.stringify({ kind: "session.closed", reason: "executor-offline" }));
+          existing.close(4001, "executor-offline");
+        } else {
+          existing.close(1012, "replaced by newer channel");
+        }
       } catch {
         // Already closing; the runtime reaps it.
       }
     }
+    this.sessionFrames.clear();
+    this.rejectEphemeralOffline();
 
     const pair = new WebSocketPair();
     this.state.acceptWebSocket(pair[1]);
     const attachment: ChannelAttachment = {
+      role: "executor",
       executorId,
       deviceId,
       credentialGeneration: generation,
@@ -194,17 +271,56 @@ export class ExecutorCoordinator {
     });
   }
 
-  async webSocketMessage(ws: CoordinatorSocket, message: string | ArrayBuffer): Promise<void> {
-    if (typeof message !== "string") return;
-    if (message.length > RESULT_FRAME_LIMIT) {
-      ws.send(errorFrame("EXECUTOR_PROTOCOL_VIOLATION", "frame exceeds result budget", true));
-      ws.close(1009, "frame too large");
-      return;
+  private acceptViewer(request: Request): Response {
+    const executorId = request.headers.get("x-kazi-executor-id");
+    const accountRef = request.headers.get("x-kazi-account-ref");
+    const sessionId = request.headers.get("x-kazi-session-id");
+    if (!executorId || !accountRef || !sessionId) {
+      return new Response("missing viewer identity", { status: 400 });
+    }
+    const executor = this.executorSocket();
+    if (!executor) {
+      const pair = new WebSocketPair();
+      this.state.acceptWebSocket(pair[1]);
+      pair[1].serializeAttachment({ role: "viewer", executorId, accountRef, sessionId } satisfies ViewerAttachment);
+      pair[1].close(4404, "executor-offline");
+      return new Response(null, { status: 101, webSocket: pair[0] } as ResponseInit & {
+        webSocket: CoordinatorSocket;
+      });
     }
 
-    const attachment = ws.deserializeAttachment() as ChannelAttachment | null;
+    const pair = new WebSocketPair();
+    this.state.acceptWebSocket(pair[1]);
+    pair[1].serializeAttachment({ role: "viewer", executorId, accountRef, sessionId } satisfies ViewerAttachment);
+    executor.send(JSON.stringify({
+      kind: "session.open",
+      protocolVersion: PROTOCOL_VERSION,
+      sessionId,
+      viewerRole: "web_agent_viewer",
+      accountRef,
+      correlationId: `cor_${crypto.randomUUID().replace(/-/g, "")}`,
+      sentAt: new Date().toISOString(),
+    }));
+    pair[1].send(JSON.stringify({ kind: "session.ready", sessionId }));
+    return new Response(null, { status: 101, webSocket: pair[0] } as ResponseInit & {
+      webSocket: CoordinatorSocket;
+    });
+  }
+
+  async webSocketMessage(ws: CoordinatorSocket, message: string | ArrayBuffer): Promise<void> {
+    if (typeof message !== "string") return;
+    const attachment = ws.deserializeAttachment() as SocketAttachment | null;
     if (!attachment) {
       ws.close(1008, "unidentified channel");
+      return;
+    }
+    if (isViewerAttachment(attachment)) {
+      this.onViewerMessage(ws, attachment, message);
+      return;
+    }
+    if (new TextEncoder().encode(message).byteLength > RESULT_FRAME_LIMIT) {
+      ws.send(errorFrame("EXECUTOR_PROTOCOL_VIOLATION", "frame exceeds result budget", true));
+      ws.close(1009, "frame too large");
       return;
     }
 
@@ -216,12 +332,19 @@ export class ExecutorCoordinator {
       ws.close(1002, "invalid json");
       return;
     }
+    const limit = frame.kind === "session.frame" ? SESSION_FRAME_LIMIT : RESULT_FRAME_LIMIT;
+    if (new TextEncoder().encode(message).byteLength > limit) {
+      ws.send(errorFrame("EXECUTOR_PROTOCOL_VIOLATION", "frame exceeds result budget", true));
+      ws.close(1009, "frame too large");
+      return;
+    }
     if (frame.protocolVersion !== PROTOCOL_VERSION) {
       ws.send(errorFrame("EXECUTOR_INCOMPATIBLE", "unsupported protocol version", true));
       ws.close(1008, "protocol version");
       return;
     }
-    if (frame.executorId !== attachment.executorId) {
+    if (frame.kind !== "session.frame" && frame.kind !== "session.close"
+      && frame.executorId !== attachment.executorId) {
       ws.send(errorFrame("EXECUTOR_PROTOCOL_VIOLATION", "executor identity mismatch", true));
       ws.close(1008, "identity mismatch");
       return;
@@ -240,19 +363,34 @@ export class ExecutorCoordinator {
       case "executor.event":
         await this.onEvent(attachment, frame);
         return;
+      case "session.frame":
+        this.onSessionFrame(frame);
+        return;
+      case "session.close":
+        this.onSessionClose(frame);
+        return;
       default:
         ws.send(errorFrame("EXECUTOR_PROTOCOL_VIOLATION", "unknown frame kind", false));
     }
   }
 
   async webSocketClose(ws: CoordinatorSocket): Promise<void> {
-    const attachment = ws.deserializeAttachment() as ChannelAttachment | null;
+    const attachment = ws.deserializeAttachment() as SocketAttachment | null;
     if (!attachment) return;
+    if (isViewerAttachment(attachment)) {
+      this.sessionFrames.delete(attachment.sessionId);
+      const executor = this.executorSocket();
+      if (executor) this.sendSessionClose(executor, attachment.sessionId, "viewer-closed");
+      return;
+    }
+
     // Only clear presence if this socket still owns the current fence; a
     // replaced channel closing must not knock the new one offline.
     const record = await this.state.storage.get<PresenceRecord>(PRESENCE_KEY);
     if (record?.fence === attachment.fence) {
       await this.state.storage.delete(PRESENCE_KEY);
+      this.closeAllViewers("executor-offline");
+      this.rejectEphemeralOffline();
     }
     for (const [operationId, route] of this.routes) {
       if (route.fence === attachment.fence) {
@@ -267,6 +405,237 @@ export class ExecutorCoordinator {
         );
       }
     }
+  }
+
+  async webSocketError(ws: CoordinatorSocket): Promise<void> {
+    await this.webSocketClose(ws);
+  }
+
+  private executorSocket(): CoordinatorSocket | null {
+    const sockets = this.state.getWebSockets();
+    for (let index = sockets.length - 1; index >= 0; index -= 1) {
+      const socket = sockets[index]!;
+      if (!isViewerAttachment(socket.deserializeAttachment())) return socket;
+    }
+    return null;
+  }
+
+  private viewerSocket(sessionId: string): CoordinatorSocket | null {
+    for (const socket of this.state.getWebSockets()) {
+      const attachment = socket.deserializeAttachment();
+      if (isViewerAttachment(attachment) && attachment.sessionId === sessionId) return socket;
+    }
+    return null;
+  }
+
+  private onViewerMessage(
+    viewer: CoordinatorSocket,
+    attachment: ViewerAttachment,
+    message: string,
+  ): void {
+    let frame: Record<string, unknown>;
+    try {
+      frame = JSON.parse(message) as Record<string, unknown>;
+    } catch {
+      viewer.close(4400, "bad-frame");
+      return;
+    }
+    const allowed = new Set(["invoke", "subscribe", "subscribe-all", "unsubscribe"]);
+    if (!frame || typeof frame !== "object" || !allowed.has(String(frame.type))) {
+      viewer.close(4400, "bad-frame");
+      return;
+    }
+    const executor = this.executorSocket();
+    if (!executor) {
+      viewer.close(4404, "executor-offline");
+      return;
+    }
+    this.sendSessionFrame(executor, attachment.sessionId, message);
+  }
+
+  private sendSessionFrame(socket: CoordinatorSocket, sessionId: string, payload: string): void {
+    const chunks = utf8Chunks(payload);
+    const frameId = sessionFrameId(++this.frameCounter);
+    chunks.forEach((chunk, chunkIndex) => socket.send(JSON.stringify({
+      kind: "session.frame",
+      protocolVersion: PROTOCOL_VERSION,
+      sessionId,
+      frameId,
+      chunkIndex,
+      chunkCount: chunks.length,
+      payload: chunk,
+    })));
+  }
+
+  private sendSessionClose(socket: CoordinatorSocket, sessionId: string, reason: string): void {
+    socket.send(JSON.stringify({
+      kind: "session.close",
+      protocolVersion: PROTOCOL_VERSION,
+      sessionId,
+      reason,
+    }));
+  }
+
+  private onSessionFrame(frame: Record<string, unknown>): void {
+    const sessionId = typeof frame.sessionId === "string" ? frame.sessionId : "";
+    const frameId = typeof frame.frameId === "string" ? frame.frameId : "";
+    const chunkIndex = Number(frame.chunkIndex);
+    const chunkCount = Number(frame.chunkCount);
+    const payload = typeof frame.payload === "string" ? frame.payload : null;
+    if (!sessionId || !frameId || payload === null
+      || new TextEncoder().encode(payload).byteLength > SESSION_CHUNK_LIMIT
+      || !Number.isInteger(chunkIndex) || !Number.isInteger(chunkCount)
+      || chunkCount < 1 || chunkIndex < 0 || chunkIndex >= chunkCount) return;
+    if (!this.viewerSocket(sessionId) && !this.ephemeral.has(sessionId)) return;
+
+    let frames = this.sessionFrames.get(sessionId);
+    if (!frames) {
+      frames = new Map();
+      this.sessionFrames.set(sessionId, frames);
+    }
+    let pending = frames.get(frameId);
+    if (!pending) {
+      if (chunkIndex !== 0 || frames.size >= SESSION_PENDING_FRAMES) {
+        this.failSessionBudget(sessionId);
+        return;
+      }
+      pending = { chunkCount, nextIndex: 0, payload: [], bytes: 0 };
+      frames.set(frameId, pending);
+    }
+    if (pending.chunkCount !== chunkCount || pending.nextIndex !== chunkIndex) {
+      this.failSessionBudget(sessionId);
+      return;
+    }
+    pending.bytes += new TextEncoder().encode(payload).byteLength;
+    const totalBytes = Array.from(frames.values()).reduce((sum, value) => sum + value.bytes, 0);
+    if (totalBytes > SESSION_PENDING_BYTES) {
+      this.failSessionBudget(sessionId);
+      return;
+    }
+    pending.payload.push(payload);
+    pending.nextIndex += 1;
+    if (pending.nextIndex !== pending.chunkCount) return;
+
+    frames.delete(frameId);
+    if (frames.size === 0) this.sessionFrames.delete(sessionId);
+    const complete = pending.payload.join("");
+    const invoke = this.ephemeral.get(sessionId);
+    if (invoke) {
+      let result: Record<string, unknown>;
+      try {
+        result = JSON.parse(complete) as Record<string, unknown>;
+      } catch {
+        return;
+      }
+      if ((result.type !== "result" && result.type !== "error") || result.id !== invoke.id) return;
+      this.ephemeral.delete(sessionId);
+      clearTimeout(invoke.timer);
+      const executor = this.executorSocket();
+      if (executor) this.sendSessionClose(executor, sessionId, "ephemeral-complete");
+      invoke.resolve(Response.json(result));
+      return;
+    }
+    this.viewerSocket(sessionId)?.send(complete);
+  }
+
+  private onSessionClose(frame: Record<string, unknown>): void {
+    const sessionId = typeof frame.sessionId === "string" ? frame.sessionId : "";
+    if (!sessionId) return;
+    const reason = typeof frame.reason === "string" ? frame.reason : "executor-closed";
+    this.sessionFrames.delete(sessionId);
+    const viewer = this.viewerSocket(sessionId);
+    if (viewer) {
+      viewer.send(JSON.stringify({ kind: "session.closed", reason }));
+      viewer.close(4001, reason);
+    }
+    const invoke = this.ephemeral.get(sessionId);
+    if (invoke) {
+      this.ephemeral.delete(sessionId);
+      clearTimeout(invoke.timer);
+      invoke.resolve(Response.json({ type: "error", id: invoke.id, message: reason }, { status: 502 }));
+    }
+  }
+
+  private failSessionBudget(sessionId: string): void {
+    this.sessionFrames.delete(sessionId);
+    const viewer = this.viewerSocket(sessionId);
+    if (viewer) viewer.close(4413, "budget-exceeded");
+    const invoke = this.ephemeral.get(sessionId);
+    if (invoke) {
+      this.ephemeral.delete(sessionId);
+      clearTimeout(invoke.timer);
+      invoke.resolve(Response.json({ type: "error", id: invoke.id, message: "budget exceeded" }, { status: 502 }));
+    }
+  }
+
+  private closeAllViewers(reason: string): void {
+    this.sessionFrames.clear();
+    for (const socket of this.state.getWebSockets()) {
+      if (!isViewerAttachment(socket.deserializeAttachment())) continue;
+      try {
+        socket.send(JSON.stringify({ kind: "session.closed", reason }));
+        socket.close(4001, reason);
+      } catch {
+        // Already closing.
+      }
+    }
+  }
+
+  private rejectEphemeralOffline(): void {
+    for (const [sessionId, invoke] of this.ephemeral) {
+      this.ephemeral.delete(sessionId);
+      clearTimeout(invoke.timer);
+      invoke.resolve(Response.json(
+        { type: "error", id: invoke.id, message: "executor-offline" },
+        { status: 503 },
+      ));
+    }
+  }
+
+  private async sessionInvoke(request: Request): Promise<Response> {
+    if (this.ephemeral.size >= MAX_EPHEMERAL_INVOKES) {
+      return Response.json({ code: "BACKPRESSURE" }, { status: 429 });
+    }
+    let body: { channel?: unknown; payload?: unknown };
+    try {
+      body = await request.json() as { channel?: unknown; payload?: unknown };
+    } catch {
+      return Response.json({ code: "INVALID_FRAME" }, { status: 400 });
+    }
+    if (typeof body.channel !== "string" || !body.channel) {
+      return Response.json({ code: "INVALID_FRAME" }, { status: 400 });
+    }
+    const executor = this.executorSocket();
+    if (!executor) return Response.json({ code: "EXECUTOR_OFFLINE" }, { status: 503 });
+
+    const sessionId = `vs_${Date.now().toString(36)}_${crypto.randomUUID().replace(/-/g, "").slice(0, 12)}`;
+    const id = `inv_${crypto.randomUUID().replace(/-/g, "")}`;
+    executor.send(JSON.stringify({
+      kind: "session.open",
+      protocolVersion: PROTOCOL_VERSION,
+      sessionId,
+      viewerRole: "web_agent_viewer",
+      accountRef: request.headers.get("x-kazi-account-ref") ?? "",
+      correlationId: `cor_${crypto.randomUUID().replace(/-/g, "")}`,
+      sentAt: new Date().toISOString(),
+    }));
+
+    return new Promise<Response>((resolve) => {
+      const timer = setTimeout(() => {
+        this.ephemeral.delete(sessionId);
+        this.sessionFrames.delete(sessionId);
+        const live = this.executorSocket();
+        if (live) this.sendSessionClose(live, sessionId, "ephemeral-timeout");
+        resolve(Response.json({ type: "error", id, message: "timeout" }, { status: 504 }));
+      }, SESSION_INVOKE_TIMEOUT_MS);
+      this.ephemeral.set(sessionId, { id, resolve, timer });
+      this.sendSessionFrame(executor, sessionId, JSON.stringify({
+        type: "invoke",
+        id,
+        channel: body.channel,
+        payload: body.payload,
+      }));
+    });
   }
 
   private async onHello(
@@ -358,6 +727,7 @@ export class ExecutorCoordinator {
     if (!record) return undefined;
     let lastSeenAt = record.lastSeenAt;
     for (const socket of this.state.getWebSockets()) {
+      if (isViewerAttachment(socket.deserializeAttachment())) continue;
       const answeredAt = this.state.getWebSocketAutoResponseTimestamp(socket);
       if (answeredAt) lastSeenAt = Math.max(lastSeenAt, answeredAt.getTime());
     }
@@ -366,7 +736,7 @@ export class ExecutorCoordinator {
 
   private async presence(): Promise<Response> {
     const record = this.liveRecord(await this.state.storage.get<PresenceRecord>(PRESENCE_KEY));
-    const hasSocket = this.state.getWebSockets().length > 0;
+    const hasSocket = this.executorSocket() !== null;
     return Response.json({
       state: presenceState(record, hasSocket),
       executorId: record?.executorId ?? null,
@@ -388,8 +758,7 @@ export class ExecutorCoordinator {
     }
 
     const record = this.liveRecord(await this.state.storage.get<PresenceRecord>(PRESENCE_KEY));
-    const sockets = this.state.getWebSockets();
-    const socket = sockets[0];
+    const socket = this.executorSocket();
     if (!socket || !record || presenceState(record, true) !== "online") {
       return Response.json(
         { code: "EXECUTOR_OFFLINE", message: "The executor is not connected." },

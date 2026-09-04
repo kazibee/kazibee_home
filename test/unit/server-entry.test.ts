@@ -58,38 +58,41 @@ describe("server entrypoints", () => {
   });
 
   describe("node()", () => {
-    it("boots the database and returns dinner hooks", async () => {
+    it("boots the database and returns App boot hooks", async () => {
       const hooks = await node();
       expect(initDatabase).toHaveBeenCalledTimes(1);
-      expect(typeof hooks.contextBuilder).toBe("function");
-      expect(typeof hooks.controllerBuilder).toBe("function");
+      expect(typeof hooks.requestScope).toBe("function");
       expect(typeof hooks.onRequestError).toBe("function");
+      // The App owns the request scope now: no legacy construction hooks.
+      expect("contextBuilder" in hooks).toBe(false);
+      expect("controllerBuilder" in hooks).toBe(false);
     });
 
-    it("contextBuilder captures the raw request in a scoped container", async () => {
+    it("loads process.env into the container the App hands in", async () => {
+      const { createContainer } = await import("@noego/ioc");
+      const container = createContainer();
+      await node({ container });
+      const env = container.get(Env) as Env;
+      expect(env.string("PATH")).toBe(process.env.PATH);
+    });
+
+    it("requestScope captures the raw request in the App-owned scope", async () => {
+      const { createContainer } = await import("@noego/ioc");
+      const scope = createContainer().extend();
       const hooks = await node();
       const request = new Request("https://kazibee.test/connect");
-      const context = await hooks.contextBuilder({ request });
-      const rawRequest = (await context.container.get(RawRequest)) as RawRequest;
+      await hooks.requestScope(scope, { request });
+      const rawRequest = (await scope.get(RawRequest)) as RawRequest;
       expect(rawRequest.get()).toBe(request);
     });
 
-    it("contextBuilder stores null when no request is given", async () => {
+    it("requestScope stores null when no request is given", async () => {
+      const { createContainer } = await import("@noego/ioc");
+      const scope = createContainer().extend();
       const hooks = await node();
-      const context = await hooks.contextBuilder();
-      const rawRequest = (await context.container.get(RawRequest)) as RawRequest;
+      await hooks.requestScope(scope, {});
+      const rawRequest = (await scope.get(RawRequest)) as RawRequest;
       expect(rawRequest.get()).toBeNull();
-    });
-
-    it("controllerBuilder resolves from the scoped container when present", async () => {
-      const hooks = await node();
-      const context = await hooks.contextBuilder({ request: new Request("https://kazibee.test/") });
-      const scoped = await hooks.controllerBuilder(RawRequest, context);
-      const again = await hooks.controllerBuilder(RawRequest, context);
-      expect(scoped).toBe(again);
-      // Without a context it falls back to the root container.
-      const root = await hooks.controllerBuilder(Env, null);
-      expect(root).toBeInstanceOf(Env);
     });
   });
 
@@ -97,14 +100,14 @@ describe("server entrypoints", () => {
     it("returns hooks without registering a database when DATABASE_URL is absent", async () => {
       const hooks = await worker({ env: {} });
       expect(registered).toHaveLength(0);
-      expect(typeof hooks.contextBuilder).toBe("function");
+      expect(typeof hooks.requestScope).toBe("function");
       expect(typeof hooks.onRequestError).toBe("function");
     });
 
     it("tolerates a missing env bag entirely", async () => {
       const hooks = await worker();
       expect(registered).toHaveLength(0);
-      expect(typeof hooks.controllerBuilder).toBe("function");
+      expect(typeof hooks.requestScope).toBe("function");
     });
 
     it("publishes env bindings to the Env service", async () => {
@@ -164,19 +167,19 @@ describe("server entrypoints", () => {
       neon.mockImplementationOnce(() => { throw new Error("bad connection string"); });
       const hooks = await worker({ env: { DATABASE_URL: "postgres://broken" } });
       expect(registered).toHaveLength(0);
-      expect(typeof hooks.contextBuilder).toBe("function");
+      expect(typeof hooks.requestScope).toBe("function");
     });
 
-    it("worker contextBuilder and controllerBuilder mirror the node hooks", async () => {
-      const hooks = await worker({ env: {} });
+    it("worker requestScope mirrors the node hook and env lands in the provided container", async () => {
+      const { createContainer } = await import("@noego/ioc");
+      const container = createContainer();
+      const hooks = await worker({ env: { SOME_BINDING: "isolated" }, container });
+      expect((container.get(Env) as Env).string("SOME_BINDING")).toBe("isolated");
+      const scope = container.extend();
       const request = new Request("https://kazibee.test/worker");
-      const context = await hooks.contextBuilder({ request });
-      const rawRequest = (await context.container.get(RawRequest)) as RawRequest;
+      await hooks.requestScope(scope, { request });
+      const rawRequest = (await scope.get(RawRequest)) as RawRequest;
       expect(rawRequest.get()).toBe(request);
-      const controller = await hooks.controllerBuilder(RawRequest, context);
-      expect(controller).toBe(rawRequest);
-      const fallback = await hooks.controllerBuilder(Env, undefined);
-      expect(fallback).toBeInstanceOf(Env);
     });
   });
 });

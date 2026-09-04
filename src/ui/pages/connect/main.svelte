@@ -108,7 +108,10 @@
               </div>
             </div>
           {:else if executor.canManage}
-            <div class="mt-5 flex gap-2 border-t border-neutral-100 pt-4">
+            <div class="mt-5 flex flex-wrap gap-2 border-t border-neutral-100 pt-4">
+              {#if executor.online}
+                <button type="button" onclick={() => input.openAgent(executor.executorId)} disabled={data.busyId === executor.executorId} class="rounded-lg bg-ink px-3 py-2 text-xs font-bold text-white transition hover:bg-neutral-800 disabled:opacity-50" data-test-id="executor-open-agent">Open Web Agent</button>
+              {/if}
               <button type="button" onclick={() => input.openRename(executor.executorId)} class="rounded-lg border border-neutral-300 px-3 py-2 text-xs font-bold text-ink transition hover:bg-neutral-50" data-test-id="executor-rename">Rename</button>
               <button type="button" onclick={() => input.openRevoke(executor.executorId)} class="rounded-lg border border-red-200 px-3 py-2 text-xs font-bold text-red-700 transition hover:bg-red-50" data-test-id="executor-revoke">Revoke</button>
             </div>

@@ -70,6 +70,7 @@ deploy:
             # OAuth origins are deployment-pinned: issuer strings must be
             # byte-stable per environment (clients cache AS metadata).
             KAZI_MCP_ORIGIN: https://mcp-dev.kazibee.com
+            KAZI_AGENT_ORIGIN: https://agent-dev.kazibee.com
             KAZI_WEBSITE_ORIGIN: https://dev.kazibee.com
             KAZI_SWARM_ENV: dev
       production:
@@ -81,5 +82,6 @@ deploy:
           vars:
             KAZI_CONNECT_ACCOUNT_URL: https://kazibee.com/connect
             KAZI_MCP_ORIGIN: https://mcp.kazibee.com
+            KAZI_AGENT_ORIGIN: https://agent.kazibee.com
             KAZI_WEBSITE_ORIGIN: https://kazibee.com
             KAZI_SWARM_ENV: prod

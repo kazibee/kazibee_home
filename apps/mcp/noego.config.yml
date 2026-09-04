@@ -42,6 +42,7 @@ deploy:
             # OAuth issuer/resource identity for this deployment — must be
             # byte-stable (clients cache AS metadata and compare iss).
             KAZI_MCP_ORIGIN: https://mcp-dev.kazibee.com
+            KAZI_AGENT_ORIGIN: https://agent-dev.kazibee.com
             KAZI_WEBSITE_ORIGIN: https://dev.kazibee.com
           durable_objects:
             bindings:
@@ -56,6 +57,7 @@ deploy:
         wrangler:
           vars:
             KAZI_MCP_ORIGIN: https://mcp.kazibee.com
+            KAZI_AGENT_ORIGIN: https://agent.kazibee.com
             KAZI_WEBSITE_ORIGIN: https://kazibee.com
           durable_objects:
             bindings:

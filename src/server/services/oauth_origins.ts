@@ -28,6 +28,10 @@ export default class OAuthOrigins {
     return this.origin("KAZI_WEBSITE_ORIGIN", "https://dev.kazibee.com");
   }
 
+  get agentOrigin(): string {
+    return this.origin("KAZI_AGENT_ORIGIN", "https://agent-dev.kazibee.com");
+  }
+
   get authorizationEndpoint(): string {
     return `${this.websiteOrigin}/oauth/authorize`;
   }

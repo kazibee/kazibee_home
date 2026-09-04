@@ -8,10 +8,31 @@ import { SqlStackDB, createPgDb } from "sqlstack";
 import { neon, Pool } from "@neondatabase/serverless";
 import { initDatabase } from "./repo/boot";
 import TraceAdapter from "./observability/trace_adapter";
-import container from "./container";
+import type { Container } from "@noego/ioc";
+import legacyContainer from "./container";
 import { connectRequestError } from "./middleware/connect_request_error";
 import Env from "./services/env";
 import RawRequest from "./services/raw_request";
+
+interface BootOptions {
+  root?: string;
+  env?: Record<string, unknown>;
+  /** The App server root (absent only for legacy callers → the deprecated global). */
+  container?: Container;
+}
+
+const rootOf = (options: BootOptions): Container => options.container ?? legacyContainer;
+
+/**
+ * The App owns the per-request scope (one child of the server root per
+ * request, active through ioc's ExecutionContext); this populates the
+ * scoped RawRequest holder so controllers can forward the untouched Request
+ * (e.g. a WebSocket upgrade) rather than a reconstructed one.
+ */
+const requestScope = async (scope: Container, ctx: { request?: Request }) => {
+  const rawRequest = (await scope.get(RawRequest)) as RawRequest;
+  rawRequest.set(ctx.request ?? null);
+};
 
 const baseLogger = getLogger("kazibee");
 
@@ -22,48 +43,25 @@ export async function configureLogging(): Promise<void> {
   configureNoegoLogging({});
 }
 
-export async function node(_options: { root?: string } = {}) {
+export async function node(options: BootOptions = {}) {
+  const container = rootOf(options);
   await configureLogging();
   TraceAdapter.configureWebsiteProcess();
   await initDatabase();
 
   (container.get(Env) as Env).load(process.env as Record<string, unknown>);
 
-  return {
-    contextBuilder: async (requestContext?: { request?: Request }) => {
-      const scoped = container.extend();
-      // Captured so controllers can forward the untouched Request (e.g. a
-      // WebSocket upgrade) rather than a reconstructed one.
-      const rawRequest = (await scoped.get(RawRequest)) as RawRequest;
-      rawRequest.set(requestContext?.request ?? null);
-      return { container: scoped };
-    },
-    controllerBuilder: async (Controller: any, context: any) => {
-      if (context?.container) return context.container.get(Controller);
-      return container.get(Controller);
-    },
-    onRequestError: connectRequestError,
-  };
+  return { requestScope, onRequestError: connectRequestError };
 }
 
-export async function worker({ env }: { env?: Record<string, unknown> } = {}) {
+export async function worker(options: BootOptions = {}) {
+  const container = rootOf(options);
+  const env = options.env;
   TraceAdapter.configureWebsiteProcess();
   // Worker bindings (EXECUTOR_COORDINATOR, secrets) live on `env`, not
   // process.env, so they must be published before any request is served.
   (container.get(Env) as Env).load(env ?? {});
-  const hooks = {
-    onRequestError: connectRequestError,
-    contextBuilder: async (requestContext?: { request?: Request }) => {
-      const scoped = container.extend();
-      const rawRequest = (await scoped.get(RawRequest)) as RawRequest;
-      rawRequest.set(requestContext?.request ?? null);
-      return { container: scoped };
-    },
-    controllerBuilder: async (Controller: any, context: any) => {
-      if (context?.container) return context.container.get(Controller);
-      return container.get(Controller);
-    },
-  };
+  const hooks = { requestScope, onRequestError: connectRequestError };
   const connectionString = typeof env?.DATABASE_URL === "string" ? env.DATABASE_URL : null;
   if (!connectionString) {
     baseLogger.warn("[kazibee] worker boot: no DATABASE_URL bound — DB-backed routes will fail");

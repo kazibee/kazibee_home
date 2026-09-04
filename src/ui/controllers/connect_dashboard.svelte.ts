@@ -76,6 +76,7 @@ interface DashboardInput {
   openConnectionRevoke(connectionId: string): void;
   cancelConnectionRevoke(): void;
   revokeConnection(): Promise<void>;
+  openAgent(executorId: string): Promise<void>;
   openRename(executorId: string): void;
   setRenameValue(value: string): void;
   cancelRename(): void;
@@ -218,6 +219,31 @@ export default class ConnectDashboardController implements PageController<Dashbo
           item.connectionId !== connectionId);
         this.input.cancelConnectionRevoke();
       });
+    },
+    openAgent: async (executorId) => {
+      const executor = this.data.executors.find((item) => item.executorId === executorId);
+      const csrf = this.deps.getCsrfToken();
+      if (!executor?.online || !csrf || this.data.busyId) return;
+      this.data.busyId = executorId;
+      this.data.actionError = null;
+      try {
+        const response = await this.deps.fetch(
+          '/v1/connect/agent/handoffs',
+          requestInit({ executorId }, csrf),
+        );
+        if (response.status === 401) {
+          this.signedOut();
+          return;
+        }
+        if (!response.ok) throw new Error(await responseMessage(response, 'Unable to open Web Agent.'));
+        const body = await response.json() as { url?: unknown };
+        if (typeof body.url !== 'string') throw new Error('Unable to open Web Agent.');
+        window.open(body.url, '_blank', 'noopener,noreferrer');
+      } catch (error) {
+        this.data.actionError = error instanceof Error ? error.message : 'Unable to open Web Agent.';
+      } finally {
+        this.data.busyId = null;
+      }
     },
     openRename: (executorId) => {
       const executor = this.data.executors.find((item) => item.executorId === executorId);

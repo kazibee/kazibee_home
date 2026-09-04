@@ -1,0 +1,52 @@
+name: Deploy Web Agent Dev (Cloudflare)
+
+on:
+  push:
+    branches: [release-candidate]
+    paths:
+      - src/agent/**
+      - src/server/**
+      - apps/agent/**
+      - migrations/**
+      - package.json
+      - package-lock.json
+      - .github/workflows/deploy-agent-dev.yml
+  workflow_dispatch:
+
+jobs:
+  deploy-agent-dev:
+    runs-on: self-hosted
+    environment: dev
+    steps:
+      - name: Checkout website
+        uses: actions/checkout@v4
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Install dependencies
+        run: npm ci
+      - name: Build Cloudflare Web Agent worker
+        run: npm run agent:build
+      - name: "Deploy with wrangler (env: dev)"
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          wranglerVersion: "4.126.0"
+          workingDirectory: apps/agent/dist/cloudflare
+          environment: dev
+          command: deploy --env dev
+      - name: "Upload worker secrets (env: dev)"
+        uses: cloudflare/wrangler-action@v3
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          wranglerVersion: "4.126.0"
+          workingDirectory: apps/agent/dist/cloudflare
+          environment: dev
+          command: versions list --env dev
+          secrets: |
+            DATABASE_URL

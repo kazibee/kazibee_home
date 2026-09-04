@@ -1,0 +1,52 @@
+name: Deploy Web Agent Production (Cloudflare)
+
+on:
+  push:
+    branches: [release]
+    paths:
+      - src/agent/**
+      - src/server/**
+      - apps/agent/**
+      - migrations/**
+      - package.json
+      - package-lock.json
+      - .github/workflows/deploy-agent-prod.yml
+  workflow_dispatch:
+
+jobs:
+  deploy-agent-production:
+    runs-on: self-hosted
+    environment: production
+    steps:
+      - name: Checkout website
+        uses: actions/checkout@v4
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Install dependencies
+        run: npm ci
+      - name: Build Cloudflare Web Agent worker
+        run: npm run agent:build
+      - name: "Deploy with wrangler (env: production)"
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          wranglerVersion: "4.126.0"
+          workingDirectory: apps/agent/dist/cloudflare
+          environment: production
+          command: deploy --env production
+      - name: "Upload worker secrets (env: production)"
+        uses: cloudflare/wrangler-action@v3
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          wranglerVersion: "4.126.0"
+          workingDirectory: apps/agent/dist/cloudflare
+          environment: production
+          command: versions list --env production
+          secrets: |
+            DATABASE_URL

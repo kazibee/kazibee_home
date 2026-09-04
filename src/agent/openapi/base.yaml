@@ -1,0 +1,8 @@
+openapi: 3.0.0
+info:
+  title: Kazibee Web Agent
+  version: '1.0.0'
+  description: Authenticated browser viewer for a connected Kazibee executor.
+servers:
+  - url: http://localhost:3200
+    description: Local development server

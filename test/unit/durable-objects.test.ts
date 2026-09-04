@@ -722,4 +722,112 @@ describe("ExecutorCoordinator", () => {
       expect(state.storage.map.has("presence")).toBe(true);
     });
   });
+
+  describe("viewer sessions", () => {
+    const viewerRequest = () => new Request("https://do.internal/viewer", {
+      headers: {
+        Upgrade: "websocket",
+        "x-kazi-executor-id": "exe_do0000000001",
+        "x-kazi-account-ref": "usr_do0000000001",
+        "x-kazi-session-id": "vs_session000001",
+      },
+    });
+
+    it("accepts viewers when the executor is attached and rejects them offline", async () => {
+      const offline = makeCoordinator();
+      expect((await offline.coordinator.fetch(viewerRequest())).status).toBe(101);
+      expect(offline.state.accepted[0]!.closed.at(-1)).toEqual({
+        code: 4404,
+        reason: "executor-offline",
+      });
+
+      const online = makeCoordinator();
+      const executor = await connect(online.state, online.coordinator);
+      expect((await online.coordinator.fetch(viewerRequest())).status).toBe(101);
+      const viewer = online.state.accepted.at(-1)!;
+      expect(viewer.lastFrame()).toEqual({ kind: "session.ready", sessionId: "vs_session000001" });
+      expect(executor.sent.map((value) => JSON.parse(value) as { kind?: string }).at(-1)?.kind)
+        .toBe("session.open");
+    });
+
+    it("chunks and reassembles a 300 KiB viewer frame", async () => {
+      const { state, coordinator } = makeCoordinator();
+      const executor = await connect(state, coordinator);
+      await coordinator.fetch(viewerRequest());
+      const viewer = state.accepted.at(-1)!;
+      const original = JSON.stringify({
+        type: "invoke",
+        id: "inv_large",
+        channel: "echo",
+        payload: "x".repeat(300 * 1024),
+      });
+      await coordinator.webSocketMessage(viewer, original);
+      const chunks = executor.sent
+        .map((value) => JSON.parse(value) as Record<string, unknown>)
+        .filter((frame) => frame.kind === "session.frame");
+      expect(chunks.length).toBeGreaterThan(2);
+      for (const chunk of chunks) {
+        await coordinator.webSocketMessage(executor, JSON.stringify(chunk));
+      }
+      expect(viewer.sent.at(-1)).toBe(original);
+    });
+
+    it("fans executor-offline out to every viewer", async () => {
+      const { state, coordinator } = makeCoordinator();
+      const executor = await connect(state, coordinator);
+      await coordinator.fetch(viewerRequest());
+      await coordinator.fetch(new Request("https://do.internal/viewer", {
+        headers: {
+          Upgrade: "websocket",
+          "x-kazi-executor-id": "exe_do0000000001",
+          "x-kazi-account-ref": "usr_do0000000001",
+          "x-kazi-session-id": "vs_session000002",
+        },
+      }));
+      const viewers = state.accepted.slice(-2);
+      await coordinator.webSocketClose(executor);
+      for (const viewer of viewers) {
+        expect(viewer.lastFrame()).toEqual({ kind: "session.closed", reason: "executor-offline" });
+        expect(viewer.closed.at(-1)).toEqual({ code: 4001, reason: "executor-offline" });
+      }
+    });
+
+    it("completes and times out ephemeral session invokes", async () => {
+      const { state, coordinator } = makeCoordinator();
+      const executor = await connect(state, coordinator);
+      const request = () => new Request("https://do.internal/session-invoke", {
+        method: "POST",
+        body: JSON.stringify({ channel: "assets.read", payload: { path: "/tmp/a.png" } }),
+      });
+      const pending = coordinator.fetch(request());
+      await drain();
+      const frames = executor.sent
+        .map((value) => JSON.parse(value) as Record<string, unknown>);
+      const open = frames.findLast((frame) => frame.kind === "session.open")!;
+      const outbound = frames.filter((frame) =>
+        frame.kind === "session.frame" && frame.sessionId === open.sessionId);
+      const invoke = JSON.parse(outbound.map((frame) => String(frame.payload)).join("")) as {
+        id: string;
+      };
+      await coordinator.webSocketMessage(executor, JSON.stringify({
+        kind: "session.frame",
+        protocolVersion: PROTOCOL,
+        sessionId: open.sessionId,
+        frameId: "sf_result_1",
+        chunkIndex: 0,
+        chunkCount: 1,
+        payload: JSON.stringify({ type: "result", id: invoke.id, value: { ok: true } }),
+      }));
+      expect(await (await pending).json()).toEqual({
+        type: "result",
+        id: invoke.id,
+        value: { ok: true },
+      });
+
+      const timeout = coordinator.fetch(request());
+      await drain();
+      await vi.advanceTimersByTimeAsync(30_000);
+      expect((await timeout).status).toBe(504);
+    });
+  });
 });

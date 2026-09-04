@@ -1,0 +1,59 @@
+module:
+  agent:
+    basePath: ''
+    paths:
+      '/handoff/{token}':
+        get:
+          x-controller: connect_agent.controller
+          x-action: handoff
+          parameters:
+            - in: path
+              name: token
+              required: true
+              schema: { type: string, pattern: '^[A-Za-z0-9_-]{43}$' }
+          responses:
+            '302': { description: Agent session established or rejected }
+      '/':
+        get:
+          x-controller: connect_agent.controller
+          x-action: home
+          responses:
+            '200': { description: Web Agent renderer }
+            '302': { description: Connect login required }
+            '503': { description: Renderer unavailable }
+      '/v1/agent/session':
+        get:
+          x-controller: connect_agent.controller
+          x-action: connect
+          responses:
+            '101': { description: Viewer session established }
+            '401': { description: Agent session required }
+            '403': { description: Origin rejected }
+            '426': { description: WebSocket upgrade required }
+      '/assets':
+        get:
+          x-controller: connect_agent.controller
+          x-action: asset
+          parameters:
+            - in: query
+              name: path
+              required: true
+              schema: { type: string, minLength: 1, maxLength: 4096 }
+          responses:
+            '200': { description: Executor asset bytes }
+            '401': { description: Agent session required }
+            '404': { description: Asset not found }
+            '504': { description: Executor timed out }
+      '/{path}':
+        get:
+          x-controller: connect_agent.controller
+          x-action: home
+          parameters:
+            - in: path
+              name: path
+              required: true
+              schema: { type: string }
+          responses:
+            '200': { description: Web Agent renderer }
+            '302': { description: Connect login required }
+            '503': { description: Renderer unavailable }

@@ -750,7 +750,7 @@ describe("ExecutorCoordinator", () => {
         .toBe("session.open");
     });
 
-    it("chunks and reassembles a 300 KiB viewer frame", async () => {
+    it("chunks a 300 KiB viewer frame toward the executor and forwards executor chunks unassembled", async () => {
       const { state, coordinator } = makeCoordinator();
       const executor = await connect(state, coordinator);
       await coordinator.fetch(viewerRequest());
@@ -766,10 +766,51 @@ describe("ExecutorCoordinator", () => {
         .map((value) => JSON.parse(value) as Record<string, unknown>)
         .filter((frame) => frame.kind === "session.frame");
       expect(chunks.length).toBeGreaterThan(2);
+
+      // Executor -> viewer: multi-chunk frames are relayed piecewise (a Workers
+      // WebSocket message is capped at 1 MiB; the browser reassembles), while a
+      // single-chunk frame is passed through verbatim.
+      const sentBefore = viewer.sent.length;
       for (const chunk of chunks) {
         await coordinator.webSocketMessage(executor, JSON.stringify(chunk));
       }
-      expect(viewer.sent.at(-1)).toBe(original);
+      const relayed = viewer.sent.slice(sentBefore)
+        .map((value) => JSON.parse(value) as Record<string, unknown>);
+      expect(relayed.length).toBe(chunks.length);
+      expect(relayed.every((frame) => frame.kind === "session.chunk")).toBe(true);
+      expect(relayed.map((frame) => frame.chunkIndex)).toEqual(chunks.map((_, index) => index));
+      expect(relayed.map((frame) => String(frame.payload)).join("")).toBe(original);
+
+      const small = JSON.stringify({ type: "result", id: "inv_small", value: 1 });
+      await coordinator.webSocketMessage(executor, JSON.stringify({
+        kind: "session.frame",
+        protocolVersion: PROTOCOL,
+        sessionId: "vs_session000001",
+        frameId: "sf_small_1",
+        chunkIndex: 0,
+        chunkCount: 1,
+        payload: small,
+      }));
+      expect(viewer.sent.at(-1)).toBe(small);
+    });
+
+    it("closes only the viewer when a viewer send fails, never the executor", async () => {
+      const { state, coordinator } = makeCoordinator();
+      const executor = await connect(state, coordinator);
+      await coordinator.fetch(viewerRequest());
+      const viewer = state.accepted.at(-1)!;
+      viewer.send = () => { throw new Error("message too large"); };
+      await coordinator.webSocketMessage(executor, JSON.stringify({
+        kind: "session.frame",
+        protocolVersion: PROTOCOL,
+        sessionId: "vs_session000001",
+        frameId: "sf_boom_1",
+        chunkIndex: 0,
+        chunkCount: 1,
+        payload: JSON.stringify({ type: "result", id: "inv_boom", value: 1 }),
+      }));
+      expect(viewer.closed.at(-1)).toEqual({ code: 4413, reason: "viewer-send-failed" });
+      expect(executor.closed).toEqual([]);
     });
 
     it("fans executor-offline out to every viewer", async () => {

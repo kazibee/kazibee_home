@@ -315,7 +315,16 @@ export class ExecutorCoordinator {
       return;
     }
     if (isViewerAttachment(attachment)) {
-      this.onViewerMessage(ws, attachment, message);
+      // A viewer's failure must never propagate to the executor socket.
+      try {
+        this.onViewerMessage(ws, attachment, message);
+      } catch {
+        try {
+          ws.close(4413, "viewer-message-failed");
+        } catch {
+          // Already closing.
+        }
+      }
       return;
     }
     if (new TextEncoder().encode(message).byteLength > RESULT_FRAME_LIMIT) {
@@ -486,7 +495,20 @@ export class ExecutorCoordinator {
       || new TextEncoder().encode(payload).byteLength > SESSION_CHUNK_LIMIT
       || !Number.isInteger(chunkIndex) || !Number.isInteger(chunkCount)
       || chunkCount < 1 || chunkIndex < 0 || chunkIndex >= chunkCount) return;
-    if (!this.viewerSocket(sessionId) && !this.ephemeral.has(sessionId)) return;
+
+    // Viewer-bound frames are forwarded chunk-by-chunk and reassembled in the
+    // browser: a Workers WebSocket message is capped at 1 MiB, while executor
+    // frames may run to the 8 MiB session budget, so reassembling here would
+    // make `viewer.send` throw (and take the executor socket down with it).
+    // Only ephemeral (worker-internal) invokes are reassembled in the object.
+    if (!this.ephemeral.has(sessionId)) {
+      const viewer = this.viewerSocket(sessionId);
+      if (!viewer) return;
+      this.sendToViewer(viewer, chunkCount === 1
+        ? payload
+        : JSON.stringify({ kind: "session.chunk", frameId, chunkIndex, chunkCount, payload }));
+      return;
+    }
 
     let frames = this.sessionFrames.get(sessionId);
     if (!frames) {
@@ -545,14 +567,36 @@ export class ExecutorCoordinator {
     this.sessionFrames.delete(sessionId);
     const viewer = this.viewerSocket(sessionId);
     if (viewer) {
-      viewer.send(JSON.stringify({ kind: "session.closed", reason }));
-      viewer.close(4001, reason);
+      try {
+        viewer.send(JSON.stringify({ kind: "session.closed", reason }));
+        viewer.close(4001, reason);
+      } catch {
+        // Already closing.
+      }
     }
     const invoke = this.ephemeral.get(sessionId);
     if (invoke) {
       this.ephemeral.delete(sessionId);
       clearTimeout(invoke.timer);
       invoke.resolve(Response.json({ type: "error", id: invoke.id, message: reason }, { status: 502 }));
+    }
+  }
+
+  /**
+   * A failing viewer send (oversize message, socket already gone) must only
+   * cost that viewer; the executor channel is shared by every session.
+   */
+  private sendToViewer(viewer: CoordinatorSocket, message: string): void {
+    try {
+      viewer.send(message);
+    } catch {
+      const attachment = viewer.deserializeAttachment() as SocketAttachment | null;
+      if (isViewerAttachment(attachment)) this.sessionFrames.delete(attachment.sessionId);
+      try {
+        viewer.close(4413, "viewer-send-failed");
+      } catch {
+        // Already closing.
+      }
     }
   }
 

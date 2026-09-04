@@ -45,7 +45,7 @@
     "sqlstack": "^3.1.0"
   },
   "devDependencies": {
-    "@noego/app": "^2.4.0",
+    "@noego/app": "^2.4.1",
     "@noego/dinner": "^2.2.0",
     "@noego/forge": "^2.3.0",
     "@noego/testing": "^0.4.0",

@@ -1,5 +1,12 @@
 name: Deploy Web Agent Production (Cloudflare)
 
+# The Web Agent serves the Desktop app's renderer bundle from
+# agent.kazibee.com. The bundle is NOT committed here: this job clones the
+# Desktop at its release branch, builds the bundle with the Desktop's own
+# `build:web-agent` script into apps/agent/renderer, then packages and deploys
+# the worker. Re-run via workflow_dispatch to pick up a Desktop UI change
+# without a website commit.
+
 on:
   push:
     branches: [release]
@@ -12,6 +19,10 @@ on:
       - package-lock.json
       - .github/workflows/deploy-agent-prod.yml
   workflow_dispatch:
+
+env:
+  DESKTOP_REPO: git@github.com:kazibee/kazibee_desktop.git
+  DESKTOP_REF: release
 
 jobs:
   deploy-agent-production:
@@ -26,6 +37,34 @@ jobs:
           node-version: 22
       - name: Install dependencies
         run: npm ci
+
+      # Desktop checkout lives OUTSIDE the website tree so its file: deps
+      # (../../noego/<name>) resolve to the same sibling layout developers use.
+      - name: Checkout Desktop (release)
+        run: |
+          set -euo pipefail
+          root="$RUNNER_TEMP/web-agent-build"
+          rm -rf "$root"
+          mkdir -p "$root/desktops"
+          git clone --quiet --depth 1 --branch "$DESKTOP_REF" "$DESKTOP_REPO" "$root/desktops/demo-assistant"
+          echo "DESKTOP_DIR=$root/desktops/demo-assistant" >> "$GITHUB_ENV"
+          git -C "$root/desktops/demo-assistant" rev-parse --short HEAD
+      - name: Install Desktop dependencies
+        working-directory: ${{ env.DESKTOP_DIR }}
+        run: npm ci
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          PLAYWRIGHT_BROWSERS_PATH: '0'
+      - name: Build Web Agent renderer bundle
+        working-directory: ${{ env.DESKTOP_DIR }}
+        run: npm run build:web-agent
+        env:
+          KAZIBEE_WEB_AGENT_BUNDLE_DIR: ${{ github.workspace }}/apps/agent/renderer
+      - name: Verify bundle
+        run: |
+          test -f apps/agent/renderer/index.html
+          ls apps/agent/renderer/assets | grep -q '^web_agent-.*\.js$'
+
       - name: Build Cloudflare Web Agent worker
         run: npm run agent:build
       - name: "Deploy with wrangler (env: production)"

@@ -63,4 +63,8 @@ src/ui/resources/analytics/
 .noego/
 todo.md
 
+# Web Agent renderer bundle: built on CI from the Desktop repo
+# (.github/workflows/deploy-agent-*.yml), never committed.
+apps/agent/renderer/
+
 coverage-full/

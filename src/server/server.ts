@@ -29,10 +29,35 @@ const rootOf = (options: BootOptions): Container => options.container ?? legacyC
  * scoped RawRequest holder so controllers can forward the untouched Request
  * (e.g. a WebSocket upgrade) rather than a reconstructed one.
  */
-const requestScope = async (scope: Container, ctx: { request?: Request }) => {
+type ScopeLike = { get(token: unknown): unknown };
+
+const requestScope = async (scope: ScopeLike, ctx: { request?: Request }) => {
   const rawRequest = (await scope.get(RawRequest)) as RawRequest;
   rawRequest.set(ctx.request ?? null);
 };
+
+/**
+ * Boot hooks for BOTH @noego/app runtimes:
+ * - `requestScope` (App-owned request scope; upcoming runtime).
+ * - `contextBuilder` / `controllerBuilder` (the published 2.4.x runtime, which
+ *   is what CI installs). Without these the published runtime never populates
+ *   RawRequest, and every WebSocket upgrade route (executor channel, viewer
+ *   session) answers 500 RAW_REQUEST_UNAVAILABLE. The newer runtime ignores
+ *   the legacy pair (it logs one warning), so returning both is safe.
+ */
+const bootHooks = (container: Container) => ({
+  requestScope,
+  onRequestError: connectRequestError,
+  contextBuilder: async (requestContext?: { request?: Request }) => {
+    const scoped = container.extend();
+    await requestScope(scoped, { request: requestContext?.request });
+    return { container: scoped };
+  },
+  controllerBuilder: async (Controller: any, context: any) => {
+    if (context?.container) return context.container.get(Controller);
+    return container.get(Controller);
+  },
+});
 
 const baseLogger = getLogger("kazibee");
 
@@ -51,7 +76,7 @@ export async function node(options: BootOptions = {}) {
 
   (container.get(Env) as Env).load(process.env as Record<string, unknown>);
 
-  return { requestScope, onRequestError: connectRequestError };
+  return bootHooks(container);
 }
 
 export async function worker(options: BootOptions = {}) {
@@ -61,7 +86,7 @@ export async function worker(options: BootOptions = {}) {
   // Worker bindings (EXECUTOR_COORDINATOR, secrets) live on `env`, not
   // process.env, so they must be published before any request is served.
   (container.get(Env) as Env).load(env ?? {});
-  const hooks = { requestScope, onRequestError: connectRequestError };
+  const hooks = bootHooks(container);
   const connectionString = typeof env?.DATABASE_URL === "string" ? env.DATABASE_URL : null;
   if (!connectionString) {
     baseLogger.warn("[kazibee] worker boot: no DATABASE_URL bound — DB-backed routes will fail");

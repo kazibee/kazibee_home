@@ -63,9 +63,16 @@ describe("server entrypoints", () => {
       expect(initDatabase).toHaveBeenCalledTimes(1);
       expect(typeof hooks.requestScope).toBe("function");
       expect(typeof hooks.onRequestError).toBe("function");
-      // The App owns the request scope now: no legacy construction hooks.
-      expect("contextBuilder" in hooks).toBe(false);
-      expect("controllerBuilder" in hooks).toBe(false);
+      // The published @noego/app 2.4.x runtime (what CI installs) only honours
+      // the legacy construction hooks; without them RawRequest is never set
+      // and every WebSocket upgrade route answers 500. Both hook families are
+      // returned until the requestScope-aware runtime is published.
+      expect(typeof hooks.contextBuilder).toBe("function");
+      expect(typeof hooks.controllerBuilder).toBe("function");
+      const request = new Request("https://dev.kazibee.com/v1/connect/executors/exe_x/channel");
+      const legacy = await hooks.contextBuilder({ request });
+      const { default: RawRequest } = await import("../../src/server/services/raw_request");
+      expect((await legacy.container.get(RawRequest)).get()).toBe(request);
     });
 
     it("loads process.env into the container the App hands in", async () => {

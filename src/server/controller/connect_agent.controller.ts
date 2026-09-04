@@ -98,6 +98,28 @@ export default class ConnectAgentController {
     return new globalThis.Response(index.body, { status: index.status, headers });
   }
 
+  /**
+   * Renderer bundle files (`/assets/<hashed file>`). The worker runs before
+   * the static assets layer (`run_worker_first`), so this is the only path
+   * that reaches the ASSETS binding — gated on the Agent session exactly
+   * like the shell, so nothing about the bundle is served anonymously.
+   */
+  async staticAsset({ req, res }: Context) {
+    const session = await this.sessions.authenticate(cookie(req, AGENT_SESSION_COOKIE));
+    if (!session) return res.redirect(302, `${this.origins.websiteOrigin}/connect`);
+    const file = typeof req.params?.file === "string" ? req.params.file : "";
+    const raw = this.rawRequest.get();
+    const assets = this.env.get("ASSETS") as Partial<AssetBinding> | undefined;
+    if (!raw || !file || !assets || typeof assets.fetch !== "function") {
+      return res.status(503).send("Web Agent renderer is unavailable.");
+    }
+    const asset = await assets.fetch(new globalThis.Request(new URL(`/assets/${file}`, raw.url)));
+    if (asset.status === 404) return res.status(404).json({ error: true, code: "ASSET_NOT_FOUND" });
+    const headers = new Headers(asset.headers);
+    headers.set("Cache-Control", "private, max-age=3600");
+    return new globalThis.Response(asset.body, { status: asset.status, headers });
+  }
+
   async connect({ req, res }: Context) {
     const raw = this.rawRequest.get();
     if (!raw || raw.headers.get("Upgrade")?.toLowerCase() !== "websocket") {

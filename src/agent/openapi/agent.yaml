@@ -44,6 +44,19 @@ module:
             '401': { description: Agent session required }
             '404': { description: Asset not found }
             '504': { description: Executor timed out }
+      '/assets/{file}':
+        get:
+          x-controller: connect_agent.controller
+          x-action: staticAsset
+          parameters:
+            - in: path
+              name: file
+              required: true
+              schema: { type: string, pattern: '^[A-Za-z0-9._-]{1,200}$' }
+          responses:
+            '200': { description: Renderer bundle file }
+            '302': { description: Connect login required }
+            '404': { description: Unknown bundle file }
       '/{path}':
         get:
           x-controller: connect_agent.controller

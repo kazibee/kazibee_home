@@ -20,6 +20,11 @@ deploy:
   cloudflare:
     wrangler:
       workers_dev: false
+      # The renderer bundle must never be served without a valid Agent
+      # session: route every request through the worker (session gate +
+      # CSP) before falling back to static assets.
+      assets:
+        run_worker_first: true
     environments:
       dev:
         name: kazibee-agent-dev

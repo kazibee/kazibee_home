@@ -93,6 +93,9 @@ export default class ConnectAgentController {
     const index = await assets.fetch(new globalThis.Request(new URL("/index.html", raw.url)));
     const headers = new Headers(index.headers);
     headers.set("Content-Type", "text/html; charset=utf-8");
+    // The authenticated shell selects the current deployment's hashed assets.
+    // Never inherit static-asset caching for this mutable entry point.
+    headers.set("Cache-Control", "private, no-store");
     headers.set("Content-Security-Policy", this.csp());
     headers.set("X-Frame-Options", "DENY");
     return new globalThis.Response(index.body, { status: index.status, headers });
@@ -200,7 +203,9 @@ export default class ConnectAgentController {
 
   private csp(): string {
     const host = new URL(this.origins.agentOrigin).host;
-    return "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; "
+    // The shared renderer uses WASM for scrolling and markdown. Allow its
+    // compilation without enabling JavaScript eval or inline scripts.
+    return "default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; "
       + "img-src 'self' data: blob:; connect-src 'self' wss://" + host
       + "; frame-ancestors 'none';";
   }

@@ -1,6 +1,6 @@
 import { Component, Inject, LoadAs } from "@noego/ioc";
 import { createHash } from "node:crypto";
-import { currentTransaction } from "sqlstack";
+import { currentAppTransaction } from "../repo/current_transaction";
 import ConnectExecutorRepo, { type ConnectExecutor } from "../repo/connect_executor_repo";
 import ConnectExecutorClaimRepo, { type ConnectExecutorClaim } from "../repo/connect_executor_claim_repo";
 import ConnectExecutorCredentialRepo from "../repo/connect_executor_credential_repo";
@@ -128,11 +128,11 @@ export default class ConnectExecutorService {
         && (error.message.toLowerCase().includes("unique constraint failed")
           || error.message.toLowerCase().includes("duplicate key value violates unique constraint"));
       if (uniqueViolation) {
-        currentTransaction()?.rollbackOnly(error);
+        (await currentAppTransaction())?.rollbackOnly(error);
         return { outcome: "conflict" };
       }
       this.failed("claim-create", input.correlationId, error);
-      currentTransaction()?.rollbackOnly(error instanceof Error ? error : new Error("Claim creation failed"));
+      (await currentAppTransaction())?.rollbackOnly(error instanceof Error ? error : new Error("Claim creation failed"));
       return { outcome: "failed" };
     }
   }
@@ -200,7 +200,7 @@ export default class ConnectExecutorService {
       return this.acceptClaim(claim, actor.userId, input, now);
     } catch (error) {
       this.failed("claim-decision", input.correlationId, error);
-      currentTransaction()?.rollbackOnly(error instanceof Error ? error : new Error("Claim decision failed"));
+      (await currentAppTransaction())?.rollbackOnly(error instanceof Error ? error : new Error("Claim decision failed"));
       return { outcome: "failed" };
     }
   }
@@ -303,7 +303,7 @@ export default class ConnectExecutorService {
         after.credential_generation, input.correlationId, now);
       return { outcome: "renamed", executor: after };
     } catch (error) {
-      currentTransaction()?.rollbackOnly(error instanceof Error ? error : new Error("Rename failed"));
+      (await currentAppTransaction())?.rollbackOnly(error instanceof Error ? error : new Error("Rename failed"));
       return { outcome: "failed" };
     }
   }
@@ -329,7 +329,7 @@ export default class ConnectExecutorService {
       this.connections.revoke(after.executor_id, input.correlationId);
       return { outcome: "revoked", executor: after };
     } catch (error) {
-      currentTransaction()?.rollbackOnly(error instanceof Error ? error : new Error("Revoke failed"));
+      (await currentAppTransaction())?.rollbackOnly(error instanceof Error ? error : new Error("Revoke failed"));
       return { outcome: "failed" };
     }
   }

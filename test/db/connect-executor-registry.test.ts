@@ -38,7 +38,7 @@ import ConnectSessionAuthService from "../../src/server/services/connect_session
 import { ConnectCredentials } from "../../src/server/services/connect_auth_primitives";
 import {
   buildProductionDatabase,
-  registerProductionSql,
+  composeProductionSql,
 } from "../helpers/production-schema";
 
 const executorsSource = parseYaml(
@@ -82,8 +82,10 @@ const insertAccount = (userId: string, username: string) =>
 
 beforeAll(async () => {
   built = await buildProductionDatabase();
-  database = await registerProductionSql(built, "db-executor-registry");
+  const sql = await composeProductionSql(built, "db-executor-registry");
+  database = sql.database;
   env = await testDinner(executorsSource)
+    .use(sql.module)
     .select({ module: "connectExecutors" })
     .controllers({
       "connect_executor.controller": ConnectExecutorController,

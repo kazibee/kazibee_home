@@ -30,7 +30,7 @@ import {
 } from "../../src/server/services/connect_auth_policy";
 import {
   buildProductionDatabase,
-  registerProductionSql,
+  composeProductionSql,
 } from "../helpers/production-schema";
 
 const authSource = parseYaml(
@@ -158,8 +158,10 @@ async function loginAndAssert(suffix: string, overrides: Record<string, unknown>
 
 beforeAll(async () => {
   built = await buildProductionDatabase();
-  database = await registerProductionSql(built, "db-connect-auth");
+  const sql = await composeProductionSql(built, "db-connect-auth");
+  database = sql.database;
   env = await testDinner(authSource)
+    .use(sql.module)
     .select({ module: "connectAuth" })
     .controllers({ "connect_auth.controller": ConnectAuthController })
     .hooks({})

@@ -1,3 +1,5 @@
+import { Component } from '@noego/ioc/framework/decorators/Component';
+import { LoadAs } from '@noego/ioc/framework/implementation/LoadAs';
 import type { PageController } from '@noego/forge';
 import {
   defaultConnectDependencies,
@@ -59,6 +61,7 @@ export interface OAuthConsentInput {
   deny(): Promise<void>;
 }
 
+@Component({ scope: LoadAs.Scoped })
 export default class OAuthConsentController
 implements PageController<OAuthConsentData, OAuthConsentInput> {
   data: OAuthConsentData = $state({

@@ -1,3 +1,5 @@
+import { Component } from '@noego/ioc/framework/decorators/Component';
+import { LoadAs } from '@noego/ioc/framework/implementation/LoadAs';
 import type { PageController } from '@noego/forge';
 import {
   CONNECT_PROTOCOL_VERSION,
@@ -103,6 +105,7 @@ export function presentExecutor(executor: ExecutorSummary): ExecutorCard {
   return { ...executor, statusLabel: 'Offline', statusTone: 'neutral', canManage: true };
 }
 
+@Component({ scope: LoadAs.Scoped })
 export default class ConnectDashboardController implements PageController<DashboardData, DashboardInput> {
   data: DashboardData = $state({
     status: 'loading',

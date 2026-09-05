@@ -125,7 +125,7 @@
               <input
                 type="checkbox"
                 checked={data.allowShell}
-                onchange={(event) => input.setFamily('shell', (event.currentTarget as HTMLInputElement).checked)}
+                onchange={(event) => input.setFamily('shell', event.currentTarget.checked)}
                 class="mt-0.5 h-4 w-4 rounded border-neutral-300"
                 data-test-id="oauth-consent-shell"
               />
@@ -141,7 +141,7 @@
               <input
                 type="checkbox"
                 checked={data.allowWeb}
-                onchange={(event) => input.setFamily('web', (event.currentTarget as HTMLInputElement).checked)}
+                onchange={(event) => input.setFamily('web', event.currentTarget.checked)}
                 class="mt-0.5 h-4 w-4 rounded border-neutral-300"
                 data-test-id="oauth-consent-web"
               />

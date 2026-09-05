@@ -30,14 +30,16 @@ describe('testApp over the real product config', () => {
   it('deep status: guest 403 and stubbed SQL boundary through the product path', async () => {
     const app = await appTest()
       .select({ server: { route: { method: 'get', path: '/api/status/deep' } } })
-      .methods([
+      .server((server) => server.methods([
         [StatusRepo, {
           checkDatabase: control.never(),
         }],
-      ])
+      ]))
       .build();
     const response = await app.dinner.request({ method: 'GET', path: '/api/status/deep' });
     expect(response.status).toBe(403);
+    // App owns the request scope until its response body is consumed or cancelled.
+    await response.text();
     await app.verify();
     await app.dispose();
   });
@@ -50,13 +52,13 @@ describe('testApp over the real product config', () => {
       // registry as this file's imports. Node's default importer would
       // instantiate a second copy of ConnectAccountRepo/ConnectIdGenerator
       // and the stubs below would silently not apply.
-      .methods([
+      .server((server) => server.methods([
         [ConnectAccountRepo, {
           findPasswordlessByEmail: control.once(control.returns(Promise.resolve(null))),
           createAccount: control.once(control.returns(Promise.resolve())),
         }],
         [ConnectIdGenerator, { userId: control.returns('usr_testapp01') }],
-      ])
+      ]))
       .build();
     const response = await app.dinner.request({
       method: 'POST',

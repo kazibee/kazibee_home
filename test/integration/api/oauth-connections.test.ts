@@ -1,7 +1,8 @@
 import http from "node:http";
 import { createHash, randomBytes } from "node:crypto";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { getContainer } from "@noego/app/container";
+import { createContainer, type Container } from "@noego/ioc";
+import { registerAppSqlStack } from "../../../src/server/repo/sqlstack_scope";
 import type { TestAppResult } from "../../helpers/test-app";
 import { cleanupTestApp, getTestApp } from "../../helpers/test-app";
 import OAuthClientService from "../../../src/server/services/oauth_client_service";
@@ -84,12 +85,16 @@ function startCoordinatorStub(): Promise<{
 
 describe("OAuth connections end to end", () => {
   let testApp: TestAppResult;
+  let serviceRoot: Container;
   let coordinator: Awaited<ReturnType<typeof startCoordinatorStub>>;
 
   beforeEach(async () => {
     process.env.KAZI_MCP_ORIGIN = MCP_ORIGIN;
     process.env.KAZI_WEBSITE_ORIGIN = "https://web-test.kazibee.example.com";
     testApp = await getTestApp();
+    // Satellite service calls own a root with the same test database/manifest.
+    serviceRoot = createContainer();
+    await registerAppSqlStack(serviceRoot);
     coordinator = await startCoordinatorStub();
     process.env.KAZIBEE_DEV_COORDINATOR_ORIGIN = coordinator.origin;
   });
@@ -99,6 +104,7 @@ describe("OAuth connections end to end", () => {
     delete process.env.KAZI_MCP_ORIGIN;
     delete process.env.KAZI_WEBSITE_ORIGIN;
     await coordinator.close();
+    await serviceRoot.dispose();
     await cleanupTestApp(testApp);
   });
 
@@ -143,7 +149,7 @@ describe("OAuth connections end to end", () => {
     const { csrf, sessionId } = await seedOwnedExecutor();
 
     // Dynamic client registration (satellite endpoint; service-level here).
-    const clients = getContainer().get(OAuthClientService) as OAuthClientService;
+    const clients = serviceRoot.get(OAuthClientService) as OAuthClientService;
     const registered = await clients.registerClient({
       client_name: "ChatGPT",
       redirect_uris: [REDIRECT_URI],
@@ -201,7 +207,7 @@ describe("OAuth connections end to end", () => {
     expect(code.length).toBeGreaterThan(20);
 
     // Token exchange with the PKCE verifier (satellite endpoint; service-level).
-    const flow = getContainer().get(OAuthFlowService) as OAuthFlowService;
+    const flow = serviceRoot.get(OAuthFlowService) as OAuthFlowService;
     const tokens = await flow.exchangeCode({
       code,
       codeVerifier: verifier,

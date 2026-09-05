@@ -8,6 +8,8 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const initDatabase = vi.fn(async () => {});
 vi.mock("../../src/server/repo/boot", () => ({ initDatabase }));
+const registerAppSqlStack = vi.fn(async () => {});
+vi.mock("../../src/server/repo/sqlstack_scope", () => ({ registerAppSqlStack }));
 
 const registered: Array<{ name: string; db: unknown }> = [];
 const setDefault = vi.fn();
@@ -58,21 +60,47 @@ describe("server entrypoints", () => {
   });
 
   describe("node()", () => {
-    it("boots the database and returns App boot hooks", async () => {
+    it("boots the database and returns legacy + modern hooks when no container is supplied (published 2.4.x runtime)", async () => {
       const hooks = await node();
       expect(initDatabase).toHaveBeenCalledTimes(1);
       expect(typeof hooks.requestScope).toBe("function");
       expect(typeof hooks.onRequestError).toBe("function");
-      // The published @noego/app 2.4.x runtime (what CI installs) only honours
-      // the legacy construction hooks; without them RawRequest is never set
-      // and every WebSocket upgrade route answers 500. Both hook families are
-      // returned until the requestScope-aware runtime is published.
+      // The published @noego/app 2.4.x runtime (what CI installs) calls
+      // boot({ root }) without a container and only honours the legacy
+      // construction hooks; without them RawRequest is never set and every
+      // WebSocket upgrade route answers 500.
+      if (!("contextBuilder" in hooks)) throw new Error("expected legacy hooks");
       expect(typeof hooks.contextBuilder).toBe("function");
       expect(typeof hooks.controllerBuilder).toBe("function");
       const request = new Request("https://dev.kazibee.com/v1/connect/executors/exe_x/channel");
       const legacy = await hooks.contextBuilder({ request });
-      const { default: RawRequest } = await import("../../src/server/services/raw_request");
-      expect((await legacy.container.get(RawRequest)).get()).toBe(request);
+      expect(((await legacy.container.get(RawRequest)) as RawRequest).get()).toBe(request);
+    });
+
+    it("legacy controllerBuilder resolves from the request context container, falling back to the root", async () => {
+      const hooks = await node();
+      if (!("controllerBuilder" in hooks)) throw new Error("expected legacy hooks");
+      const { default: container } = await import("../../src/server/container");
+      const ctx = await hooks.contextBuilder({});
+      const scoped = await hooks.controllerBuilder(RawRequest, ctx);
+      expect(scoped).toBeInstanceOf(RawRequest);
+      expect(scoped).toBe(await ctx.container.get(RawRequest));
+      const root = await hooks.controllerBuilder(Env, undefined);
+      expect(root).toBeInstanceOf(Env);
+      expect(root).toBe(await container.get(Env));
+    });
+
+    it("returns only modern hooks when the App supplies its container (newer runtime rejects legacy hooks)", async () => {
+      const { createContainer } = await import("@noego/ioc");
+      const container = createContainer();
+      const hooks = await node({ container });
+      expect(initDatabase).toHaveBeenCalledTimes(1);
+      expect(registerAppSqlStack).toHaveBeenCalledWith(container);
+      expect(typeof hooks.requestScope).toBe("function");
+      expect(typeof hooks.onRequestError).toBe("function");
+      expect("contextBuilder" in hooks).toBe(false);
+      expect("controllerBuilder" in hooks).toBe(false);
+      expect(Object.keys(hooks).sort()).toEqual(["onRequestError", "requestScope"]);
     });
 
     it("loads process.env into the container the App hands in", async () => {
@@ -109,6 +137,33 @@ describe("server entrypoints", () => {
       expect(registered).toHaveLength(0);
       expect(typeof hooks.requestScope).toBe("function");
       expect(typeof hooks.onRequestError).toBe("function");
+    });
+
+    it("returns legacy hooks too when no container is supplied (published 2.4.x runtime)", async () => {
+      const hooks = await worker({ env: {} });
+      if (!("contextBuilder" in hooks)) throw new Error("expected legacy hooks");
+      expect(typeof hooks.contextBuilder).toBe("function");
+      expect(typeof hooks.controllerBuilder).toBe("function");
+      const request = new Request("https://kazibee.test/worker-legacy");
+      const legacy = await hooks.contextBuilder({ request });
+      expect(((await legacy.container.get(RawRequest)) as RawRequest).get()).toBe(request);
+    });
+
+    it("returns only modern hooks when the App supplies its container, with or without DATABASE_URL", async () => {
+      const { createContainer } = await import("@noego/ioc");
+      const withoutDb = await worker({ env: {}, container: createContainer() });
+      expect(Object.keys(withoutDb).sort()).toEqual(["onRequestError", "requestScope"]);
+      expect(registerAppSqlStack).not.toHaveBeenCalled();
+      const container = createContainer();
+      const withDb = await worker({
+        env: { DATABASE_URL: "postgres://neon.example/db" },
+        container,
+      });
+      expect(registered).toHaveLength(1);
+      expect(registerAppSqlStack).toHaveBeenCalledWith(container);
+      expect(Object.keys(withDb).sort()).toEqual(["onRequestError", "requestScope"]);
+      expect("contextBuilder" in withDb).toBe(false);
+      expect("controllerBuilder" in withDb).toBe(false);
     });
 
     it("tolerates a missing env bag entirely", async () => {

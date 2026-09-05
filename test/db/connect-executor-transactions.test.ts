@@ -25,7 +25,7 @@ import type {
 } from "../../src/server/services/connect_executor_request_parser";
 import {
   buildProductionDatabase,
-  registerProductionSql,
+  composeProductionSql,
   seedAccount,
 } from "../helpers/production-schema";
 
@@ -85,8 +85,10 @@ const rows = (sql: string, params: unknown[] = []) =>
 beforeAll(async () => {
   built = await buildProductionDatabase();
   await seedAccount(built, USER_ID);
-  database = await registerProductionSql(built, "db-executor");
+  const sql = await composeProductionSql(built, "db-executor");
+  database = sql.database;
   env = await testDinner(executorsSource)
+    .use(sql.module)
     .select({ module: "connectExecutors" })
     .controllers({
       "connect_executor.controller": ConnectExecutorController,

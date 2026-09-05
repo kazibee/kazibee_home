@@ -7,6 +7,7 @@ import { configureLogging as configureNoegoLogging, getLogger } from "@noego/log
 import { SqlStackDB, createPgDb } from "sqlstack";
 import { neon, Pool } from "@neondatabase/serverless";
 import { initDatabase } from "./repo/boot";
+import { registerAppSqlStack } from "./repo/sqlstack_scope";
 import TraceAdapter from "./observability/trace_adapter";
 import type { Container } from "@noego/ioc";
 import legacyContainer from "./container";
@@ -37,17 +38,25 @@ const requestScope = async (scope: ScopeLike, ctx: { request?: Request }) => {
 };
 
 /**
- * Boot hooks for BOTH @noego/app runtimes:
- * - `requestScope` (App-owned request scope; upcoming runtime).
- * - `contextBuilder` / `controllerBuilder` (the published 2.4.x runtime, which
- *   is what CI installs). Without these the published runtime never populates
- *   RawRequest, and every WebSocket upgrade route (executor channel, viewer
- *   session) answers 500 RAW_REQUEST_UNAVAILABLE. The newer runtime ignores
- *   the legacy pair (it logs one warning), so returning both is safe.
+ * Boot hooks, shaped per @noego/app runtime — detected by whether the runtime
+ * handed us its container:
+ *
+ * - Newer runtime (`boot({ root, container })`): owns the per-request scope and
+ *   accepts only `requestScope` / `onRequestError`. It REJECTS the legacy
+ *   construction hooks, so they must not be returned in this mode.
+ * - Published 2.4.x runtime (`boot({ root })`, no container): only honours the
+ *   legacy `contextBuilder` / `controllerBuilder` pair. Without them RawRequest
+ *   is never populated and every WebSocket upgrade route (executor channel,
+ *   viewer session) answers 500 RAW_REQUEST_UNAVAILABLE. The modern pair is
+ *   still returned alongside (that runtime ignores unknown hooks).
  */
-const bootHooks = (container: Container) => ({
+const modernHooks = {
   requestScope,
   onRequestError: connectRequestError,
+};
+
+const legacyHooks = (container: Container) => ({
+  ...modernHooks,
   contextBuilder: async (requestContext?: { request?: Request }) => {
     const scoped = container.extend();
     await requestScope(scoped, { request: requestContext?.request });
@@ -58,6 +67,9 @@ const bootHooks = (container: Container) => ({
     return container.get(Controller);
   },
 });
+
+const bootHooks = (options: BootOptions, container: Container) =>
+  options.container ? modernHooks : legacyHooks(container);
 
 const baseLogger = getLogger("kazibee");
 
@@ -73,10 +85,11 @@ export async function node(options: BootOptions = {}) {
   await configureLogging();
   TraceAdapter.configureWebsiteProcess();
   await initDatabase();
+  await registerAppSqlStack(container);
 
   (container.get(Env) as Env).load(process.env as Record<string, unknown>);
 
-  return bootHooks(container);
+  return bootHooks(options, container);
 }
 
 export async function worker(options: BootOptions = {}) {
@@ -85,11 +98,11 @@ export async function worker(options: BootOptions = {}) {
   TraceAdapter.configureWebsiteProcess();
   // Worker bindings (EXECUTOR_COORDINATOR, secrets) live on `env`, not
   // process.env, so they must be published before any request is served.
-  (container.get(Env) as Env).load(env ?? {});
-  const hooks = bootHooks(container);
+  const hooks = bootHooks(options, container);
   const connectionString = typeof env?.DATABASE_URL === "string" ? env.DATABASE_URL : null;
   if (!connectionString) {
     baseLogger.warn("[kazibee] worker boot: no DATABASE_URL bound — DB-backed routes will fail");
+    (container.get(Env) as Env).load(env ?? {});
     return hooks;
   }
   try {
@@ -120,9 +133,11 @@ export async function worker(options: BootOptions = {}) {
       },
     };
     SqlStackDB.register("primary", createPgDb(poolLike)).setDefault("primary");
+    await registerAppSqlStack(container);
     baseLogger.info("[kazibee] worker boot: postgres via neon serverless http");
   } catch (error) {
     baseLogger.error("[kazibee] worker boot: postgres registration failed", error);
   }
+  (container.get(Env) as Env).load(env ?? {});
   return hooks;
 }

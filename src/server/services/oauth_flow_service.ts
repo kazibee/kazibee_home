@@ -2,7 +2,6 @@ import { Component, Inject } from "@noego/ioc";
 import { createHash } from "node:crypto";
 import OAuthRepo, {
   type ActiveTokenWithConnection,
-  type OAuthConnectionScope,
   type OAuthTokenRecord,
 } from "../repo/oauth_repo";
 import { ConnectClock, ConnectCredentials } from "./connect_auth_primitives";

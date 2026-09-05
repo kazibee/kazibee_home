@@ -68,7 +68,7 @@ async function buildSlice() {
 
   const env = await appTest()
     .select({ client: { pages: ['login', 'dashboard'] } })
-    .methods([
+    .server((server) => server.methods([
       [ConnectAccountRepo, {
         findByUsername: control.once(control.returns(Promise.resolve(accountRow(passwordHash)))),
         findByUserId: control.returns(Promise.resolve(accountRow())),
@@ -86,7 +86,7 @@ async function buildSlice() {
       }],
       [ConnectIdGenerator, { sessionId: control.returns('ses_fixed0001') }],
       [ConnectClock, { now: control.returns(NOW) }],
-    ])
+    ]))
     .client((client) => client.functions([
       [ConnectAuthController, () => new ConnectAuthController(dependencies())],
       [ConnectDashboardController, () => new ConnectDashboardController(dependencies())],
@@ -147,11 +147,11 @@ describe('connect login — frontend application slice', () => {
 
     const env = await appTest()
       .select({ client: { page: 'login' } })
-      .methods([
+      .server((server) => server.methods([
         [ConnectAccountRepo, {
           findByUsername: control.once(control.returns(Promise.resolve(accountRow(passwordHash)))),
         }],
-      ])
+      ]))
       .client((client) => client.functions([
         [ConnectAuthController, () => new ConnectAuthController(deps.current)],
       ]))

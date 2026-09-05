@@ -86,6 +86,8 @@ describe("Connect auth Proper migrations", () => {
 
     const expectedConnectTables = [
       "connect_accounts",
+      "connect_agent_handoffs",
+      "connect_agent_sessions",
       "connect_browser_sessions",
       "connect_desktop_audit_events",
       "connect_desktop_claims",

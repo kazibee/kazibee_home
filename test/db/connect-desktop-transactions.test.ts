@@ -7,8 +7,8 @@
  * transactional createClaim/decide/rename/revoke paths, including the
  * decide() queue that serializes decideTransaction.
  *
- * File-scoped process-global state (SqlStackDB default + resolver) is safe:
- * every db-tier file runs in its own fork.
+ * The root registers its own SqlStack (composeProductionSql(...).module) at
+ * composition — sqlstack 3.3's explicit per-IoC-root contract.
  */
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { readFileSync } from "node:fs";
@@ -27,7 +27,7 @@ import type {
 import { createHash } from "node:crypto";
 import {
   buildProductionDatabase,
-  registerProductionSql,
+  composeProductionSql,
   seedAccount,
 } from "../helpers/production-schema";
 
@@ -86,8 +86,10 @@ const rows = (sql: string, params: unknown[] = []) =>
 beforeAll(async () => {
   built = await buildProductionDatabase();
   await seedAccount(built, USER_ID);
-  database = await registerProductionSql(built, "db-desktop");
+  const sql = await composeProductionSql(built, "db-desktop");
+  database = sql.database;
   env = await testDinner(desktopsSource)
+    .use(sql.module)
     .select({ module: "connectDesktops" })
     .controllers({ "connect_desktop.controller": ConnectDesktopController })
     .hooks({})

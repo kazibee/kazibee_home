@@ -28,8 +28,9 @@ import type {
 } from "../../src/server/services/connect_executor_request_parser";
 import {
   buildProductionDatabase,
-  registerProductionSql,
+  composeProductionSql,
   seedAccount,
+  type ProductionSqlRoot,
 } from "../helpers/production-schema";
 
 const executorsSource = parseYaml(
@@ -73,14 +74,18 @@ const decisionInput = (n: string, decision: "accept" | "deny", key = "aaaa"): Cl
 
 let built: TestPostgresDatabase;
 let database: Database;
+let sqlRoot: ProductionSqlRoot;
 let cleanEnv: Awaited<ReturnType<ReturnType<typeof testDinner>["build"]>>;
 let cleanLogic: ConnectExecutorLogic;
 
 const rows = (sql: string, params: unknown[] = []) =>
   built.query(sql, params) as Promise<Record<string, unknown>[]>;
 
+/** Every root (clean or stubbed) registers its own SqlStack over the one
+ * externally owned database, per sqlstack 3.3's per-root contract. */
 const base = () =>
   testDinner(executorsSource)
+    .use(sqlRoot.module)
     .select({ module: "connectExecutors" })
     .controllers({
       "connect_executor.controller": ConnectExecutorController,
@@ -147,7 +152,8 @@ async function withFailingClaimLookup(
 beforeAll(async () => {
   built = await buildProductionDatabase();
   await seedAccount(built, USER_ID);
-  database = await registerProductionSql(built, "db-executor-rollback");
+  sqlRoot = await composeProductionSql(built, "db-executor-rollback");
+  database = sqlRoot.database;
   cleanEnv = await base().build();
   cleanLogic = await cleanEnv.get<ConnectExecutorLogic>(ConnectExecutorLogic);
 });

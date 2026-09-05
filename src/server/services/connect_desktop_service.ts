@@ -1,6 +1,6 @@
 import { Component, Inject, LoadAs } from "@noego/ioc";
 import { createHash } from "node:crypto";
-import { currentTransaction } from "sqlstack";
+import { currentAppTransaction } from "../repo/current_transaction";
 import ConnectDesktopDeviceRepo, { type ConnectDesktopDevice } from "../repo/connect_desktop_device_repo";
 import ConnectDesktopClaimRepo, { type ConnectDesktopClaim } from "../repo/connect_desktop_claim_repo";
 import ConnectDesktopCredentialRepo from "../repo/connect_desktop_credential_repo";
@@ -106,11 +106,11 @@ export default class ConnectDesktopService {
       return { outcome: "created", challenge: this.challenge(claim, device, token) };
     } catch (error) {
       if (error instanceof Error && error.message.toLowerCase().includes("unique constraint failed")) {
-        currentTransaction()?.rollbackOnly(error);
+        (await currentAppTransaction())?.rollbackOnly(error);
         return { outcome: "conflict" };
       }
       this.failed("claim-create", input.correlationId, error);
-      currentTransaction()?.rollbackOnly(error instanceof Error ? error : new Error("Claim creation failed"));
+      (await currentAppTransaction())?.rollbackOnly(error instanceof Error ? error : new Error("Claim creation failed"));
       return { outcome: "failed" };
     }
   }
@@ -174,7 +174,7 @@ export default class ConnectDesktopService {
       return this.acceptClaim(claim, actor.userId, input, now);
     } catch (error) {
       this.failed("claim-decision", input.correlationId, error);
-      currentTransaction()?.rollbackOnly(error instanceof Error ? error : new Error("Claim decision failed"));
+      (await currentAppTransaction())?.rollbackOnly(error instanceof Error ? error : new Error("Claim decision failed"));
       return { outcome: "failed" };
     }
   }
@@ -283,7 +283,7 @@ export default class ConnectDesktopService {
         after.credential_generation, input.correlationId, now);
       return { outcome: "renamed", device: after };
     } catch (error) {
-      currentTransaction()?.rollbackOnly(error instanceof Error ? error : new Error("Rename failed"));
+      (await currentAppTransaction())?.rollbackOnly(error instanceof Error ? error : new Error("Rename failed"));
       return { outcome: "failed" };
     }
   }
@@ -309,7 +309,7 @@ export default class ConnectDesktopService {
       this.relay.revokeDesktop(after.device_id, input.correlationId);
       return { outcome: "revoked", device: after };
     } catch (error) {
-      currentTransaction()?.rollbackOnly(error instanceof Error ? error : new Error("Revoke failed"));
+      (await currentAppTransaction())?.rollbackOnly(error instanceof Error ? error : new Error("Revoke failed"));
       return { outcome: "failed" };
     }
   }

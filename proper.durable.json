@@ -2,5 +2,12 @@
   "migration_folder": "migrations/durable",
   "migration_table": "proper_migrations_durable",
   "database": "pg",
-  "pg": {}
+  "pg": {},
+  "legacy_migration_keys": [
+    "1787890000000_create_remote_tool_grants",
+    "1787990000000_create_oauth_provider",
+    "1788000000000_create_remote_workspaces",
+    "1788010000000_add_oauth_connection_capabilities",
+    "1788360000000_owner_scoped_oauth_connections"
+  ]
 }

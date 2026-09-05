@@ -1,3 +1,5 @@
+import { Component } from '@noego/ioc/framework/decorators/Component';
+import { LoadAs } from '@noego/ioc/framework/implementation/LoadAs';
 import type { PageController } from '@noego/forge';
 import {
   CONNECT_PROTOCOL_VERSION,
@@ -35,6 +37,7 @@ interface ConnectAuthInput {
   google(credential: string): Promise<void>;
 }
 
+@Component({ scope: LoadAs.Scoped })
 export default class ConnectAuthController implements PageController<ConnectAuthData, ConnectAuthInput> {
   data: ConnectAuthData = $state({
     mode: 'login',

@@ -23,7 +23,7 @@ import type { Database } from "sqlstack";
 import RemoteToolsController from "../../src/server/controller/remote_tools.controller";
 import {
   buildProductionDatabase,
-  registerProductionSql,
+  composeProductionSql,
 } from "../helpers/production-schema";
 
 // Force the "no coordinator routing" branch regardless of the shell env.
@@ -76,8 +76,10 @@ const mcp = (token: string | null, body: Record<string, unknown>) =>
 
 beforeAll(async () => {
   built = await buildProductionDatabase();
-  database = await registerProductionSql(built, "db-remote-tool-grants");
+  const sql = await composeProductionSql(built, "db-remote-tool-grants");
+  database = sql.database;
   env = await testDinner(remoteToolsSource)
+    .use(sql.module)
     .select({ module: "remoteTools" })
     .controllers({ "remote_tools.controller": RemoteToolsController })
     .hooks({})

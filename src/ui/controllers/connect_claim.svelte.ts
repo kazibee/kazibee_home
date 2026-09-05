@@ -1,3 +1,5 @@
+import { Component } from '@noego/ioc/framework/decorators/Component';
+import { LoadAs } from '@noego/ioc/framework/implementation/LoadAs';
 import type { PageController } from '@noego/forge';
 import {
   CONNECT_PROTOCOL_VERSION,
@@ -38,6 +40,7 @@ interface ClaimInput {
   decide(decision: 'accept' | 'deny'): Promise<void>;
 }
 
+@Component({ scope: LoadAs.Scoped })
 export default class ConnectClaimController implements PageController<ClaimData, ClaimInput> {
   data: ClaimData = $state({
     status: 'loading',

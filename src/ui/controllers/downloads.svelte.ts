@@ -1,3 +1,5 @@
+import { Component } from '@noego/ioc/framework/decorators/Component';
+import { LoadAs } from '@noego/ioc/framework/implementation/LoadAs';
 type DownloadKind = "cli" | "app";
 
 interface DownloadItem {
@@ -29,6 +31,7 @@ interface DownloadsResponse {
   message?: string;
 }
 
+@Component({ scope: LoadAs.Scoped })
 export default class DownloadsController {
   data: DownloadsData = $state({
     kind: "cli",

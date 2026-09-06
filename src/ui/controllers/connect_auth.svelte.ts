@@ -176,13 +176,13 @@ export default class ConnectAuthController implements PageController<ConnectAuth
   private validate(): boolean {
     const username = this.data.username.trim();
     const usernameOrEmail = /^[A-Za-z0-9][A-Za-z0-9._-]{2,63}$/.test(username)
-      || username.toLowerCase() === 'shavyg2@gmail.com';
+      || ['shavyg2@gmail.com', 'sashaun13@gmail.com'].includes(username.toLowerCase());
     if (!usernameOrEmail) {
       this.data.status = 'error';
       this.data.error = 'Enter a username with 3–64 letters, numbers, dots, underscores, or hyphens.';
       return false;
     }
-    if (this.data.mode === 'signup' && this.data.email.trim().toLowerCase() !== 'shavyg2@gmail.com') {
+    if (this.data.mode === 'signup' && !['shavyg2@gmail.com', 'sashaun13@gmail.com'].includes(this.data.email.trim().toLowerCase())) {
       this.data.status = 'error';
       this.data.error = 'This Kazibee deployment is restricted to its configured account.';
       return false;

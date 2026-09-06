@@ -24,6 +24,29 @@ function dependencies(fetchMock = vi.fn()): ConnectControllerDependencies {
 afterEach(() => vi.restoreAllMocks());
 
 describe('ConnectAuthController', () => {
+  it.each(['sashaun13@gmail.com', ' SASHAUN13@GMAIL.COM '])('allows email login for %s', async (email) => {
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse(200, { kind: 'auth.login.response', sessionId: 'ses_12345678' }));
+    const controller = new ConnectAuthController(dependencies(fetchMock));
+    controller.initialize({ mode: 'login' });
+    controller.input.setUsername(email);
+    controller.input.setPassword('a secure password');
+    await controller.input.submit();
+    expect(fetchMock).toHaveBeenCalledOnce();
+  });
+
+  it('rejects signup with an unlisted email', async () => {
+    const deps = dependencies();
+    const controller = new ConnectAuthController(deps);
+    controller.initialize({ mode: 'signup' });
+    controller.input.setUsername('new.owner');
+    controller.input.setEmail('other@gmail.com');
+    controller.input.setPassword('a secure password');
+    controller.input.setConfirmPassword('a secure password');
+    await controller.input.submit();
+    expect(controller.data.status).toBe('error');
+    expect(deps.fetch).not.toHaveBeenCalled();
+  });
+
   it('validates same-origin return targets and rejects open redirects', () => {
     expect(validateReturnTarget('/connect/claim/clm_12345678?next=1', 'https://kazibee.test'))
       .toBe('/connect/claim/clm_12345678?next=1');
@@ -71,12 +94,12 @@ describe('ConnectAuthController', () => {
     expect(controller.data.password).toBe('');
   });
 
-  it('creates an account and exposes a sign-in continuation without retaining the password', async () => {
+  it.each(['shavyg2@gmail.com', 'sashaun13@gmail.com', ' SASHAUN13@GMAIL.COM '])('creates an account for %s without retaining the password', async (email) => {
     const fetchMock = vi.fn().mockResolvedValue(jsonResponse(201, { kind: 'auth.signup.response' }));
     const controller = new ConnectAuthController(dependencies(fetchMock));
     controller.initialize({ mode: 'signup', returnTo: '/connect' });
     controller.input.setUsername('new.owner');
-    controller.input.setEmail('shavyg2@gmail.com');
+    controller.input.setEmail(email);
     controller.input.setPassword('a secure password');
     controller.input.setConfirmPassword('a secure password');
     await controller.input.submit();

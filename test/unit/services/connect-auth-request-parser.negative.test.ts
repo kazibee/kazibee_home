@@ -28,6 +28,16 @@ const request = (overrides: Record<string, unknown>) =>
 describe("ConnectAuthRequestParser negative envelopes", () => {
   const parser = new ConnectAuthRequestParser(new ConnectAuthPolicy());
 
+  it.each(['shavyg2@gmail.com', 'sashaun13@gmail.com', ' SASHAUN13@GMAIL.COM '])('accepts signup and email login for %s', (email) => {
+    expect(parser.signup({ ...signupBody, email })).toMatchObject({ ok: true });
+    expect(parser.login({ ...loginBody, username: email })).toMatchObject({ ok: true });
+  });
+
+  it('continues rejecting unlisted email addresses', () => {
+    expect(parser.signup({ ...signupBody, email: 'other@gmail.com' })).toMatchObject({ ok: false });
+    expect(parser.login({ ...loginBody, username: 'other@gmail.com' })).toMatchObject({ ok: false });
+  });
+
   it.each([
     ["null", null],
     ["a string", "nope"],

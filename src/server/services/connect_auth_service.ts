@@ -151,7 +151,9 @@ export default class ConnectAuthService {
         const userId = this.ids.userId();
         await this.accountRepo.createAccount({
           user_id: userId,
-          username: "shavyg2",
+          // Google does not supply a username; use the generated account ID
+          // rather than assigning every new identity the same unique name.
+          username: userId,
           email,
           email_verified_at: now,
           password_hash: null,

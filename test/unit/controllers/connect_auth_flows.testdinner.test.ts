@@ -77,15 +77,15 @@ afterEach(() => {
 });
 
 describe('connect auth google route (real verifier, stubbed fetch)', () => {
-  it('signs up a brand-new Google account, links the identity, and starts a session', async () => {
+  it.each(['shavyg2@gmail.com', 'sashaun13@gmail.com'])('signs up %s with its own username, links the identity, and starts a session', async (email) => {
     process.env.GOOGLE_CLIENT_ID = GOOGLE_CLIENT_ID;
-    stubTokeninfo(validClaims);
+    stubTokeninfo({ ...validClaims, email });
     const env = await base()
       .methods([
         [ConnectAccountRepo, {
           findByEmail: control.calls([
             control.returns(Promise.resolve(null)),
-            control.returns(Promise.resolve(account)),
+            control.returns(Promise.resolve({ ...account, user_id: 'usr_fixed0001', username: 'usr_fixed0001', email })),
           ]),
           createAccount: control.once(control.returns(Promise.resolve())),
         }],
@@ -107,9 +107,12 @@ describe('connect auth google route (real verifier, stubbed fetch)', () => {
       method: 'POST', path: '/v1/connect/auth/google', body: googleBody,
     });
     expect(response.status).toBe(200);
+    expect(control.inspect(env, ConnectAccountRepo, 'createAccount').calls).toMatchObject([
+      { args: [expect.objectContaining({ user_id: 'usr_fixed0001', username: 'usr_fixed0001', email })] },
+    ]);
     expect(await response.json()).toMatchObject({
       kind: 'auth.login.response',
-      userId: 'usr_existing01',
+      userId: 'usr_fixed0001',
       sessionId: 'ses_fixed0001',
       actorRole: 'browser_session',
       correlationId: 'cor_abcdefgh',

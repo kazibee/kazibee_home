@@ -33,10 +33,11 @@ jobs:
   deploy-agent-dev:
     runs-on: self-hosted
     environment: dev
-    env:
-      NPM_INTERNAL_AUTH_FILE: ${{ runner.temp }}/npm-internal-auth.npmrc
-      NPM_NO_AUTH_FILE: ${{ runner.temp }}/npm-no-auth.npmrc
     steps:
+      - name: Set temporary npm configuration paths
+        run: |
+          echo "NPM_INTERNAL_AUTH_FILE=$RUNNER_TEMP/npm-internal-auth.npmrc" >> "$GITHUB_ENV"
+          echo "NPM_NO_AUTH_FILE=$RUNNER_TEMP/npm-no-auth.npmrc" >> "$GITHUB_ENV"
       - name: Checkout website
         uses: actions/checkout@v4
       - name: Setup Node

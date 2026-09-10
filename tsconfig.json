@@ -15,7 +15,8 @@
     "experimentalDecorators": true,
     "emitDecoratorMetadata": true,
     "types": [
-      "svelte"
+      "svelte",
+      "node"
     ],
     "paths": {
       "$lib": [

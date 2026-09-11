@@ -1,6 +1,5 @@
 import { Component } from "@noego/ioc";
-import Ajv2020 from "ajv/dist/2020.js";
-import protocolSchema from "../../../packages/kazi-connect-protocol/schemas/kazi-connect-v1.schema.json" with { type: "json" };
+import validateProtocol from "./generated/connect_protocol_validator.js";
 
 const MAX_FRAME_BYTES = 256 * 1024;
 const CORRELATION = /^cor_[A-Za-z0-9]{8,64}$/;
@@ -26,7 +25,7 @@ export type ClientRelayFailure =
 
 @Component()
 export default class ConnectClientRelayRequestParser {
-  private readonly validate = new Ajv2020({ allErrors: false, strict: true }).compile(protocolSchema);
+  private readonly validate = validateProtocol;
 
   command(body: unknown): { ok: true; value: ClientCommandFrame; byteCount: number } | {
     ok: false; reason: ClientRelayFailure; correlationId: string;

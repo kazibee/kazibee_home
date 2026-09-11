@@ -1,7 +1,6 @@
 import { Component } from "@noego/ioc";
 import type { CompatRequest as Request } from "@noego/dinner";
-import Ajv2020 from "ajv/dist/2020.js";
-import protocolSchema from "../../../packages/kazi-connect-protocol/schemas/kazi-connect-v1.schema.json" with { type: "json" };
+import validateProtocol from "./generated/connect_protocol_validator.js";
 import type { ConnectExecutorActor } from "./connect_executor_actor_resolver";
 
 const PROTOCOL = "1.0";
@@ -22,7 +21,7 @@ export type RelayRequestFailure =
 
 @Component()
 export default class ConnectRelayRequestParser {
-  private readonly validate = new Ajv2020({ allErrors: false, strict: true }).compile(protocolSchema);
+  private readonly validate = validateProtocol;
 
   headers(req: Request): {
     ok: true; token: string; executorId: string; deviceId: string; generation: number;

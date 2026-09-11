@@ -36,10 +36,13 @@ export default class ConnectExecutorController {
     }
     if (result.outcome === "conflict") return this.error(res, 409, "idempotency-conflict", "Claim conflicts with an existing request", input.value.correlationId);
     if (result.outcome === "failed") return this.internal(res, input.value.correlationId);
+    // Canonical claimChallenge is closed: the executor/device identity is not
+    // echoed back (the CLI already owns it); the protocol header accompanies
+    // every successful enrollment response.
+    res.setHeader("x-kazi-protocol-version", PROTOCOL);
     return res.status(result.outcome === "created" ? 201 : 200).json({
       kind: "executor.claim.challenge", protocolVersion: PROTOCOL,
-      claimId: result.challenge.claimId, executorId: result.challenge.executorId,
-      deviceId: result.challenge.deviceId, actorRole: "claim_challenge",
+      claimId: result.challenge.claimId, actorRole: "claim_challenge",
       claimUrl: result.challenge.claimUrl, shortCode: result.challenge.shortCode,
       displayName: result.challenge.displayName, platform: result.challenge.platform,
       architecture: result.challenge.architecture, executorVersion: result.challenge.executorVersion,
@@ -64,13 +67,13 @@ export default class ConnectExecutorController {
       kind: "executor.claim.status.response", protocolVersion: PROTOCOL,
       claimId: claimId.claimId, status: result.status, correlationId,
     };
+    // Canonical claimStatusResponse is closed: only websiteDeploymentId joins
+    // an accepted status. The executor/device/credential/account identity the
+    // logic resolves stays server-side (it still drives authorization above).
     if (result.status === "accepted") {
       response.websiteDeploymentId = result.websiteDeploymentId;
-      response.executorId = result.executorId;
-      response.deviceId = result.deviceId;
-      response.credentialGeneration = result.credentialGeneration;
-      response.websiteAccountId = result.websiteAccountId;
     }
+    res.setHeader("x-kazi-protocol-version", PROTOCOL);
     return res.json(response);
   }
 

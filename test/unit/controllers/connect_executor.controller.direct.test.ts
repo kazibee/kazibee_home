@@ -40,6 +40,7 @@ const logic = (methods: Record<string, unknown> = {}) => methods as unknown as C
 function makeRes() {
   const res = {
     statusCode: 200,
+    setHeader() { return res; },
     payload: undefined as unknown,
     status(code: number) { res.statusCode = code; return res; },
     json(payload: unknown) { res.payload = payload; return res; },

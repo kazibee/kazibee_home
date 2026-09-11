@@ -170,7 +170,7 @@ describe('POST /claims (createClaim controller mapping over stubbed logic)', () 
     expect(status).toBe(201);
     expect(payload).toMatchObject({
       kind: 'executor.claim.challenge', protocolVersion: '1.0',
-      claimId: CLAIM_ID, executorId: EXECUTOR_ID, deviceId: DEVICE_ID,
+      claimId: CLAIM_ID,
       actorRole: 'claim_challenge', shortCode: 'ABCD-EFGH',
       correlationId: CORRELATION_ID,
     });
@@ -376,7 +376,7 @@ describe('POST /{executorId}/revoke (revoke over stubbed logic)', () => {
 });
 
 describe('read paths over the real graph (repo stubs only)', () => {
-  it('GET claim status reports the full acceptance identity', async () => {
+  it('GET claim status reports the canonical acceptance envelope', async () => {
     const { status, payload } = await request([
       [ConnectExecutorClaimRepo, { findByClaimId: returns(claimRow({ status: 'accepted' })) }],
       [ConnectExecutorRepo, { findByExecutorId: returns(executorRow()) }],
@@ -400,8 +400,7 @@ describe('read paths over the real graph (repo stubs only)', () => {
     expect(payload).toEqual({
       kind: 'executor.claim.status.response', protocolVersion: '1.0',
       claimId: CLAIM_ID, status: 'accepted', correlationId: CORRELATION_ID,
-      websiteDeploymentId: DEPLOYMENT_ID, executorId: EXECUTOR_ID, deviceId: DEVICE_ID,
-      credentialGeneration: 1, websiteAccountId: USER_ID,
+      websiteDeploymentId: DEPLOYMENT_ID,
     });
   });
 

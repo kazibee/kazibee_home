@@ -1128,3 +1128,5 @@ export class SwarmMachineCoordinator {
     return Response.json({ ok: true });
   }
 }
+
+export { KaziQueryExportRelay } from "./observability/kaziquery_relay";

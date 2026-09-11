@@ -35,7 +35,7 @@
     "@aws-sdk/client-ssm": "^3.1042.0",
     "@aws-sdk/s3-request-presigner": "^3.1042.0",
     "@neondatabase/serverless": "^1.1.0",
-    "@noego/ioc": "^0.8.0",
+    "@noego/ioc": "0.8.1",
     "@noego/logger": "^0.2.0",
     "@noego/proper": "^0.3.0",
     "@noego/stitch": "^1.1.0",
@@ -49,7 +49,7 @@
     "sqlstack": "3.4.0"
   },
   "devDependencies": {
-    "@noego/app": "3.1.0",
+    "@noego/app": "3.1.1",
     "@noego/dinner": "^2.2.1",
     "@noego/forge": "^2.4.0",
     "@noego/testing": "0.7.0",

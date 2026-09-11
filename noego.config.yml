@@ -63,7 +63,22 @@ deploy:
           - pattern: dev.kazibee.com
             customDomain: true
         wrangler:
+          durable_objects:
+            bindings:
+              - name: KAZIQUERY_EXPORT_RELAY
+                class_name: KaziQueryExportRelay
+          migrations:
+            - tag: v3-kaziquery-export
+              new_sqlite_classes: [KaziQueryExportRelay]
           vars:
+            KAZIQUERY_ORIGIN: https://dev.kaziquery.com
+            KAZIQUERY_DATASET_ID: db_6ca3a2a04ac727c6b4780b22cd56b4e4278b
+            KAZIQUERY_CONNECTOR_ID: con_kazibee_website_dev
+            KAZIQUERY_PRODUCER_ID: kazibee-website-dev
+            KAZIQUERY_PRODUCER_EPOCH: initial-v1
+            KAZIQUERY_RETRY_REVISION: dev-setup-2
+            # Enable only after provisioning the producer and the dev ingest secret.
+            KAZIQUERY_EXPORT_ENABLED: "true"
             # Claim links printed by executors: ${base}/claim/:claimId maps
             # onto the website's /connect/claim/:claimId page.
             KAZI_CONNECT_ACCOUNT_URL: https://dev.kazibee.com/connect

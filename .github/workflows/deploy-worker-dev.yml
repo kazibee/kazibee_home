@@ -102,6 +102,7 @@ jobs:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
           GOOGLE_CLIENT_ID: ${{ secrets.GOOGLE_CLIENT_ID }}
           GOOGLE_CLIENT_SECRET: ${{ secrets.GOOGLE_CLIENT_SECRET }}
+          KAZIQUERY_INGEST_KEY: ${{ secrets.KAZIQUERY_INGEST_KEY }}
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
@@ -116,6 +117,7 @@ jobs:
             DATABASE_URL
             GOOGLE_CLIENT_ID
             GOOGLE_CLIENT_SECRET
+            KAZIQUERY_INGEST_KEY
 
       - name: Cleanup npm auth files
         if: always()

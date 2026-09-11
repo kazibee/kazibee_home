@@ -8,6 +8,7 @@ import { SqlStackDB, createPgDb } from "sqlstack";
 import { neon, Pool } from "@neondatabase/serverless";
 import { initDatabase } from "./repo/boot";
 import { registerAppSqlStack } from "./repo/sqlstack_scope";
+import { KaziQueryExport } from "./observability/kaziquery_export";
 import TraceAdapter from "./observability/trace_adapter";
 import type { Container } from "@noego/ioc";
 import legacyContainer from "./container";
@@ -32,7 +33,8 @@ const rootOf = (options: BootOptions): Container => options.container ?? legacyC
  */
 type ScopeLike = { get(token: unknown): unknown };
 
-const requestScope = async (scope: ScopeLike, ctx: { request?: Request }) => {
+const requestScope = async (scope: ScopeLike, ctx: { request?: Request; runtime?: unknown }) => {
+  KaziQueryExport.attach(scope, ctx.runtime);
   const rawRequest = (await scope.get(RawRequest)) as RawRequest;
   rawRequest.set(ctx.request ?? null);
 };

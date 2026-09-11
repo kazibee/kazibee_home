@@ -1,4 +1,4 @@
-name: Deploy Web Agent Dev (Cloudflare)
+name: Deploy Dev — Agent UI
 
 # The Web Agent serves the Desktop app's renderer bundle from
 # agent-dev.kazibee.com. The bundle is NOT committed and NOT built here: the
@@ -28,6 +28,10 @@ on:
       - .npmrc
       - .github/workflows/deploy-agent-dev.yml
   workflow_dispatch:
+
+concurrency:
+  group: deploy-agent-dev
+  cancel-in-progress: false
 
 jobs:
   deploy-agent-dev:

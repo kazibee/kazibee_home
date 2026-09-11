@@ -1,4 +1,4 @@
-name: Deploy MCP Worker Dev (Cloudflare)
+name: Deploy Dev — MCP Gateway
 
 # Remote Tool MCP worker, dev environment (mcp-dev.kazibee.com). Same
 # discipline as deploy-mcp-prod but bound to the dev site worker
@@ -23,12 +23,20 @@ on:
       - .github/workflows/deploy-mcp-dev.yml
   workflow_dispatch:
 
+concurrency:
+  group: deploy-mcp-dev
+  cancel-in-progress: false
+
 jobs:
   deploy-mcp-dev:
     runs-on: self-hosted
     environment: dev
 
     steps:
+      - name: Set temporary npm configuration paths
+        run: |
+          echo "NPM_INTERNAL_AUTH_FILE=$RUNNER_TEMP/npm-internal-auth.npmrc" >> "$GITHUB_ENV"
+          echo "NPM_NO_AUTH_FILE=$RUNNER_TEMP/npm-no-auth.npmrc" >> "$GITHUB_ENV"
       - name: Checkout website
         uses: actions/checkout@v4
 
@@ -37,8 +45,37 @@ jobs:
         with:
           node-version: 22
 
+      - name: Gate on internal registry credential
+        env:
+          KAZIBEE_INTERNAL_NPM_TOKEN: ${{ secrets.KAZIBEE_INTERNAL_NPM_TOKEN }}
+        run: |
+          set -euo pipefail
+          if [ -z "${KAZIBEE_INTERNAL_NPM_TOKEN:-}" ]; then
+            echo "::error::KAZIBEE_INTERNAL_NPM_TOKEN is not set for environment 'dev'; cannot install @kazibee-internal/web-agent-renderer"
+            exit 1
+          fi
+      - name: Configure job-temporary npm auth (scope only)
+        env:
+          KAZIBEE_INTERNAL_NPM_TOKEN: ${{ secrets.KAZIBEE_INTERNAL_NPM_TOKEN }}
+        run: |
+          set -euo pipefail
+          umask 077
+          rm -f "$NPM_INTERNAL_AUTH_FILE" "$NPM_NO_AUTH_FILE"
+          printf '%s\n' \
+            '@kazibee-internal:registry=https://registry.kazibee.com/' \
+            "//registry.kazibee.com/:_authToken=${KAZIBEE_INTERNAL_NPM_TOKEN}" \
+            > "$NPM_INTERNAL_AUTH_FILE"
+          : > "$NPM_NO_AUTH_FILE"
+          echo "NPM_CONFIG_USERCONFIG=$NPM_INTERNAL_AUTH_FILE" >> "$GITHUB_ENV"
       - name: Install dependencies
-        run: npm ci
+        run: npm ci --no-audit
+      - name: Remove registry auth before staging and deploy
+        if: always()
+        run: |
+          set -euo pipefail
+          rm -f "$NPM_INTERNAL_AUTH_FILE"
+          echo "NPM_CONFIG_USERCONFIG=$NPM_NO_AUTH_FILE" >> "$GITHUB_ENV"
+
 
       # Durable Object binding (script_name: kazibee-dev) comes from the
       # `wrangler` fragments in apps/mcp/noego.config.yml.
@@ -73,3 +110,7 @@ jobs:
           command: versions list --env dev
           secrets: |
             DATABASE_URL
+
+      - name: Cleanup npm auth files
+        if: always()
+        run: rm -f "$NPM_INTERNAL_AUTH_FILE" "$NPM_NO_AUTH_FILE"

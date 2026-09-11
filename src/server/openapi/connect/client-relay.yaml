@@ -91,7 +91,7 @@ module:
           in: header
           name: X-Kazi-Audience
           required: true
-          schema: { type: string, enum: [desktop-relay] }
+          schema: { type: string, enum: [desktop-relay, executor-relay] }
         ClientRelayProtocol:
           in: header
           name: X-Kazi-Protocol-Version

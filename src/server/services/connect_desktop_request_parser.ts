@@ -27,6 +27,12 @@ export type DesktopRelayHeaders = {
   token: string; deviceId: string; generation: number;
   audience: "desktop-relay"; protocolVersion: "1.0";
 };
+/** Same wire shape, but the Bearer token is the machine's executor credential. */
+export type ExecutorRelayHeaders = {
+  token: string; deviceId: string; generation: number;
+  audience: "executor-relay"; protocolVersion: "1.0";
+};
+export type ClientRelayHeaders = DesktopRelayHeaders | ExecutorRelayHeaders;
 export type ParseResult<T> = { ok: true; value: T } | {
   ok: false; reason: "invalid-envelope" | "protocol-version-mismatch"; correlationId: string;
 };
@@ -115,8 +121,18 @@ export default class ConnectDesktopRequestParser {
       : this.invalid(value);
   }
 
-  /** Fail closed unless the raw request contains each relay header exactly once. */
+  /** Fail closed unless the raw request contains each relay header exactly once (legacy Desktop audience only). */
   relayHeaders(req: Request): DesktopRelayHeaders | null {
+    const headers = this.clientRelayHeaders(req);
+    return headers?.audience === "desktop-relay" ? headers : null;
+  }
+
+  /**
+   * Strict single-header parse for both client relay audiences. The audience
+   * only selects which credential store admits the token; every other field
+   * is validated identically.
+   */
+  clientRelayHeaders(req: Request): ClientRelayHeaders | null {
     const raw = Array.isArray(req.rawHeaders) ? req.rawHeaders as string[] : [];
     const one = (name: string): string | null => {
       const values: string[] = [];
@@ -132,11 +148,12 @@ export default class ConnectDesktopRequestParser {
     const protocolVersion = one("x-kazi-protocol-version");
     if (!authorization?.startsWith("Bearer ") || !patterns.token.test(authorization.slice(7))
       || !deviceId || !patterns.device.test(deviceId) || !generation || !patterns.generation.test(generation)
-      || audience !== "desktop-relay" || protocolVersion !== "1.0") return null;
+      || (audience !== "desktop-relay" && audience !== "executor-relay")
+      || protocolVersion !== "1.0") return null;
     const parsedGeneration = Number(generation);
     if (!Number.isSafeInteger(parsedGeneration)) return null;
     return { token: authorization.slice(7), deviceId, generation: parsedGeneration,
-      audience: "desktop-relay", protocolVersion: "1.0" };
+      audience, protocolVersion: "1.0" };
   }
 
   private ownerMutation(body: unknown, deviceId: unknown, action: "rename" | "revoke"):

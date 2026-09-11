@@ -6,14 +6,41 @@ import ConnectDesktopCredentialRepo from "../repo/connect_desktop_credential_rep
 import ConnectDesktopDeviceRepo from "../repo/connect_desktop_device_repo";
 import { ConnectClock, ConnectCredentials } from "./connect_auth_primitives";
 import ConnectDesktopRequestParser from "./connect_desktop_request_parser";
+import ConnectExecutorActorResolver from "./connect_executor_actor_resolver";
 
 export type ConnectDesktopActor =
   | { role: "browser_session"; userId: string; sessionId: string }
   | { role: "desktop_device"; deviceId: string; generation: number };
+/** Legacy Desktop admission: an expiring desktop-relay credential. */
 export type DesktopRelayActor = Extract<ConnectDesktopActor, { role: "desktop_device" }> & {
   ownerUserId: string;
   protocolVersion: "1.0"; audience: "desktop-relay"; credentialState: "active"; expiresAt: string;
 };
+/**
+ * Desktop client admitted through the machine's current executor credential.
+ * Executor credentials carry no expiry (long-lived machine link); the wire
+ * role stays desktop_device — only the credential authority differs.
+ */
+export type ExecutorRelayActor = Extract<ConnectDesktopActor, { role: "desktop_device" }> & {
+  ownerUserId: string;
+  protocolVersion: "1.0"; audience: "executor-relay"; credentialState: "active"; executorId: string;
+};
+export type ClientRelayActor = DesktopRelayActor | ExecutorRelayActor;
+/** Which credential store vouches for an open client relay connection. */
+export type RelayCredentialAuthority =
+  | { kind: "desktop"; deviceId: string; generation: number }
+  | { kind: "executor"; executorId: string; deviceId: string; generation: number };
+export function relayAuthority(actor: ClientRelayActor): RelayCredentialAuthority {
+  return actor.audience === "executor-relay"
+    ? { kind: "executor", executorId: actor.executorId, deviceId: actor.deviceId, generation: actor.generation }
+    : { kind: "desktop", deviceId: actor.deviceId, generation: actor.generation };
+}
+export function sameAuthority(left: RelayCredentialAuthority, right: RelayCredentialAuthority): boolean {
+  if (left.kind !== right.kind || left.deviceId !== right.deviceId || left.generation !== right.generation) {
+    return false;
+  }
+  return left.kind !== "executor" || right.kind !== "executor" || left.executorId === right.executorId;
+}
 export type ActorResolution = { ok: true; actor: ConnectDesktopActor } | {
   ok: false; reason: "unauthorized" | "csrf";
 };
@@ -75,11 +102,33 @@ export default class ConnectDesktopActorResolver {
   }
 }
 
-/** Strict reusable Desktop relay admission boundary; no relay command endpoints are added here. */
+/**
+ * Strict reusable client relay admission boundary; no relay command endpoints
+ * are added here. The X-Kazi-Audience header selects the credential store:
+ * desktop-relay keeps the legacy expiring Desktop credential path unchanged;
+ * executor-relay admits the machine's current executor credential when the
+ * presented device/generation match an active, owned executor.
+ */
 @Component()
 export class ConnectDesktopRelayActorResolver {
-  constructor(@Inject(ConnectDesktopActorResolver) private readonly resolver: ConnectDesktopActorResolver) {}
-  resolve(req: Request) {
-    return this.resolver.relay(req);
+  constructor(
+    @Inject(ConnectDesktopActorResolver) private readonly resolver: ConnectDesktopActorResolver,
+    @Inject(ConnectExecutorActorResolver) private readonly executors: ConnectExecutorActorResolver,
+    @Inject(ConnectDesktopRequestParser) private readonly parser: ConnectDesktopRequestParser,
+  ) {}
+
+  async resolve(req: Request): Promise<{ ok: true; actor: ClientRelayActor } | { ok: false }> {
+    const headers = this.parser.clientRelayHeaders(req);
+    if (!headers) return { ok: false };
+    if (headers.audience === "desktop-relay") return this.resolver.relay(req);
+    const device = await this.executors.device(headers.token);
+    if (!device.ok || device.actor.role !== "executor_device" || !device.actor.userId
+      || device.actor.deviceId !== headers.deviceId
+      || device.actor.generation !== headers.generation) return { ok: false };
+    return { ok: true, actor: {
+      role: "desktop_device", deviceId: device.actor.deviceId, generation: device.actor.generation,
+      ownerUserId: device.actor.userId, protocolVersion: headers.protocolVersion,
+      audience: "executor-relay", credentialState: "active", executorId: device.actor.executorId,
+    } };
   }
 }

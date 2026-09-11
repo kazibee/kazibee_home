@@ -13,6 +13,7 @@ import TraceAdapter, { type TracePort } from "../observability/trace_adapter";
 import ConnectExecutorConnectionRegistry, { type ExecutorPresence } from "./connect_executor_connection_registry";
 import ConnectWebsiteDeploymentIdentityService from "./connect_website_deployment_identity_service";
 import RemoteToolDispatchService from "./remote_tool_dispatch_service";
+import ConnectClientRelayService from "./connect_client_relay_service";
 
 export interface ClaimChallenge {
   claimId: string; executorId: string; deviceId: string;
@@ -69,6 +70,7 @@ export default class ConnectExecutorService {
     @Inject(ConnectWebsiteDeploymentIdentityService)
     private readonly deploymentIdentity: ConnectWebsiteDeploymentIdentityService,
     @Inject(RemoteToolDispatchService) private readonly dispatchRouting: RemoteToolDispatchService,
+    @Inject(ConnectClientRelayService) private readonly clientRelay: ConnectClientRelayService,
   ) {
     this.logger = loggers.forSource("connect-executors");
     this.trace = traces.forSource("ConnectExecutorService");
@@ -327,6 +329,9 @@ export default class ConnectExecutorService {
       await this.appendAudit("executor.revoked", after.executor_id, null, actor.userId,
         after.credential_generation, input.correlationId, now);
       this.connections.revoke(after.executor_id, input.correlationId);
+      // Desktop clients admitted through this executor's credential lose their
+      // relay link too, whether or not the executor channel was connected.
+      this.clientRelay.revokeExecutor(after.executor_id, input.correlationId);
       return { outcome: "revoked", executor: after };
     } catch (error) {
       (await currentAppTransaction())?.rollbackOnly(error instanceof Error ? error : new Error("Revoke failed"));

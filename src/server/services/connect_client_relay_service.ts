@@ -7,7 +7,9 @@ import {
   ConnectClock, ConnectIdGenerator, ConnectScheduler, type ConnectScheduledTask,
   WebsiteLoggerAdapter, type WebsiteLoggerPort,
 } from "./connect_auth_primitives";
-import type { DesktopRelayActor } from "./connect_desktop_actor_resolver";
+import {
+  relayAuthority, sameAuthority, type ClientRelayActor, type RelayCredentialAuthority,
+} from "./connect_desktop_actor_resolver";
 import ConnectExecutorConnectionRegistry from "./connect_executor_connection_registry";
 import type { ExecutorOutboundFrame } from "./connect_relay_request_parser";
 import type { ClientCommandFrame } from "./connect_client_relay_request_parser";
@@ -33,6 +35,8 @@ interface DesktopConnection {
   fence: string;
   deviceId: string;
   generation: number;
+  /** The credential store that admitted this link; commands must present the same one. */
+  authority: RelayCredentialAuthority;
   response: Response;
 }
 interface Route {
@@ -42,6 +46,7 @@ interface Route {
   executorId: string;
   deviceId: string;
   desktopFence: string;
+  authority: RelayCredentialAuthority;
 }
 interface PendingAccept {
   route: Route;
@@ -87,8 +92,24 @@ export default class ConnectClientRelayService {
     this.executors.onDisconnect((executorId) => this.fenceExecutor(executorId));
   }
 
-  open(actor: DesktopRelayActor, response: Response): string {
+  open(actor: ClientRelayActor, response: Response): string {
+    const authority = relayAuthority(actor);
     const previous = this.desktops.get(actor.deviceId);
+    if (previous && this.conflicts(previous.authority, authority)) {
+      // A different credential authority may not take over a live link for
+      // this device: the newcomer is refused and never registered, so the
+      // returned fence closes nothing.
+      const refused = { fence: "", deviceId: actor.deviceId, generation: actor.generation, authority, response };
+      this.write(refused, this.safeError("revoked", "Desktop channel authority mismatch", "cor_authorityclash"));
+      response.end();
+      const context = {
+        deviceId: actor.deviceId, heldBy: previous.authority.kind, presented: authority.kind,
+        observedAt: this.clock.now().toISOString(),
+      };
+      this.logger.warn("desktop-authority-conflict", context);
+      this.trace.warn("desktop-authority-conflict", context);
+      return this.ids.channelFenceId();
+    }
     if (previous) {
       this.write(previous, this.safeError("revoked", "Desktop channel was replaced", "cor_channeltakeover"));
       previous.response.end();
@@ -102,7 +123,7 @@ export default class ConnectClientRelayService {
       oldest.response.end();
     }
     const connection = {
-      deviceId: actor.deviceId, generation: actor.generation,
+      deviceId: actor.deviceId, generation: actor.generation, authority,
       fence: this.ids.channelFenceId(), response,
     };
     this.desktops.set(actor.deviceId, connection);
@@ -117,7 +138,7 @@ export default class ConnectClientRelayService {
     this.removeDesktopRoutes(deviceId, fence, "disconnect");
   }
 
-  async listExecutors(actor: DesktopRelayActor): Promise<ClientExecutorSummary[]> {
+  async listExecutors(actor: ClientRelayActor): Promise<ClientExecutorSummary[]> {
     const executors = await this.executorRepo.listByOwner({
       owner_user_id: actor.ownerUserId,
       limit: 100,
@@ -146,8 +167,25 @@ export default class ConnectClientRelayService {
     this.rates.delete(deviceId);
   }
 
+  /**
+   * An executor credential was revoked: every Desktop client admitted through
+   * it loses its link and pending routes, and every route targeting that
+   * executor is fenced — independent of whether its channel was connected.
+   */
+  revokeExecutor(executorId: string, correlationId: string): void {
+    for (const connection of [...this.desktops.values()]) {
+      if (connection.authority.kind !== "executor" || connection.authority.executorId !== executorId) continue;
+      this.write(connection, this.safeError("revoked", "Executor credential was revoked", correlationId));
+      connection.response.end();
+      this.desktops.delete(connection.deviceId);
+      this.rates.delete(connection.deviceId);
+      this.removeDesktopRoutes(connection.deviceId, connection.fence, "revoked");
+    }
+    this.fenceExecutor(executorId);
+  }
+
   async command(
-    actor: DesktopRelayActor, frame: ClientCommandFrame, byteCount: number,
+    actor: ClientRelayActor, frame: ClientCommandFrame, byteCount: number,
   ): Promise<CommandDispatchResult> {
     if (frame.websiteDeploymentId !== await this.deploymentIdentity.get()) {
       return { outcome: "website-deployment-mismatch" };
@@ -155,25 +193,25 @@ export default class ConnectClientRelayService {
     const nestedFence = this.nestedTargetFence(frame);
     if (nestedFence) return { outcome: nestedFence };
     const connection = this.desktops.get(actor.deviceId);
-    if (!connection || connection.generation !== actor.generation
+    const authority = relayAuthority(actor);
+    if (!connection || !sameAuthority(connection.authority, authority)
       || frame.deviceId !== actor.deviceId || frame.actorRole !== "desktop_device") {
       return { outcome: "unauthorized" };
     }
     if (!this.takeRate(actor.deviceId)) return { outcome: "overloaded" };
-    let desktop;
+    let ownerUserId;
     let executor;
     try {
-      [desktop, executor] = await Promise.all([
-        this.desktopRepo.findByDeviceId({ device_id: actor.deviceId }),
+      [ownerUserId, executor] = await Promise.all([
+        this.sourceOwner(actor),
         this.executorRepo.findByExecutorId({ executor_id: frame.executorId }),
       ]);
     } catch {
       return { outcome: "executor-offline" };
     }
-    if (!desktop || desktop.state !== "active" || !desktop.owner_user_id
-      || desktop.credential_generation !== actor.generation
-      || !executor || executor.state !== "active"
-      || executor.owner_user_id !== desktop.owner_user_id
+    if (this.desktops.get(actor.deviceId) !== connection) return { outcome: "unauthorized" };
+    if (!ownerUserId || !executor || executor.state !== "active"
+      || executor.owner_user_id !== ownerUserId
       || !this.executors.matches(executor.executor_id, executor.device_id, executor.credential_generation)) {
       return { outcome: "executor-offline" };
     }
@@ -185,7 +223,7 @@ export default class ConnectClientRelayService {
     const route: Route = {
       commandId: frame.commandId, correlationId: frame.correlationId,
       idempotencyKey: frame.idempotencyKey, executorId: frame.executorId,
-      deviceId: actor.deviceId, desktopFence: connection.fence,
+      deviceId: actor.deviceId, desktopFence: connection.fence, authority,
     };
     const result = new Promise<CommandDispatchResult>((resolve) => {
       const timeout = this.scheduler.schedule(ACCEPT_TIMEOUT_MS, () => {
@@ -310,6 +348,31 @@ export default class ConnectClientRelayService {
     }
   }
 
+  /**
+   * Re-reads the row behind the actor's credential authority and returns its
+   * owner, or null when the source is gone, inactive, unowned, or fenced.
+   * Desktop credentials keep their expiring-row contract; executor credentials
+   * are validated against the executor row (device + generation fence).
+   */
+  private async sourceOwner(actor: ClientRelayActor): Promise<string | null> {
+    if (actor.audience === "executor-relay") {
+      const source = await this.executorRepo.findByExecutorId({ executor_id: actor.executorId });
+      return source && source.state === "active" && source.owner_user_id
+        && source.device_id === actor.deviceId && source.credential_generation === actor.generation
+        ? source.owner_user_id : null;
+    }
+    const desktop = await this.desktopRepo.findByDeviceId({ device_id: actor.deviceId });
+    return desktop && desktop.state === "active" && desktop.owner_user_id
+      && desktop.credential_generation === actor.generation
+      ? desktop.owner_user_id : null;
+  }
+
+  /** A live link may only be replaced by the same credential authority (kind and executor). */
+  private conflicts(held: RelayCredentialAuthority, presented: RelayCredentialAuthority): boolean {
+    if (held.kind !== presented.kind) return true;
+    return held.kind === "executor" && presented.kind === "executor" && held.executorId !== presented.executorId;
+  }
+
   private deviceRouteCount(deviceId: string): number {
     let count = 0;
     for (const route of this.byCommand.values()) if (route.deviceId === deviceId) count += 1;
@@ -370,6 +433,9 @@ export default class ConnectClientRelayService {
     const context = {
       commandId: route.commandId, correlationId: route.correlationId,
       executorId: route.executorId, deviceId: route.deviceId,
+      // Safe authority metadata only: which store admitted the client, never a token.
+      authorityKind: route.authority.kind,
+      sourceExecutorId: route.authority.kind === "executor" ? route.authority.executorId : null,
       observedAt: this.clock.now().toISOString(), byteCount,
     };
     this.logger.info(event, context);

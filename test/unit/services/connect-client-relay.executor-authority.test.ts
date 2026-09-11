@@ -16,6 +16,7 @@ import { resourceCase, test as control, testStub } from "@noego/testing";
 import type { CompatRequest as Request } from "@noego/dinner";
 import type { SseSink } from "../../../src/server/services/sse_stream";
 import ConnectClientRelayService from "../../../src/server/services/connect_client_relay_service";
+import RemoteToolDispatchService from "../../../src/server/services/remote_tool_dispatch_service";
 import ConnectExecutorService from "../../../src/server/services/connect_executor_service";
 import ConnectExecutorConnectionRegistry from "../../../src/server/services/connect_executor_connection_registry";
 import {
@@ -360,4 +361,17 @@ describe("ConnectExecutorService.revoke fences the client relay", () => {
       .toEqual([[source.executor_id, "cor_authrevoke09"]]);
     await env.verify();
   }));
+});
+
+ describe("client discovery coordinator presence", () => {
+  it.each(["online", "offline", "stale"] as const)("uses coordinator %s instead of the process registry", (presence) => resourceCase(async (scope) => {
+    const env = scope.environment(await testApp(CONFIG).select(RELAY)
+      .use(boundaries())
+      .method(ConnectExecutorRepo, "listByOwner", control.returns(Promise.resolve([target])))
+      .method(RemoteToolDispatchService, "presence", control.returns(Promise.resolve(presence)))
+      .build());
+    const { service } = await subjects(env);
+    const result = await service.listExecutors(executorActor);
+    expect(result[0]).toMatchObject({ executorId: target.executor_id, presence, online: presence === "online" });
+  })());
 });

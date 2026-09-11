@@ -9,16 +9,21 @@ import ConnectClientRelayRequestParser, {
   type ClientRelayFailure,
 } from "../services/connect_client_relay_request_parser";
 
+import { WebsiteLoggerAdapter, type WebsiteLoggerPort } from "../services/connect_auth_primitives";
+
 type Context = { req: Request; res: Response };
 const PROTOCOL = "1.0";
 
 @Component()
 export default class ConnectClientRelayController {
+  private readonly logger: WebsiteLoggerPort;
+
   constructor(
     @Inject(ConnectClientRelayLogic) private readonly logic: ConnectClientRelayLogic,
     @Inject(ConnectClientRelayRequestParser) private readonly parser: ConnectClientRelayRequestParser,
     @Inject(ConnectDesktopRelayActorResolver) private readonly actors: ConnectDesktopRelayActorResolver,
-  ) {}
+    @Inject(WebsiteLoggerAdapter) loggers: WebsiteLoggerAdapter,
+  ) { this.logger = loggers.forSource("connect-client-relay"); }
 
   async commands({ req, res }: Context) {
     res.setHeader("x-kazi-protocol-version", PROTOCOL);
@@ -45,7 +50,20 @@ export default class ConnectClientRelayController {
     }
     const resolved = await this.actors.resolve(req);
     if (!resolved.ok) return this.failure(res, "unauthorized", correlationId);
-    const executors = await this.logic.listExecutors(resolved.actor);
+    this.logger.info("connect.discovery.started", { correlationId, action: "list-executors", outcome: "started" });
+    let executors;
+    try {
+      executors = await this.logic.listExecutors(resolved.actor);
+    } catch (error) {
+      this.logger.error("connect.discovery.failed", { correlationId, action: "list-executors", outcome: "failed", reason: "discovery-unavailable" });
+      throw error;
+    }
+    this.logger.info("connect.discovery.completed", {
+      correlationId, action: "list-executors", outcome: "completed", executorCount: executors.length,
+      executors: executors.map(({ executorId, state, online, presence, protocolVersion }) => ({
+        executorId, state, online, presence, protocolVersion,
+      })),
+    });
     return res.status(200).json({
       kind: "executor.list.response",
       protocolVersion: PROTOCOL,
@@ -68,6 +86,7 @@ export default class ConnectClientRelayController {
   }
 
   private failure(res: Response, reason: ClientRelayFailure, correlationId: string) {
+    this.logger.warn("connect.relay.rejected", { correlationId, action: "reject-request", outcome: "rejected", reason });
     const status = reason === "protocol-version-mismatch" ? 409
       : reason === "website-deployment-mismatch" ? 409
       : reason === "payload-too-large" ? 413

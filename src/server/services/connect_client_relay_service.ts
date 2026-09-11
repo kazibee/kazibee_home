@@ -10,6 +10,7 @@ import {
 import {
   relayAuthority, sameAuthority, type ClientRelayActor, type RelayCredentialAuthority,
 } from "./connect_desktop_actor_resolver";
+import RemoteToolDispatchService from "./remote_tool_dispatch_service";
 import ConnectExecutorConnectionRegistry from "./connect_executor_connection_registry";
 import type { ExecutorOutboundFrame } from "./connect_relay_request_parser";
 import type { ClientCommandFrame } from "./connect_client_relay_request_parser";
@@ -79,6 +80,7 @@ export default class ConnectClientRelayService {
     @Inject(ConnectDesktopDeviceRepo) private readonly desktopRepo: ConnectDesktopDeviceRepo,
     @Inject(ConnectExecutorRepo) private readonly executorRepo: ConnectExecutorRepo,
     @Inject(ConnectExecutorConnectionRegistry) private readonly executors: ConnectExecutorConnectionRegistry,
+    @Inject(RemoteToolDispatchService) private readonly dispatchRouting: RemoteToolDispatchService,
     @Inject(ConnectClock) private readonly clock: ConnectClock,
     @Inject(ConnectIdGenerator) private readonly ids: ConnectIdGenerator,
     @Inject(ConnectScheduler) private readonly scheduler: ConnectScheduler,
@@ -144,7 +146,8 @@ export default class ConnectClientRelayService {
       limit: 100,
     });
     return Promise.all(executors.map(async (executor) => {
-      const presence = await this.executors.presence(executor.executor_id);
+      const presence = await this.dispatchRouting.presence(executor.executor_id)
+        ?? this.executors.presence(executor.executor_id);
       return {
         executorId: executor.executor_id,
         displayName: executor.display_name,

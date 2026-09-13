@@ -37,7 +37,7 @@ export default class OAuthConnectionMachinesService {
     return mcpStage("executor_sort", async () => owned
       .filter((executor) => executor.state === "active")
       .sort((left, right) =>
-        (left.claimed_at ?? left.created_at).localeCompare(right.claimed_at ?? right.created_at)
+        timestampMillis(left.claimed_at ?? left.created_at) - timestampMillis(right.claimed_at ?? right.created_at)
         || left.executor_id.localeCompare(right.executor_id))
       .map((executor) => ({
         executor_id: executor.executor_id,
@@ -46,4 +46,13 @@ export default class OAuthConnectionMachinesService {
         display_name: executor.display_name,
       })), { count: owned.length, timestampTypes: [...new Set(owned.map(e => typeof (e.claimed_at ?? e.created_at)))].join(",") });
   }
+}
+
+
+// Neon/PostgreSQL may return Date objects even when repository types declare strings.
+// Invalid values sort last, with executor_id retaining deterministic tie ordering.
+function timestampMillis(value: unknown): number {
+  const milliseconds = value instanceof Date ? value.getTime()
+    : typeof value === "string" ? Date.parse(value) : NaN;
+  return Number.isFinite(milliseconds) ? milliseconds : Number.MAX_SAFE_INTEGER;
 }

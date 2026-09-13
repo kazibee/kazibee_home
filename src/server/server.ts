@@ -9,6 +9,8 @@ import { neon, Pool } from "@neondatabase/serverless";
 import { initDatabase } from "./repo/boot";
 import { registerAppSqlStack } from "./repo/sqlstack_scope";
 import { KaziQueryExport } from "./observability/kaziquery_export";
+import GatewayRequestLog from "./observability/gateway_request_log";
+import type { ProductRequestSettledContext } from "@noego/app/runtime";
 import TraceAdapter from "./observability/trace_adapter";
 import type { Container } from "@noego/ioc";
 import legacyContainer from "./container";
@@ -35,6 +37,10 @@ type ScopeLike = { get(token: unknown): unknown };
 
 const requestScope = async (scope: ScopeLike, ctx: { request?: Request; runtime?: unknown }) => {
   KaziQueryExport.attach(scope, ctx.runtime);
+  if (ctx.request) {
+    const requestLog = (await scope.get(GatewayRequestLog)) as GatewayRequestLog;
+    requestLog.start(ctx.request, ctx.runtime);
+  }
   const rawRequest = (await scope.get(RawRequest)) as RawRequest;
   rawRequest.set(ctx.request ?? null);
 };
@@ -54,6 +60,11 @@ const requestScope = async (scope: ScopeLike, ctx: { request?: Request; runtime?
  */
 const modernHooks = {
   requestScope,
+  async onRequestSettled(context: ProductRequestSettledContext) {
+    const requestLog = await context.scope.get(GatewayRequestLog) as GatewayRequestLog;
+    requestLog.start(context.request, context.runtime);
+    requestLog.finish(context.response, context.error);
+  },
   onRequestError: connectRequestError,
 };
 

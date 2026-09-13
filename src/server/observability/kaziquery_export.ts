@@ -22,7 +22,11 @@ export class KaziQueryExport {
   private active = 0;
   private reported = false;
 
-  constructor(private readonly runtime: ExportRuntime, private readonly namespace: ExportNamespace) {}
+  constructor(
+    private readonly runtime: ExportRuntime,
+    private readonly namespace: ExportNamespace,
+    private readonly site: "website" | "mcp" | "agent" = "website",
+  ) {}
 
   static attach(scope: object, candidate: unknown): void {
     const runtime = candidate as ExportRuntime | undefined;
@@ -31,14 +35,16 @@ export class KaziQueryExport {
     if (env.KAZI_WEBSITE_ORIGIN !== "https://dev.kazibee.com" || env.KAZIQUERY_ORIGIN !== "https://dev.kaziquery.com") return;
     const namespace = env.KAZIQUERY_EXPORT_RELAY as ExportNamespace | undefined;
     if (!namespace || typeof namespace.get !== "function") return;
-    this.invocations.set(scope, new KaziQueryExport(runtime, namespace));
+    const site = env.KAZIQUERY_SITE ?? "website";
+    if (site !== "website" && site !== "mcp" && site !== "agent") return;
+    this.invocations.set(scope, new KaziQueryExport(runtime, namespace, site));
     if (this.subscribed) return;
     this.subscribed = true;
     getManager().records$.subscribe(record => this.capture(() => this.policy.log(record)));
     getTraceManager().events$.subscribe(record => this.capture(() => this.policy.trace(record)));
     this.invocations.get(scope)?.send({
       id: crypto.randomUUID(), occurredAtMs: Date.now(), kind: "log", name: "kaziquery.export.started", level: "info",
-      attributes: { exportPolicyVersion: 1, asyncContext: ExecutionContext.capabilities().propagation === "async", scopeMatched: ExecutionContext.current() === scope },
+      attributes: { exportPolicyVersion: 2, asyncContext: ExecutionContext.capabilities().propagation === "async", scopeMatched: ExecutionContext.current() === scope },
     });
   }
 
@@ -48,7 +54,11 @@ export class KaziQueryExport {
     if (!invocation) return;
     try {
       const record = convert();
-      if (record) invocation.send(record);
+      if (!record) return;
+      // Satellite opt-in admits only the audited, metadata-only gateway logger.
+      // Do not start exporting arbitrary existing tool/provider messages.
+      if (invocation.site !== "website" && record.attributes.logger !== "kazibee:gateway") return;
+      invocation.send(record);
     } catch { invocation.report("policy_rejected"); }
   }
 
@@ -57,7 +67,10 @@ export class KaziQueryExport {
     ++this.active;
     // Capture immutable bytes now. waitUntil covers ONLY initial durable admission.
     const request = new Request("https://export-relay.internal/admit", {
-      method: "POST", body: JSON.stringify({ record, admittedAtMs: Date.now() }),
+      method: "POST", body: JSON.stringify({
+        record: { ...record, attributes: { ...record.attributes, site: this.site } },
+        admittedAtMs: Date.now(),
+      }),
       signal: AbortSignal.timeout(2000),
     });
     const stub = this.namespace.get(this.namespace.idFromName("kazibee-dev-v1"));

@@ -41,6 +41,9 @@ deploy:
           vars:
             # OAuth issuer/resource identity for this deployment — must be
             # byte-stable (clients cache AS metadata and compare iss).
+            KAZIQUERY_EXPORT_ENABLED: "true"
+            KAZIQUERY_ORIGIN: https://dev.kaziquery.com
+            KAZIQUERY_SITE: mcp
             KAZI_MCP_ORIGIN: https://mcp-dev.kazibee.com
             KAZI_AGENT_ORIGIN: https://agent-dev.kazibee.com
             KAZI_WEBSITE_ORIGIN: https://dev.kazibee.com
@@ -48,6 +51,10 @@ deploy:
             bindings:
               - name: EXECUTOR_COORDINATOR
                 class_name: ExecutorCoordinator
+                script_name: kazibee-dev
+              # One existing relay owns sequence allocation for all dev sites.
+              - name: KAZIQUERY_EXPORT_RELAY
+                class_name: KaziQueryExportRelay
                 script_name: kazibee-dev
       production:
         name: kazibee-mcp

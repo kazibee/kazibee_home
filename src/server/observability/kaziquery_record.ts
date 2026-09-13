@@ -26,7 +26,7 @@ export class KaziQueryRecordPolicy {
     const level = record.level.toLowerCase();
     if (!LEVELS.has(level)) return;
     const exported = this.record(record, "log", "server.log", record.context, level);
-    return exported && { ...exported, message: record.message };
+    return exported && { ...exported, message: record.message, attributes: { ...exported.attributes, logger: record.logger } };
   }
 
   trace(record: AdmittedTraceEvent): ExportRecord | undefined {

@@ -44,7 +44,7 @@ describe("development KaziQuery export", () => {
     const delivered = JSON.parse(network.mock.calls[0][1].body);
     expect(delivered.message).toBe(message);
     expect(delivered.context).toEqual(context);
-    expect(delivered.attributes).toEqual({ exportPolicyVersion: 2 });
+    expect(delivered.attributes).toEqual({ exportPolicyVersion: 2, logger: "kazibee:test" });
   });
 
   it("retains exact batch identity, bytes and sequence across outage and restart", async () => {

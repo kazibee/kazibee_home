@@ -1,3 +1,4 @@
+import { mcpStage } from "../observability/mcp_diagnostics";
 import { Component, Inject } from "@noego/ioc";
 import ConnectExecutorRepo from "../repo/connect_executor_repo";
 import type { OAuthConnectionScope } from "../repo/oauth_repo";
@@ -29,11 +30,11 @@ export default class OAuthConnectionMachinesService {
     userId: string,
     scope: OAuthConnectionScope,
   ): Promise<OAuthConnectionMember[]> {
-    const owned = await this.executors.listByOwner({
+    const owned = await mcpStage("executor_lookup", () => this.executors.listByOwner({
       owner_user_id: userId,
       limit: OWNER_EXECUTOR_LIMIT,
-    });
-    return owned
+    }));
+    return mcpStage("executor_sort", async () => owned
       .filter((executor) => executor.state === "active")
       .sort((left, right) =>
         (left.claimed_at ?? left.created_at).localeCompare(right.claimed_at ?? right.created_at)
@@ -43,6 +44,6 @@ export default class OAuthConnectionMachinesService {
         workspace_id: "*",
         scope,
         display_name: executor.display_name,
-      }));
+      })), { count: owned.length, timestampTypes: [...new Set(owned.map(e => typeof (e.claimed_at ?? e.created_at)))].join(",") });
   }
 }

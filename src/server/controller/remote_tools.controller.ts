@@ -1,3 +1,4 @@
+import { mcpStage } from "../observability/mcp_diagnostics";
 import { Component, Inject } from "@noego/ioc";
 import type { CompatRequest as Request, CompatResponse as Response } from "@noego/dinner";
 import ConnectExecutorActorResolver from "../services/connect_executor_actor_resolver";
@@ -206,7 +207,7 @@ export default class RemoteToolsController {
     if (members.length === 0) return null;
     if (members.length === 1) return members[0];
     for (const member of members) {
-      const presence = await this.dispatch.presence(member.executor_id);
+      const presence = await mcpStage("presence", () => this.dispatch.presence(member.executor_id));
       if (presence === "online") return member;
     }
     return null;
@@ -219,15 +220,19 @@ export default class RemoteToolsController {
       machines: await Promise.all(principal.members.map(async (member) => ({
         machineId: member.executor_id,
         name: member.display_name,
-        presence: (await this.dispatch.presence(member.executor_id)) ?? "offline",
+        presence: (await mcpStage("presence", () => this.dispatch.presence(member.executor_id))) ?? "offline",
         workspaceAccess: member.workspace_id === "*" ? "all" : member.workspace_id,
         scope: member.scope,
       }))),
     };
   }
 
-  async mcp({ req, res }: Context) {
-    const caller = await this.resolveCaller(req);
+  async mcp(context: Context) {
+    return mcpStage("request", () => this.mcpRun(context));
+  }
+
+  private async mcpRun({ req, res }: Context) {
+    const caller = await mcpStage("resolve_caller", () => this.resolveCaller(req));
     if (!caller.ok) {
       // RFC 9728: point OAuth-capable clients at the protected-resource
       // metadata; PAT holders just see the 401.
@@ -318,7 +323,7 @@ export default class RemoteToolsController {
           return rpcError(res, body.id, -32602, "params.name is required.");
         }
         if (name === "list_machines" && caller.principal) {
-          const machines = await this.listMachines(caller.principal);
+          const machines = await mcpStage("list_machines", () => this.listMachines(caller.principal!), { members: caller.principal.members.length });
           return rpcResult(res, body.id, {
             content: [{ type: "text", text: JSON.stringify(machines, null, 2) }],
             structuredContent: machines,

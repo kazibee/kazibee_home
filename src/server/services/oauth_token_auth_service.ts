@@ -1,3 +1,4 @@
+import { mcpStage } from "../observability/mcp_diagnostics";
 import { Component, Inject } from "@noego/ioc";
 import OAuthRepo, {
   type ActiveTokenWithConnection,
@@ -63,9 +64,9 @@ export default class OAuthTokenAuthService {
       throw new InvalidOAuthTokenError("Invalid OAuth token");
     }
 
-    const record = await this.oauth.findActiveTokenWithConnection({
+    const record = await mcpStage("oauth_lookup", () => this.oauth.findActiveTokenWithConnection({
       token_hash: this.credentials.hashToken(token),
-    });
+    }));
     if (!activeAccessToken(record, this.clock.now())) {
       throw new InvalidOAuthTokenError("Invalid OAuth token");
     }
@@ -73,7 +74,7 @@ export default class OAuthTokenAuthService {
     // The connection acts as the user: its machines are the user's executors,
     // resolved live so newly linked machines appear and revoked ones vanish
     // without re-consent or token re-issue.
-    const members = await this.machines.listForUser(record.user_id, record.approved_scope);
+    const members = await mcpStage("oauth_machines", () => this.machines.listForUser(record.user_id, record.approved_scope));
 
     return {
       user_id: record.user_id,

@@ -1,8 +1,9 @@
-# Development website export
+# Development site export
 
-Target: `dev.kazibee.com` → `https://dev.kaziquery.com`. Production and the
-agent/MCP satellites are not enabled. The destination is checked at admission
-and delivery. No browser receives an ingest credential.
+Target: Kazibee dev sites → `https://dev.kaziquery.com`. The main website export
+is live. MCP/agent integration is implemented locally but NOT deployed by the
+2026-09-13 setup task (see rollout below). Production remains disabled. The
+destination is checked at admission and delivery. No browser receives an ingest credential.
 
 ## Activation prerequisites
 
@@ -107,3 +108,144 @@ Live dashboard verification: record `8f077a56-63e5-4070-9189-424420d2120e`,
 sequence 116, contains message `connect.auth.skipped` and the complete context
 (action=session, outcome=unauthorized, route, correlationId, count=0).
 Message is visible in the table and full context in Inspect/Complete record JSON.
+
+## MCP and agent setup — 13 September 2026
+
+### Architecture and credentials
+
+- `apps/mcp/noego.config.yml` and `apps/agent/noego.config.yml` now enable
+  dev-only export and set `KAZIQUERY_SITE` to `mcp` / `agent`.
+- Both bind `KaziQueryExportRelay` from `script_name: kazibee-dev`.
+  All three sites use the SAME existing DO name `kazibee-dev-v1`. It remains
+  the sole sequence owner for `kazibee-website-dev` / `initial-v1`.
+  Do not provision separate queues with that producer identity or reset its sequence.
+- The existing dataset, connector, producer and ingest-only secret are reused.
+  Satellites do not need an ingest secret. There is no new migration, database,
+  persistent API key or production configuration.
+- Records retain original message/context. Export metadata adds `logger` and
+  `site` without overwriting application context.
+- Satellite admission is deliberately restricted to the audited
+  `kazibee:gateway` logger. Existing tool/provider messages are not automatically
+  exported merely because their logger begins with `kazibee`.
+
+### Request coverage
+
+The shared server hooks resolve a request-scoped `GatewayRequestLog`:
+`gateway.request.started`, then exactly one `gateway.request.completed` or
+`gateway.request.failed`. Fields include a generated request ID, site, sanitized
+route template, HTTP method/status, duration, outcome and a validated Cloudflare
+Ray ID when present. Authorization, cookies, handoff tokens, query strings, file
+paths, bodies, and raw error messages/stacks are excluded.
+
+The additive `ProductBoot.onRequestSettled` hook is owned by the local
+`noego/app` package. It runs before response-body leasing, inside the same
+request scope, and cannot replace the application's result when logging fails.
+This catches HTTP auth/validation rejections, returned 5xx responses and thrown
+dispatch failures without reading streams. It does not equate HTTP 200 with MCP
+tool success: JSON-RPC domain failures inside 200 responses need their own
+domain instrumentation. Boot failures before a request scope exists, edge-generated
+502s, post-upgrade WebSocket activity and Durable Object internals remain platform
+diagnostic responsibilities.
+
+Main-site HTTP summaries are limited to gateway route families, not all downloads
+or page traffic. The pre-existing 32-record relay queue and one-record-per-alarm
+delivery remain bounded best-effort admission, NOT lossless capture under load.
+Watch `kaziquery.export.admission_failed` in independent Worker logs; a full
+queue must not be interpreted as an absence of application activity.
+
+### Read logs
+
+Open `https://dev.kaziquery.com`, select the existing `kazibee` database and
+Logs, use a narrow recent time range, then Inspect a record for its complete
+context. After rollout, gateway records can be located by message and their
+`context.site`, `context.requestId` and `context.cfRay` inspected together.
+Context and attribute paths are queryable in WHERE (`context.status >= 500`,
+`context.route LIKE '/mcp%'`) and in the explorer search (`context.status:>=500`);
+they are not selectable columns.
+
+The public API uses a separate **query:read** key granted only to this database:
+`POST https://dev.kaziquery.com/v1/query` with exactly
+`{"database":"kazibee","query":"<SQL>"}`. Never use the website ingest key
+for querying. Follow the returned status/results links until success, and check
+`complete`; do not treat pending or failed queries as an empty log set.
+
+Example SQL (replace FROM_MS and TO_MS with integer UTC milliseconds):
+
+```sql
+SELECT occurred_at_ms, message, level, producer_id
+FROM logs
+WHERE occurred_at_ms >= FROM_MS AND occurred_at_ms < TO_MS
+  AND producer_id = 'kazibee-website-dev'
+ORDER BY occurred_at_ms DESC
+LIMIT 100
+```
+
+For programmatic access, create a query-only key in Kaziquery's authenticated
+key management UI and keep it outside source control. The setup verification
+used a ten-minute query-only key, revoked in cleanup; it did not leave a
+persistent query credential.
+
+### Local verification and rollout boundary
+
+The website already links `node_modules/@noego/app` to
+`../../noego/app`. The settlement hook is changed in that source repository,
+not patched into node_modules. Build it with `npm run build:v1` from that
+repository before building the consumer. A registry-only install of the
+unchanged published version does not contain this new hook.
+
+No deployment or commit was performed by this setup task. The website and
+framework contain substantial pre-existing work; do not ship the entire working
+tree as an incidental logging deployment. Prepare a reviewed artifact containing
+the source-built framework hook plus these website changes, then deploy the dev
+satellites with their export bindings. Keep production untouched. Preserve the
+existing main-worker relay namespace and pending records.
+
+Before claiming the dev satellites live: reproduce an unauthenticated MCP
+request (expected 401) and Agent session request without Upgrade (expected 426),
+retain their Ray IDs, then retrieve matching fresh gateway records from
+Kaziquery. Also test an authenticated failing MCP call and check independent
+Worker logs for exporter admission failures.
+
+Live verification on 13 September confirmed: main-worker export
+binding and ingest secret present; MCP/agent had no export bindings; Kaziquery
+contained 747 accepted main-producer batches at the initial snapshot. A public
+query returned recent main-site log rows with `complete: true`.
+These are evidence for the existing main-site integration, not the new satellite rollout.
+
+Local verification passed after regenerating the framework output from source:
+- Website `npm run typecheck`, `npm run test:types`, `npm run lint`.
+- 59 focused website tests: five logging/export suites plus the existing
+  `remote_tools.testdinner.test.ts` and `remote_tools.testdinner.more.test.ts`.
+- Framework `npm run build:v1`, `npm run typecheck`, and 24 tests across
+  `request-settled`, `runtime`, `product-runtime`, and `lifetime-safety`.
+- `npm run mcp:build` and `npm --ignore-scripts run agent:build` produced
+  Cloudflare artifacts; generated dev bindings were inspected and production
+  sections contain no Kaziquery configuration. Agent renderer restaging was
+  intentionally skipped; this was backend logging verification, not a UI release.
+- Real in-process routes proved 200 discovery, 401 MCP auth rejection, 400
+  malformed JSON and 426 Agent upgrade rejection reach correlated export
+  admission. Relay tests use a storage double; these are not live cross-Worker tests.
+
+Review: the existing website logging guide's boundary/structured-context/privacy
+rules are followed by `gateway_request_log.ts`; scoped ownership follows its
+IoC guide. The source-owned framework hook and pre-existing local link follow
+the cross-package rule; no node_modules patch or package publication remains.
+The earlier setup deliberately excluded satellites, so this is a coverage gap,
+not a proven cause of the reported MCP failure. The invariant is one correlated
+HTTP outcome from the owning request scope, without consuming its stream or
+letting logging alter its result. A common hook avoids duplicating instrumentation
+across every controller branch. Remaining qualification is live satellite
+delivery, authenticated-failure correlation and combined-site burst retention.
+
+
+Setup guide for connecting any application (provisioning, ingest contract, envelope,
+limits, error codes, exporter configuration): `websites/kaziquery/docs/ingest-setup.md`
+in the sibling KaziQuery repository.
+
+Canonical Kaziquery documentation:
+[Start here](https://kazidoc.com/drive/p_pU2BK5SbBYeV/00%20%E2%80%94%20Start%20Here.md),
+[deployment and operations](https://kazidoc.com/drive/p_pU2BK5SbBYeV/spec/15-deployment-and-operations.md),
+[HTTP contract](https://kazidoc.com/drive/p_pU2BK5SbBYeV/spec/13-http-api-and-user-experience.md).
+The spec distinguishes targets from deployed capabilities; verify implementation
+against the local `websites/kaziquery` source and a live query.
+

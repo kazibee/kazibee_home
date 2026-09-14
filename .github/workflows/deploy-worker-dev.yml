@@ -1,17 +1,31 @@
-name: Deploy Dev — Website API and Coordinator
+name: Deploy Worker Dev (Cloudflare)
 
-# Main Website: login, executor enrollment, APIs and ExecutorCoordinator.
-# Target: kazibee-dev at dev.kazibee.com. No Agent or MCP deployment here.
+# Same release discipline as deploy.yml (Docker/Node prod): pushing the
+# `release` branch deploys; `workflow_dispatch` allows manual deploys
+# from any ref. Dev never runs here — local dev is `noego serve` (Node)
+# or `wrangler dev` (workerd) against .dev.vars.
+#
+# RUNNER: self-hosted (all noego/kazibee Actions run on the "simona"
+# machine). Framework packages (@noego/app, @noego/dinner, @noego/forge,
+# sqlstack) are pinned registry versions in package.json, so a plain
+# npm ci is enough — no workspace linking, no NOEGO_MANAGER env needed.
+#
+# Required secrets:
+#   CLOUDFLARE_API_TOKEN   — environment secret on `dev` (Workers deploy)
+#   CLOUDFLARE_ACCOUNT_ID  — repository secret
+#   DATABASE_URL           — environment secret on `dev`: used by the
+#                            migrate step (runner must reach the dev
+#                            Postgres) and uploaded as a Worker secret
+#   KAZIBEE_INTERNAL_NPM_TOKEN — read-only registry.kazibee.com token for
+#                            @kazibee-internal/* (npm ci). Job-temporary:
+#                            written to a $RUNNER_TEMP userconfig, removed
+#                            before any wrangler step, always cleaned up.
 
 on:
   push:
     branches:
       - release-candidate
   workflow_dispatch:
-
-concurrency:
-  group: deploy-worker-dev
-  cancel-in-progress: false
 
 jobs:
   deploy-worker:
@@ -22,12 +36,11 @@ jobs:
     # now; a `production` environment (own token + protection rules) can
     # gate the release-branch deploy later.
     environment: dev
+    env:
+      NPM_INTERNAL_AUTH_FILE: ${{ runner.temp }}/npm-internal-auth.npmrc
+      NPM_NO_AUTH_FILE: ${{ runner.temp }}/npm-no-auth.npmrc
 
     steps:
-      - name: Set temporary npm configuration paths
-        run: |
-          echo "NPM_INTERNAL_AUTH_FILE=$RUNNER_TEMP/npm-internal-auth.npmrc" >> "$GITHUB_ENV"
-          echo "NPM_NO_AUTH_FILE=$RUNNER_TEMP/npm-no-auth.npmrc" >> "$GITHUB_ENV"
       - name: Checkout website
         uses: actions/checkout@v4
 
@@ -42,9 +55,12 @@ jobs:
         run: |
           set -euo pipefail
           if [ -z "${KAZIBEE_INTERNAL_NPM_TOKEN:-}" ]; then
-            echo "::error::KAZIBEE_INTERNAL_NPM_TOKEN is not set for environment 'dev'; cannot install @kazibee-internal/web-agent-renderer"
+            echo "::error::KAZIBEE_INTERNAL_NPM_TOKEN is not set for environment 'dev'; cannot install @kazibee-internal/* packages"
             exit 1
           fi
+
+      # Scope-only auth in an isolated userconfig: the public registry stays
+      # unauthenticated and the repo .npmrc keeps the scope mapping.
       - name: Configure job-temporary npm auth (scope only)
         env:
           KAZIBEE_INTERNAL_NPM_TOKEN: ${{ secrets.KAZIBEE_INTERNAL_NPM_TOKEN }}
@@ -58,15 +74,16 @@ jobs:
             > "$NPM_INTERNAL_AUTH_FILE"
           : > "$NPM_NO_AUTH_FILE"
           echo "NPM_CONFIG_USERCONFIG=$NPM_INTERNAL_AUTH_FILE" >> "$GITHUB_ENV"
+
       - name: Install dependencies
-        run: npm ci --no-audit
-      - name: Remove registry auth before staging and deploy
+        run: npm ci
+
+      - name: Remove registry auth before build and deploy
         if: always()
         run: |
           set -euo pipefail
           rm -f "$NPM_INTERNAL_AUTH_FILE"
           echo "NPM_CONFIG_USERCONFIG=$NPM_NO_AUTH_FILE" >> "$GITHUB_ENV"
-
 
       - name: Build CSS (Tailwind)
         run: npm run build:css
@@ -117,7 +134,7 @@ jobs:
             DATABASE_URL
             GOOGLE_CLIENT_ID
             GOOGLE_CLIENT_SECRET
-            KAZIQUERY_INGEST_KEY
+            ${{ secrets.KAZIQUERY_INGEST_KEY != '' && 'KAZIQUERY_INGEST_KEY' || '' }}
 
       - name: Cleanup npm auth files
         if: always()

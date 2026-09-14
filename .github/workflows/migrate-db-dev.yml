@@ -10,6 +10,9 @@ name: Migrate Database Dev
 #
 # Required configuration (GitHub `dev` environment):
 #   DATABASE_URL — dev Postgres, reachable from the self-hosted runner
+#   KAZIBEE_INTERNAL_NPM_TOKEN — read-only registry.kazibee.com token for
+#     @kazibee-internal/* (npm ci). Job-temporary: written to a $RUNNER_TEMP
+#     userconfig, removed before the migrate steps, always cleaned up.
 
 on:
   workflow_dispatch:
@@ -18,6 +21,9 @@ jobs:
   migrate-dev:
     runs-on: self-hosted
     environment: dev
+    env:
+      NPM_INTERNAL_AUTH_FILE: ${{ runner.temp }}/npm-internal-auth.npmrc
+      NPM_NO_AUTH_FILE: ${{ runner.temp }}/npm-no-auth.npmrc
 
     steps:
       - name: Checkout website
@@ -28,8 +34,41 @@ jobs:
         with:
           node-version: 22
 
+      - name: Gate on internal registry credential
+        env:
+          KAZIBEE_INTERNAL_NPM_TOKEN: ${{ secrets.KAZIBEE_INTERNAL_NPM_TOKEN }}
+        run: |
+          set -euo pipefail
+          if [ -z "${KAZIBEE_INTERNAL_NPM_TOKEN:-}" ]; then
+            echo "::error::KAZIBEE_INTERNAL_NPM_TOKEN is not set for environment 'dev'; cannot install @kazibee-internal/* packages"
+            exit 1
+          fi
+
+      # Scope-only auth in an isolated userconfig: the public registry stays
+      # unauthenticated and the repo .npmrc keeps the scope mapping.
+      - name: Configure job-temporary npm auth (scope only)
+        env:
+          KAZIBEE_INTERNAL_NPM_TOKEN: ${{ secrets.KAZIBEE_INTERNAL_NPM_TOKEN }}
+        run: |
+          set -euo pipefail
+          umask 077
+          rm -f "$NPM_INTERNAL_AUTH_FILE" "$NPM_NO_AUTH_FILE"
+          printf '%s\n' \
+            '@kazibee-internal:registry=https://registry.kazibee.com/' \
+            "//registry.kazibee.com/:_authToken=${KAZIBEE_INTERNAL_NPM_TOKEN}" \
+            > "$NPM_INTERNAL_AUTH_FILE"
+          : > "$NPM_NO_AUTH_FILE"
+          echo "NPM_CONFIG_USERCONFIG=$NPM_INTERNAL_AUTH_FILE" >> "$GITHUB_ENV"
+
       - name: Install dependencies
         run: npm ci
+
+      - name: Remove registry auth before migrations
+        if: always()
+        run: |
+          set -euo pipefail
+          rm -f "$NPM_INTERNAL_AUTH_FILE"
+          echo "NPM_CONFIG_USERCONFIG=$NPM_NO_AUTH_FILE" >> "$GITHUB_ENV"
 
       - name: Migrate (durable)
         env:
@@ -44,3 +83,7 @@ jobs:
         run: |
           npx proper -c proper.relay.json status
           npx proper -c proper.relay.json up
+
+      - name: Cleanup npm auth files
+        if: always()
+        run: rm -f "$NPM_INTERNAL_AUTH_FILE" "$NPM_NO_AUTH_FILE"

@@ -1,4 +1,4 @@
-name: Deploy Dev — MCP Gateway
+name: Deploy MCP Worker Dev (Cloudflare)
 
 # Remote Tool MCP worker, dev environment (mcp-dev.kazibee.com). Same
 # discipline as deploy-mcp-prod but bound to the dev site worker
@@ -8,6 +8,10 @@ name: Deploy Dev — MCP Gateway
 #   CLOUDFLARE_API_TOKEN   — environment secret (Workers deploy, dev)
 #   DATABASE_URL           — environment secret: dev Postgres
 #   CLOUDFLARE_ACCOUNT_ID  — repository secret
+#   KAZIBEE_INTERNAL_NPM_TOKEN — read-only registry.kazibee.com token for
+#                            @kazibee-internal/* (npm ci). Job-temporary:
+#                            written to a $RUNNER_TEMP userconfig, removed
+#                            before any wrangler step, always cleaned up.
 
 on:
   push:
@@ -23,20 +27,15 @@ on:
       - .github/workflows/deploy-mcp-dev.yml
   workflow_dispatch:
 
-concurrency:
-  group: deploy-mcp-dev
-  cancel-in-progress: false
-
 jobs:
   deploy-mcp-dev:
     runs-on: self-hosted
     environment: dev
+    env:
+      NPM_INTERNAL_AUTH_FILE: ${{ runner.temp }}/npm-internal-auth.npmrc
+      NPM_NO_AUTH_FILE: ${{ runner.temp }}/npm-no-auth.npmrc
 
     steps:
-      - name: Set temporary npm configuration paths
-        run: |
-          echo "NPM_INTERNAL_AUTH_FILE=$RUNNER_TEMP/npm-internal-auth.npmrc" >> "$GITHUB_ENV"
-          echo "NPM_NO_AUTH_FILE=$RUNNER_TEMP/npm-no-auth.npmrc" >> "$GITHUB_ENV"
       - name: Checkout website
         uses: actions/checkout@v4
 
@@ -51,9 +50,12 @@ jobs:
         run: |
           set -euo pipefail
           if [ -z "${KAZIBEE_INTERNAL_NPM_TOKEN:-}" ]; then
-            echo "::error::KAZIBEE_INTERNAL_NPM_TOKEN is not set for environment 'dev'; cannot install @kazibee-internal/web-agent-renderer"
+            echo "::error::KAZIBEE_INTERNAL_NPM_TOKEN is not set for environment 'dev'; cannot install @kazibee-internal/* packages"
             exit 1
           fi
+
+      # Scope-only auth in an isolated userconfig: the public registry stays
+      # unauthenticated and the repo .npmrc keeps the scope mapping.
       - name: Configure job-temporary npm auth (scope only)
         env:
           KAZIBEE_INTERNAL_NPM_TOKEN: ${{ secrets.KAZIBEE_INTERNAL_NPM_TOKEN }}
@@ -67,15 +69,16 @@ jobs:
             > "$NPM_INTERNAL_AUTH_FILE"
           : > "$NPM_NO_AUTH_FILE"
           echo "NPM_CONFIG_USERCONFIG=$NPM_INTERNAL_AUTH_FILE" >> "$GITHUB_ENV"
+
       - name: Install dependencies
-        run: npm ci --no-audit
-      - name: Remove registry auth before staging and deploy
+        run: npm ci
+
+      - name: Remove registry auth before build and deploy
         if: always()
         run: |
           set -euo pipefail
           rm -f "$NPM_INTERNAL_AUTH_FILE"
           echo "NPM_CONFIG_USERCONFIG=$NPM_NO_AUTH_FILE" >> "$GITHUB_ENV"
-
 
       # Durable Object binding (script_name: kazibee-dev) comes from the
       # `wrangler` fragments in apps/mcp/noego.config.yml.

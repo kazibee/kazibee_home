@@ -23,6 +23,10 @@ name: Deploy Worker Production (Cloudflare)
 #                            CI, not in noego.config.yml)
 #   AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY — repository secrets
 #                            (kazibee_deploy IAM user: SSM + S3 downloads)
+#   KAZIBEE_INTERNAL_NPM_TOKEN — read-only registry.kazibee.com token for
+#                            @kazibee-internal/* (npm ci). Job-temporary:
+#                            written to a $RUNNER_TEMP userconfig, removed
+#                            before any wrangler step, always cleaned up.
 
 on:
   push:
@@ -34,6 +38,9 @@ jobs:
   deploy-worker-production:
     runs-on: self-hosted
     environment: production
+    env:
+      NPM_INTERNAL_AUTH_FILE: ${{ runner.temp }}/npm-internal-auth.npmrc
+      NPM_NO_AUTH_FILE: ${{ runner.temp }}/npm-no-auth.npmrc
 
     steps:
       - name: Checkout website
@@ -44,8 +51,41 @@ jobs:
         with:
           node-version: 22
 
+      - name: Gate on internal registry credential
+        env:
+          KAZIBEE_INTERNAL_NPM_TOKEN: ${{ secrets.KAZIBEE_INTERNAL_NPM_TOKEN }}
+        run: |
+          set -euo pipefail
+          if [ -z "${KAZIBEE_INTERNAL_NPM_TOKEN:-}" ]; then
+            echo "::error::KAZIBEE_INTERNAL_NPM_TOKEN is not set for environment 'production'; cannot install @kazibee-internal/* packages"
+            exit 1
+          fi
+
+      # Scope-only auth in an isolated userconfig: the public registry stays
+      # unauthenticated and the repo .npmrc keeps the scope mapping.
+      - name: Configure job-temporary npm auth (scope only)
+        env:
+          KAZIBEE_INTERNAL_NPM_TOKEN: ${{ secrets.KAZIBEE_INTERNAL_NPM_TOKEN }}
+        run: |
+          set -euo pipefail
+          umask 077
+          rm -f "$NPM_INTERNAL_AUTH_FILE" "$NPM_NO_AUTH_FILE"
+          printf '%s\n' \
+            '@kazibee-internal:registry=https://registry.kazibee.com/' \
+            "//registry.kazibee.com/:_authToken=${KAZIBEE_INTERNAL_NPM_TOKEN}" \
+            > "$NPM_INTERNAL_AUTH_FILE"
+          : > "$NPM_NO_AUTH_FILE"
+          echo "NPM_CONFIG_USERCONFIG=$NPM_INTERNAL_AUTH_FILE" >> "$GITHUB_ENV"
+
       - name: Install dependencies
         run: npm ci
+
+      - name: Remove registry auth before build and deploy
+        if: always()
+        run: |
+          set -euo pipefail
+          rm -f "$NPM_INTERNAL_AUTH_FILE"
+          echo "NPM_CONFIG_USERCONFIG=$NPM_NO_AUTH_FILE" >> "$GITHUB_ENV"
 
       - name: Build CSS (Tailwind)
         run: npm run build:css
@@ -89,3 +129,7 @@ jobs:
             DATABASE_URL
             GOOGLE_CLIENT_ID
             GOOGLE_CLIENT_SECRET
+
+      - name: Cleanup npm auth files
+        if: always()
+        run: rm -f "$NPM_INTERNAL_AUTH_FILE" "$NPM_NO_AUTH_FILE"

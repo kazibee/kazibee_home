@@ -1,3 +1,5 @@
+import { getClientRuntime } from '@noego/app/client';
+
 export const CONNECT_PROTOCOL_VERSION = '1.0';
 export const CONNECT_SESSION_STORAGE_KEY = 'kazi_connect_session_id';
 
@@ -22,35 +24,16 @@ export interface ConnectControllerDependencies {
   origin(): string;
 }
 
-function browserStorage(): Storage | null {
-  try {
-    return typeof window === 'undefined' ? null : window.localStorage;
-  } catch {
-    return null;
-  }
-}
-
-function readCookie(name: string): string | null {
-  if (typeof document === 'undefined') return null;
-  const prefix = `${name}=`;
-  for (const part of document.cookie.split(';')) {
-    const value = part.trim();
-    if (value.startsWith(prefix)) return decodeURIComponent(value.slice(prefix.length));
-  }
-  return null;
-}
-
 export function defaultConnectDependencies(): ConnectControllerDependencies {
+  const runtime = getClientRuntime();
   return {
-    fetch: (...args) => fetch(...args),
-    navigate: (target) => {
-      if (typeof window !== 'undefined') window.location.assign(target);
-    },
-    getSessionId: () => browserStorage()?.getItem(CONNECT_SESSION_STORAGE_KEY) ?? null,
-    setSessionId: (value) => browserStorage()?.setItem(CONNECT_SESSION_STORAGE_KEY, value),
-    clearSessionId: () => browserStorage()?.removeItem(CONNECT_SESSION_STORAGE_KEY),
-    getCsrfToken: () => readCookie('kazi_connect_csrf'),
-    origin: () => typeof window === 'undefined' ? 'http://localhost' : window.location.origin,
+    fetch: runtime.fetch,
+    navigate: runtime.navigate,
+    getSessionId: () => runtime.storage.getItem(CONNECT_SESSION_STORAGE_KEY),
+    setSessionId: value => runtime.storage.setItem(CONNECT_SESSION_STORAGE_KEY, value),
+    clearSessionId: () => runtime.storage.removeItem(CONNECT_SESSION_STORAGE_KEY),
+    getCsrfToken: () => runtime.cookie('kazi_connect_csrf'),
+    origin: runtime.origin,
   };
 }
 

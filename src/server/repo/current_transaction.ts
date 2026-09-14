@@ -1,8 +1,11 @@
 import { ExecutionContext } from "@noego/ioc";
-import { SqlStack, currentTransaction, currentTransactionFor } from "sqlstack";
+import { SqlStack, currentTransaction, currentTransactionFor, hasTransactionContext } from "sqlstack";
 
 /** Match rollback-only marking to the same database entry used by @transaction. */
 export async function currentAppTransaction() {
+  // Inspecting an absent transaction must not construct a database provider,
+  // especially while handling an unrelated service error above the SQL boundary.
+  if (!hasTransactionContext()) return undefined;
   const scope = ExecutionContext.current();
   if (!scope) return currentTransaction(); // Standalone legacy callers.
   // A service invoked without a database composition has no root transaction

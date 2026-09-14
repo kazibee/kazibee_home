@@ -1,4 +1,4 @@
-import type { Container } from "@noego/ioc";
+import type { IContainer } from "@noego/ioc";
 import { SqlStack, resolveExecution } from "sqlstack";
 import { registerSqlStack } from "sqlstack/ioc";
 
@@ -8,7 +8,7 @@ import { registerSqlStack } from "sqlstack/ioc";
  * consult another root's process-global database or resolver.
  * The adapter remains owned by the existing boot/driver lifecycle.
  */
-export async function registerAppSqlStack(container: Container): Promise<void> {
+export async function registerAppSqlStack(container: IContainer): Promise<void> {
   const { entry, resolver } = await resolveExecution();
   if (container.isRegistered(SqlStack)) {
     // Node dev rebuilds reuse the App root; update its existing registration.

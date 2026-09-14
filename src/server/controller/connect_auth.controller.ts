@@ -1,4 +1,5 @@
 import { Component, Inject } from "@noego/ioc";
+import { extendLogContext } from "@noego/logger";
 import type { CompatRequest as Request, CompatResponse as Response } from "@noego/dinner";
 import ConnectAuthLogic from "../logic/connect_auth.logic";
 import { GUEST_ACTOR } from "../types/actor";
@@ -28,7 +29,7 @@ export default class ConnectAuthController {
 
   async signup({ req, res }: { req: Request; res: Response }) {
     this.routeStarted("signup");
-    const input = this.parser.signup(req.body);
+    const input = this.parsed(this.parser.signup(req.body));
     if (!input.ok) return this.parseError(res, "signup", input.reason, input.correlationId);
     const result = await this.logic.signup(GUEST_ACTOR, input.value);
     if (result.outcome === "duplicate") {
@@ -47,7 +48,7 @@ export default class ConnectAuthController {
 
   async login({ req, res }: { req: Request; res: Response }) {
     this.routeStarted("login");
-    const input = this.parser.login(req.body);
+    const input = this.parsed(this.parser.login(req.body));
     if (!input.ok) return this.parseError(res, "login", input.reason, input.correlationId);
     const result = await this.logic.login(GUEST_ACTOR, input.value);
     if (result.outcome === "invalid-credentials") {
@@ -68,7 +69,7 @@ export default class ConnectAuthController {
 
   async google({ req, res }: { req: Request; res: Response }) {
     this.routeStarted("google");
-    const input = this.parser.google(req.body);
+    const input = this.parsed(this.parser.google(req.body));
     if (!input.ok) return this.parseError(res, "google", input.reason, input.correlationId);
     const result = await this.logic.google(GUEST_ACTOR, input.value);
     if (result.outcome === "invalid-credentials") {
@@ -89,7 +90,7 @@ export default class ConnectAuthController {
 
   async session({ req, res }: { req: Request; res: Response }) {
     this.routeStarted("session");
-    const input = this.parser.session(req);
+    const input = this.parsed(this.parser.session(req));
     if (!input.ok) return this.parseError(res, "session", input.reason, input.correlationId);
     const result = await this.logic.session(
       GUEST_ACTOR,
@@ -113,7 +114,7 @@ export default class ConnectAuthController {
 
   async logout({ req, res }: { req: Request; res: Response }) {
     this.routeStarted("logout");
-    const input = this.parser.logout(req);
+    const input = this.parsed(this.parser.logout(req));
     if (!input.ok) return this.parseError(res, "logout", input.reason, input.correlationId);
     const result = await this.logic.logout(
       GUEST_ACTOR,
@@ -138,6 +139,17 @@ export default class ConnectAuthController {
       ended: true,
       correlationId: input.value.correlationId,
     });
+  }
+
+  /**
+   * Attach the envelope's correlationId to the ambient log context as soon as
+   * it is known (valid or not), so every later log line in this request —
+   * logic, services, sqlstack, the gateway settlement — carries it.
+   */
+  private parsed<T extends { ok: boolean; correlationId?: string; value?: { correlationId: string } }>(input: T): T {
+    const correlationId = input.ok ? input.value?.correlationId : input.correlationId;
+    if (correlationId) extendLogContext({ correlationId });
+    return input;
   }
 
   private parseError(

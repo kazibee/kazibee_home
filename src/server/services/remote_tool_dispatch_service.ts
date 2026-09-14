@@ -1,6 +1,7 @@
 import { randomBytes } from "node:crypto";
 import { Component, Inject, LoadAs } from "@noego/ioc";
 import Env from "./env";
+import RemoteToolCoordinatorClient from "./remote_tool_coordinator_client";
 import type { RemoteToolGrant } from "../repo/remote_tool_grant_repo";
 
 interface CoordinatorNamespace {
@@ -44,7 +45,10 @@ const DEFAULT_DEADLINE_MS = 45_000;
  */
 @Component({ scope: LoadAs.Singleton })
 export default class RemoteToolDispatchService {
-  constructor(@Inject(Env) private readonly env: Env) {}
+  constructor(
+    @Inject(Env) private readonly env: Env,
+    @Inject(RemoteToolCoordinatorClient) private readonly coordinatorClient: RemoteToolCoordinatorClient,
+  ) {}
 
   /**
    * Live presence as the ExecutorCoordinator sees it, or null when this
@@ -71,7 +75,7 @@ export default class RemoteToolDispatchService {
       );
       const response = coordinator
         ? await coordinator.get(coordinator.idFromName(executorId)).fetch(request)
-        : await fetch(request);
+        : await this.coordinatorClient.fetch(request);
       if (!response.ok) return { state: "offline", workspaces: [] };
       const body = (await response.json()) as {
         state?: unknown;
@@ -168,7 +172,7 @@ export default class RemoteToolDispatchService {
       );
       response = coordinator
         ? await coordinator.get(coordinator.idFromName(target.executorId)).fetch(request)
-        : await fetch(request);
+        : await this.coordinatorClient.fetch(request);
     } catch {
       return { ok: false, code: "EXECUTOR_OFFLINE", message: "Executor routing failed." };
     }

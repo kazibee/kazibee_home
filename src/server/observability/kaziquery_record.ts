@@ -25,7 +25,7 @@ const LEVELS = new Set(["trace", "debug", "info", "warn", "error", "fatal"]);
 /** Logger messages are event tokens (`area.thing.outcome`); anything else stays a plain server log line. */
 const EVENT_NAME = /^[a-z][a-z0-9_]*(?:\.[a-z][a-z0-9_]*){1,7}$/;
 /** Request-scoped scalars worth querying as top-level attributes; the full context stays verbatim. */
-const PROMOTED = ["site", "route", "method", "status", "durationMs", "outcome", "logger"] as const;
+const PROMOTED = ["site", "host", "route", "method", "status", "durationMs", "outcome", "logger"] as const;
 
 export class KaziQueryRecordPolicy {
   log(record: LogRecord): ExportRecord | undefined {

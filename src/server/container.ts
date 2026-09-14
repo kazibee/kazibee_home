@@ -1,8 +1,18 @@
-// Get the global container from @noego/app framework
-// The framework manages the container lifecycle including scoped containers per request
-// Deep import: '@noego/app/container' is runtime-portable (Node + workerd);
-// the root '@noego/app' export drags in the Node-only CLI/runtime modules.
-import type { Container } from "@noego/ioc";
-import { getContainer } from "@noego/app/container";
-const container: Container = getContainer();
-export default container;
+import { ExecutionContext, type IContainer } from "@noego/ioc";
+
+/**
+ * Return the root/scope already owned by the active App execution flow.
+ *
+ * There is deliberately no process-global fallback here. Server-side loaders,
+ * request helpers, and other in-process consumers must execute inside the
+ * App/IoC ExecutionContext that owns their lifecycle.
+ */
+export function currentContainer(): IContainer {
+  const container = ExecutionContext.current();
+  if (!container) {
+    throw new Error(
+      "No active App execution scope. Resolve this operation inside the request/SSR ExecutionContext.",
+    );
+  }
+  return container;
+}

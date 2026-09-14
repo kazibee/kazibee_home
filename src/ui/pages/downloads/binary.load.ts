@@ -3,7 +3,7 @@
 // Loaders run on the server during SSR (Node and the Cloudflare worker). They
 // must NEVER call the application over HTTP (fetch to our own origin) — forge
 // rejects that at runtime. Resolve the service from the IoC container instead.
-import container from "../../../server/container";
+import { currentContainer } from "../../../server/container";
 import DownloadService, {
   type DownloadKind,
   type VersionDownloads,
@@ -38,7 +38,7 @@ export default async function load(req: RequestDataLike): Promise<{
   const selectedVersion = req.params?.version ?? "latest";
 
   try {
-    const service = await container.get<DownloadService>(DownloadService);
+    const service = await currentContainer().get<DownloadService>(DownloadService);
     const { versions } = await service.listVersions(kind);
     return { kind, versions, selectedVersion, error: null };
   } catch (error) {

@@ -1,7 +1,8 @@
 import { Component, Inject } from "@noego/ioc";
-import { ECSClient, RunTaskCommand, StopTaskCommand } from "@aws-sdk/client-ecs";
-import { GetParametersCommand, SSMClient } from "@aws-sdk/client-ssm";
+import { RunTaskCommand, StopTaskCommand } from "@aws-sdk/client-ecs";
+import { GetParametersCommand } from "@aws-sdk/client-ssm";
 import Env from "./env";
+import SwarmAwsClients, { type SwarmAwsClientConfig } from "./swarm_aws_clients";
 import type { Swarm } from "../repo/swarm_repo";
 
 export interface SwarmLaunchConfig {
@@ -16,7 +17,10 @@ export class SwarmLaunchConfigurationError extends Error {}
 
 @Component()
 export default class SwarmAwsService {
-  constructor(@Inject(Env) private readonly env: Env) {}
+  constructor(
+    @Inject(Env) private readonly env: Env,
+    @Inject(SwarmAwsClients) private readonly clients: SwarmAwsClients,
+  ) {}
 
   async launch(
     swarm: Swarm,
@@ -25,8 +29,7 @@ export default class SwarmAwsService {
     providedConfig?: SwarmLaunchConfig,
   ): Promise<{ taskArn: string; taskDefinitionArn: string }> {
     const config = providedConfig ?? await this.launchConfig(swarm);
-    const client = new ECSClient(this.clientConfig(swarm.region));
-    const result = await client.send(new RunTaskCommand({
+    const result = await this.clients.sendEcs(this.clientConfig(swarm.region), new RunTaskCommand({
       cluster: config.clusterArn,
       taskDefinition: config.taskDefinitionArn,
       launchType: "FARGATE",
@@ -69,8 +72,10 @@ export default class SwarmAwsService {
       prefix + "/security_group_id",
       prefix + "/task_definition/" + swarm.resource_class,
     ];
-    const client = new SSMClient(this.clientConfig(swarm.region));
-    const result = await client.send(new GetParametersCommand({ Names: names, WithDecryption: true }));
+    const result = await this.clients.sendSsm(
+      this.clientConfig(swarm.region),
+      new GetParametersCommand({ Names: names, WithDecryption: true }),
+    );
     const values = new Map<string, string>(
       (result.Parameters ?? []).map((parameter): [string, string] => [parameter.Name ?? "", parameter.Value ?? ""]),
     );
@@ -89,15 +94,19 @@ export default class SwarmAwsService {
 
   async stop(swarm: Swarm, taskArn: string): Promise<void> {
     const clusterName = "/kazibee_web/" + swarm.env + "/swarm/" + swarm.region + "/cluster_arn";
-    const ssm = new SSMClient(this.clientConfig(swarm.region));
-    const response = await ssm.send(new GetParametersCommand({ Names: [clusterName], WithDecryption: true }));
+    const response = await this.clients.sendSsm(
+      this.clientConfig(swarm.region),
+      new GetParametersCommand({ Names: [clusterName], WithDecryption: true }),
+    );
     const cluster = response.Parameters?.[0]?.Value;
     if (!cluster) throw new SwarmLaunchConfigurationError("Swarm cluster configuration is missing");
-    const ecs = new ECSClient(this.clientConfig(swarm.region));
-    await ecs.send(new StopTaskCommand({ cluster, task: taskArn, reason: "swarm_stopped" }));
+    await this.clients.sendEcs(
+      this.clientConfig(swarm.region),
+      new StopTaskCommand({ cluster, task: taskArn, reason: "swarm_stopped" }),
+    );
   }
 
-  private clientConfig(region: string) {
+  private clientConfig(region: string): SwarmAwsClientConfig {
     const accessKeyId = this.env.string("SWARM_AWS_ACCESS_KEY_ID");
     const secretAccessKey = this.env.string("SWARM_AWS_SECRET_ACCESS_KEY");
     if (!accessKeyId || !secretAccessKey) {

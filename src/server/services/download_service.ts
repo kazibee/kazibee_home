@@ -1,8 +1,9 @@
-import { GetObjectCommand, HeadObjectCommand, ListObjectsV2Command, S3Client, S3ServiceException } from "@aws-sdk/client-s3";
-import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
-import { Component } from "@noego/ioc";
+import { GetObjectCommand, HeadObjectCommand, ListObjectsV2Command, S3ServiceException } from "@aws-sdk/client-s3";
+import { Component, Inject } from "@noego/ioc";
 import { getLogger } from "@noego/logger";
 import { NotFoundError, ValidationError } from "../errors/domain_errors";
+import DownloadObjectStore from "./download_object_store";
+import Env from "./env";
 
 const logger = getLogger("kazibee:download-service");
 
@@ -34,17 +35,32 @@ export interface DownloadResult {
   url: string;
 }
 
+/** Raw (untrimmed) string binding, or undefined when absent or not a string. */
+function rawString(env: Env, key: string): string | undefined {
+  const value = env.get(key);
+  return typeof value === "string" ? value : undefined;
+}
+
 @Component()
 export default class DownloadService {
-  private readonly bucket = process.env.KAZIBEE_DOWNLOAD_BUCKET ?? "kazibee";
-  private readonly expiresIn = this.readExpiresIn();
-  private readonly region = process.env.AWS_REGION ?? "ca-central-1";
-  private readonly client = new S3Client({ region: this.region });
-  private readonly prefixes: Record<DownloadKind, string> = {
-    cli: this.normalizePrefix(process.env.KAZIBEE_CLI_PREFIX ?? "cli/"),
-    app: this.normalizePrefix(process.env.KAZIBEE_APP_PREFIX ?? "app/"),
-    service: this.normalizePrefix(process.env.KAZIBEE_SERVICE_PREFIX ?? "service/"),
-  };
+  private readonly bucket: string;
+  private readonly expiresIn: number;
+  private readonly region: string;
+  private readonly prefixes: Record<DownloadKind, string>;
+
+  constructor(
+    @Inject(Env) env: Env,
+    @Inject(DownloadObjectStore) private readonly store: DownloadObjectStore,
+  ) {
+    this.bucket = rawString(env, "KAZIBEE_DOWNLOAD_BUCKET") ?? "kazibee";
+    this.expiresIn = this.readExpiresIn(rawString(env, "KAZIBEE_DOWNLOAD_EXPIRES_SECONDS"));
+    this.region = store.region;
+    this.prefixes = {
+      cli: this.normalizePrefix(rawString(env, "KAZIBEE_CLI_PREFIX") ?? "cli/"),
+      app: this.normalizePrefix(rawString(env, "KAZIBEE_APP_PREFIX") ?? "app/"),
+      service: this.normalizePrefix(rawString(env, "KAZIBEE_SERVICE_PREFIX") ?? "service/"),
+    };
+  }
 
   async listVersions(kind: DownloadKind): Promise<VersionsResult> {
     this.assertConfigured();
@@ -61,7 +77,7 @@ export default class DownloadService {
     let continuationToken: string | undefined;
 
     do {
-      const result = await this.client.send(new ListObjectsV2Command({
+      const result = await this.store.send(new ListObjectsV2Command({
         Bucket: this.bucket,
         ContinuationToken: continuationToken,
         Prefix: prefix,
@@ -136,7 +152,7 @@ export default class DownloadService {
       Key: key,
       ResponseContentDisposition: `attachment; filename="${item}"`,
     });
-    const url = await getSignedUrl(this.client, command, { expiresIn });
+    const url = await this.store.presign(command, { expiresIn });
 
     logger.info("Created download URL", {
       bucket: this.bucket,
@@ -159,7 +175,7 @@ export default class DownloadService {
     const key = `${this.prefixes[kind]}${version}/${item}`;
     logger.info("Reading download item text", { bucket: this.bucket, key, kind, version });
     try {
-      const result = await this.client.send(new GetObjectCommand({
+      const result = await this.store.send(new GetObjectCommand({
         Bucket: this.bucket,
         Key: key,
       }));
@@ -185,7 +201,7 @@ export default class DownloadService {
     const key = `${this.prefixes[kind]}policy/${item}`;
     logger.info("Reading policy item text", { bucket: this.bucket, key, kind });
     try {
-      const result = await this.client.send(new GetObjectCommand({
+      const result = await this.store.send(new GetObjectCommand({
         Bucket: this.bucket,
         Key: key,
       }));
@@ -215,7 +231,7 @@ export default class DownloadService {
 
   private async assertObjectExists(key: string): Promise<void> {
     try {
-      await this.client.send(new HeadObjectCommand({
+      await this.store.send(new HeadObjectCommand({
         Bucket: this.bucket,
         Key: key,
       }));
@@ -291,8 +307,8 @@ export default class DownloadService {
     return trimmed.endsWith("/") ? trimmed : `${trimmed}/`;
   }
 
-  private readExpiresIn(): number {
-    const raw = process.env.KAZIBEE_DOWNLOAD_EXPIRES_SECONDS ?? "600";
+  private readExpiresIn(configured: string | undefined): number {
+    const raw = configured ?? "600";
     const parsed = Number.parseInt(raw, 10);
     if (Number.isInteger(parsed) && parsed > 0) {
       return parsed;

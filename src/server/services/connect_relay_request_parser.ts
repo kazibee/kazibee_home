@@ -1,5 +1,8 @@
 import { Component } from "@noego/ioc";
 import type { CompatRequest as Request } from "@noego/dinner";
+// Pre-generated standalone validator for the canonical connect-protocol schema.
+// Cloudflare Workers forbid runtime code generation, so Ajv must never
+// `compile()` here; regenerate with `node scripts/generate-connect-validator.mjs`.
 import validateProtocol from "./generated/connect_protocol_validator.js";
 import type { ConnectExecutorActor } from "./connect_executor_actor_resolver";
 

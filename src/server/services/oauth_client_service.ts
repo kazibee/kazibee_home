@@ -5,6 +5,7 @@ import OAuthRepo, {
   toCreateOAuthClientParams,
 } from "../repo/oauth_repo";
 import { ConnectClock } from "./connect_auth_primitives";
+import OAuthClientMetadataClient from "./oauth_client_metadata_client";
 
 export interface OAuthClientMetadata extends Record<string, unknown> {
   client_id?: string;
@@ -26,6 +27,7 @@ export default class OAuthClientService {
   constructor(
     @Inject(OAuthRepo) private readonly clients: OAuthRepo,
     @Inject(ConnectClock) private readonly clock: ConnectClock,
+    @Inject(OAuthClientMetadataClient) private readonly metadataClient: OAuthClientMetadataClient,
   ) {}
 
   async resolveClient(clientId: string): Promise<ResolveOAuthClientResult> {
@@ -48,9 +50,7 @@ export default class OAuthClientService {
     }
 
     try {
-      const response = await fetch(clientId, {
-        headers: { accept: "application/json" },
-      });
+      const response = await this.metadataClient.request(clientId);
       if (!response.ok) return { ok: false, error: "invalid_client" };
       const metadata = await response.json();
       if (!isMetadataObject(metadata)) {

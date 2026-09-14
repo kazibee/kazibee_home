@@ -1,4 +1,4 @@
-import { getContainer } from '@noego/app/container';
+import { currentContainer } from '../../server/container';
 import { CONNECT_SESSION_COOKIE } from '../../server/services/connect_auth_policy';
 import ConnectSessionAuthService from '../../server/services/connect_session_auth_service';
 
@@ -21,7 +21,7 @@ export default async function load(input: FrontendExecutionInputLike) {
   const token = cookieFromHeader(input.request.headers.get('cookie'), CONNECT_SESSION_COOKIE);
   if (!token) return { user: null };
   try {
-    const sessions = getContainer().get(ConnectSessionAuthService) as ConnectSessionAuthService;
+    const sessions = await currentContainer().get<ConnectSessionAuthService>(ConnectSessionAuthService);
     const result = await sessions.authenticate(token);
     if (!result.ok) return { user: null };
     return {

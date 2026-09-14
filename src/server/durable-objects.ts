@@ -23,6 +23,17 @@
  * in DO storage. No timers, no outbound connections.
  */
 
+export { KaziQueryExportRelay } from "./observability/kaziquery_relay";
+
+import {
+  CHANNEL_PROTOCOL_VERSION,
+  FRAME_LIMITS,
+  encodeSessionFrames,
+  type ChannelErrorFrame,
+  type SessionCloseFrame,
+  type SessionOpenFrame,
+} from "@kazibee-internal/connect-protocol/channel";
+import type { SessionChunk } from "@kazibee-internal/connect-protocol/viewer";
 import { MACHINE_ID, SWARM_HEAD_PROTOCOL_VERSION, SWARM_ID, parseHeadInboundFrame, parseHeadOutboundFrame } from "../shared/swarm_head_protocol";
 
 // Minimal ambient declarations for the Workers runtime APIs used here, so
@@ -51,18 +62,17 @@ interface CoordinatorState {
   storage: CoordinatorStorage;
 }
 
-const PROTOCOL_VERSION = "1.1";
 const MAX_INFLIGHT_ROUTES = 32;
 const ACCEPT_TIMEOUT_MS = 5_000;
-const RESULT_FRAME_LIMIT = 192 * 1024;
+/**
+ * Coordinator-specific budget for one serialized `session.frame` envelope:
+ * the 128 KiB payload (`FRAME_LIMITS.sessionPayloadBytes`) plus envelope
+ * overhead. Distinct from the Connect 1.1 payload budget on purpose.
+ */
 const SESSION_FRAME_LIMIT = 160 * 1024;
-const SESSION_CHUNK_LIMIT = 128 * 1024;
-const SESSION_PENDING_BYTES = 8 * 1024 * 1024;
 const SESSION_PENDING_FRAMES = 64;
 const MAX_EPHEMERAL_INVOKES = 8;
 const SESSION_INVOKE_TIMEOUT_MS = 30_000;
-const STALE_AFTER_MS = 60_000;
-const OFFLINE_AFTER_MS = 120_000;
 
 const PRESENCE_KEY = "presence";
 
@@ -143,47 +153,24 @@ function now(): number {
 function presenceState(record: PresenceRecord | undefined, hasSocket: boolean): "online" | "stale" | "offline" {
   if (!record || !hasSocket) return "offline";
   const age = now() - record.lastSeenAt;
-  if (age > OFFLINE_AFTER_MS) return "offline";
-  if (age > STALE_AFTER_MS) return "stale";
+  if (age > FRAME_LIMITS.offlineAfterMs) return "offline";
+  if (age > FRAME_LIMITS.staleAfterMs) return "stale";
   return "online";
 }
 
 function errorFrame(code: string, message: string, fatal: boolean): string {
   return JSON.stringify({
     kind: "channel.error",
-    protocolVersion: PROTOCOL_VERSION,
+    protocolVersion: CHANNEL_PROTOCOL_VERSION,
     code,
     message,
     fatal,
-  });
+  } satisfies ChannelErrorFrame);
 }
 
 function isViewerAttachment(value: unknown): value is ViewerAttachment {
   return !!value && typeof value === "object"
     && (value as { role?: unknown }).role === "viewer";
-}
-
-function sessionFrameId(counter: number): string {
-  return `sf_${Date.now().toString(36)}_${counter.toString(36)}`;
-}
-
-function utf8Chunks(value: string): string[] {
-  const encoder = new TextEncoder();
-  const chunks: string[] = [];
-  let chunk = "";
-  let bytes = 0;
-  for (const point of value) {
-    const size = encoder.encode(point).byteLength;
-    if (bytes + size > SESSION_CHUNK_LIMIT && chunk) {
-      chunks.push(chunk);
-      chunk = "";
-      bytes = 0;
-    }
-    chunk += point;
-    bytes += size;
-  }
-  if (chunk || chunks.length === 0) chunks.push(chunk);
-  return chunks;
 }
 
 export class ExecutorCoordinator {
@@ -294,13 +281,13 @@ export class ExecutorCoordinator {
     pair[1].serializeAttachment({ role: "viewer", executorId, accountRef, sessionId } satisfies ViewerAttachment);
     executor.send(JSON.stringify({
       kind: "session.open",
-      protocolVersion: PROTOCOL_VERSION,
+      protocolVersion: CHANNEL_PROTOCOL_VERSION,
       sessionId,
       viewerRole: "web_agent_viewer",
       accountRef,
       correlationId: `cor_${crypto.randomUUID().replace(/-/g, "")}`,
       sentAt: new Date().toISOString(),
-    }));
+    } satisfies SessionOpenFrame));
     pair[1].send(JSON.stringify({ kind: "session.ready", sessionId }));
     return new Response(null, { status: 101, webSocket: pair[0] } as ResponseInit & {
       webSocket: CoordinatorSocket;
@@ -327,7 +314,7 @@ export class ExecutorCoordinator {
       }
       return;
     }
-    if (new TextEncoder().encode(message).byteLength > RESULT_FRAME_LIMIT) {
+    if (new TextEncoder().encode(message).byteLength > FRAME_LIMITS.resultFrameBytes) {
       ws.send(errorFrame("EXECUTOR_PROTOCOL_VIOLATION", "frame exceeds result budget", true));
       ws.close(1009, "frame too large");
       return;
@@ -341,13 +328,13 @@ export class ExecutorCoordinator {
       ws.close(1002, "invalid json");
       return;
     }
-    const limit = frame.kind === "session.frame" ? SESSION_FRAME_LIMIT : RESULT_FRAME_LIMIT;
+    const limit = frame.kind === "session.frame" ? SESSION_FRAME_LIMIT : FRAME_LIMITS.resultFrameBytes;
     if (new TextEncoder().encode(message).byteLength > limit) {
       ws.send(errorFrame("EXECUTOR_PROTOCOL_VIOLATION", "frame exceeds result budget", true));
       ws.close(1009, "frame too large");
       return;
     }
-    if (frame.protocolVersion !== PROTOCOL_VERSION) {
+    if (frame.protocolVersion !== CHANNEL_PROTOCOL_VERSION) {
       ws.send(errorFrame("EXECUTOR_INCOMPATIBLE", "unsupported protocol version", true));
       ws.close(1008, "protocol version");
       return;
@@ -463,26 +450,18 @@ export class ExecutorCoordinator {
   }
 
   private sendSessionFrame(socket: CoordinatorSocket, sessionId: string, payload: string): void {
-    const chunks = utf8Chunks(payload);
-    const frameId = sessionFrameId(++this.frameCounter);
-    chunks.forEach((chunk, chunkIndex) => socket.send(JSON.stringify({
-      kind: "session.frame",
-      protocolVersion: PROTOCOL_VERSION,
-      sessionId,
-      frameId,
-      chunkIndex,
-      chunkCount: chunks.length,
-      payload: chunk,
-    })));
+    // Correlation identity remains coordinator-owned; the package owns only framing.
+    const frameId = `sf_${Date.now().toString(36)}_${(this.frameCounter += 1).toString(36)}`;
+    for (const frame of encodeSessionFrames(sessionId, payload)) socket.send(JSON.stringify({ ...frame, frameId }));
   }
 
   private sendSessionClose(socket: CoordinatorSocket, sessionId: string, reason: string): void {
     socket.send(JSON.stringify({
       kind: "session.close",
-      protocolVersion: PROTOCOL_VERSION,
+      protocolVersion: CHANNEL_PROTOCOL_VERSION,
       sessionId,
       reason,
-    }));
+    } satisfies SessionCloseFrame));
   }
 
   private onSessionFrame(frame: Record<string, unknown>): void {
@@ -492,7 +471,7 @@ export class ExecutorCoordinator {
     const chunkCount = Number(frame.chunkCount);
     const payload = typeof frame.payload === "string" ? frame.payload : null;
     if (!sessionId || !frameId || payload === null
-      || new TextEncoder().encode(payload).byteLength > SESSION_CHUNK_LIMIT
+      || new TextEncoder().encode(payload).byteLength > FRAME_LIMITS.sessionPayloadBytes
       || !Number.isInteger(chunkIndex) || !Number.isInteger(chunkCount)
       || chunkCount < 1 || chunkIndex < 0 || chunkIndex >= chunkCount) return;
 
@@ -506,7 +485,7 @@ export class ExecutorCoordinator {
       if (!viewer) return;
       this.sendToViewer(viewer, chunkCount === 1
         ? payload
-        : JSON.stringify({ kind: "session.chunk", frameId, chunkIndex, chunkCount, payload }));
+        : JSON.stringify({ kind: "session.chunk", frameId, chunkIndex, chunkCount, payload } satisfies SessionChunk));
       return;
     }
 
@@ -530,7 +509,7 @@ export class ExecutorCoordinator {
     }
     pending.bytes += new TextEncoder().encode(payload).byteLength;
     const totalBytes = Array.from(frames.values()).reduce((sum, value) => sum + value.bytes, 0);
-    if (totalBytes > SESSION_PENDING_BYTES) {
+    if (totalBytes > FRAME_LIMITS.sessionPendingBytes) {
       this.failSessionBudget(sessionId);
       return;
     }
@@ -656,13 +635,13 @@ export class ExecutorCoordinator {
     const id = `inv_${crypto.randomUUID().replace(/-/g, "")}`;
     executor.send(JSON.stringify({
       kind: "session.open",
-      protocolVersion: PROTOCOL_VERSION,
+      protocolVersion: CHANNEL_PROTOCOL_VERSION,
       sessionId,
       viewerRole: "web_agent_viewer",
       accountRef: request.headers.get("x-kazi-account-ref") ?? "",
       correlationId: `cor_${crypto.randomUUID().replace(/-/g, "")}`,
       sentAt: new Date().toISOString(),
-    }));
+    } satisfies SessionOpenFrame));
 
     return new Promise<Response>((resolve) => {
       const timer = setTimeout(() => {
@@ -704,7 +683,7 @@ export class ExecutorCoordinator {
 
     ws.send(JSON.stringify({
       kind: "channel.hello.ack",
-      protocolVersion: PROTOCOL_VERSION,
+      protocolVersion: CHANNEL_PROTOCOL_VERSION,
       executorId: attachment.executorId,
       executorFence: attachment.fence,
       correlationId: frame.correlationId ?? null,
@@ -1128,5 +1107,3 @@ export class SwarmMachineCoordinator {
     return Response.json({ ok: true });
   }
 }
-
-export { KaziQueryExportRelay } from "./observability/kaziquery_relay";

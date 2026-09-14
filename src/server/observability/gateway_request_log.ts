@@ -1,5 +1,5 @@
 import { Component, LoadAs } from "@noego/ioc";
-import { getLogger } from "@noego/logger";
+import { currentLogContext, getLogger } from "@noego/logger";
 
 const METHODS = new Set(["GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"]);
 const ERROR_KINDS = new Set(["Error", "TypeError", "AbortError", "TimeoutError", "SyntaxError"]);
@@ -22,21 +22,26 @@ export default class GatewayRequestLog {
     if (site === "website" && !this.isGatewayPath(pathname)) return;
     this.startedAt = performance.now();
     const ray = request.headers.get("cf-ray") ?? "";
+    // Share the request identity the ambient log context minted in
+    // requestScope, so gateway lines and every service line join on it.
+    const ambientRequestId = currentLogContext()?.requestId;
     this.context = {
-      requestId: crypto.randomUUID(), site, route: this.route(pathname),
+      requestId: typeof ambientRequestId === "string" ? ambientRequestId : crypto.randomUUID(),
+      site, route: this.route(pathname),
       method: METHODS.has(request.method) ? request.method : "OTHER",
       ...(/^[a-f0-9]{16,32}-[A-Z]{3}$/.test(ray) ? { cfRay: ray } : {}),
     };
     this.logger.info("gateway.request.started", { ...this.context, outcome: "started" });
   }
 
-  finish(response?: Response, error?: unknown): void {
+  /** `matchedRoute`: the framework-reported raw pattern (App `onRequestSettled` context); replaces the path-family guess when known. */
+  finish(response?: Response, error?: unknown, matchedRoute?: string): void {
     if (!this.context || this.finished) return;
     this.finished = true;
     const status = response?.status ?? null;
     const failed = !response || response.status >= 500;
     const context = {
-      ...this.context, status, responseReturned: Boolean(response),
+      ...this.context, ...(matchedRoute ? { route: matchedRoute } : {}), status, responseReturned: Boolean(response),
       durationMs: Math.max(0, Math.round(performance.now() - this.startedAt)),
       outcome: failed ? "failed" : this.outcome(response.status),
       ...(!response ? { errorKind: this.errorKind(error) } : {}),

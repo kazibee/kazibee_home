@@ -1,4 +1,7 @@
 import { Component } from "@noego/ioc";
+// Pre-generated standalone validator for the canonical connect-protocol schema.
+// Cloudflare Workers forbid runtime code generation, so Ajv must never
+// `compile()` here; regenerate with `node scripts/generate-connect-validator.mjs`.
 import validateProtocol from "./generated/connect_protocol_validator.js";
 
 const MAX_FRAME_BYTES = 256 * 1024;
@@ -14,7 +17,7 @@ export type ClientCommandFrame = Record<string, unknown> & {
   executorId: string;
   deviceId: string;
   actorRole: "desktop_device";
-  operation: "executor.status.read" | "workspaces.read" | "threads.read" | "thread.read"
+  operation: "workspace.prepare" | "executor.status.read" | "workspaces.read" | "threads.read" | "thread.read"
     | "conversation.create" | "thread.send" | "thread.retry" | "thread.cancel" | "events.replay";
   payload: Record<string, unknown>;
 };

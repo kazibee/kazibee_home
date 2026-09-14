@@ -1,13 +1,13 @@
 #!/usr/bin/env node
 /**
  * Pre-generates the standalone Ajv validator for the canonical Kazi Connect
- * protocol schema checked into this release branch.
+ * protocol schema owned by @kazibee-internal/connect-protocol.
  *
  * Why: the relay request parsers used to call `new Ajv2020(...).compile(schema)`
  * per instance. Ajv materialises validators with `new Function(...)`, which the
  * Cloudflare Workers runtime forbids ("Code generation from strings disallowed
  * for this context"), so every relay request answered HTTP 500. The website owns
- * the compilation choice; the checked-in protocol package supplies the schema. This script moves
+ * the compilation choice; the package only ships the schema. This script moves
  * the compilation to authoring time and commits the result as plain source, so
  * `npx noego build` (Cloudflare) has the artifact with no extra build step.
  *
@@ -32,7 +32,7 @@ const Ajv2020 = require("ajv/dist/2020.js").default;
 const standaloneCode = require("ajv/dist/standalone/index.js").default;
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-export const SCHEMA_SPECIFIER = "../packages/kazi-connect-protocol/schemas/kazi-connect-v1.schema.json";
+export const SCHEMA_SPECIFIER = "@kazibee-internal/connect-protocol/canonical/schemas/kazi-connect-v1.schema.json";
 export const OUTPUT_JS = path.join(ROOT, "src/server/services/generated/connect_protocol_validator.js");
 export const OUTPUT_DTS = path.join(ROOT, "src/server/services/generated/connect_protocol_validator.d.ts");
 

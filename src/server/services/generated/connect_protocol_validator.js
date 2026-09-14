@@ -1,5 +1,5 @@
 // GENERATED FILE — DO NOT EDIT.
-// Source: ../packages/kazi-connect-protocol/schemas/kazi-connect-v1.schema.json
+// Source: @kazibee-internal/connect-protocol/canonical/schemas/kazi-connect-v1.schema.json
 // schemaSha256: 79b7a8be1338855681a3b5b5ce66e0c135eddf7c2a07bdaab96ca9552a3112ec
 // ajv: 8.20.0 (Ajv2020, {"allErrors":false,"strict":true})
 // Regenerate: node scripts/generate-connect-validator.mjs

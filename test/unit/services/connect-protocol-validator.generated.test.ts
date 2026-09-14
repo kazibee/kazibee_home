@@ -3,7 +3,7 @@
  * parsers consume (src/server/services/generated/connect_protocol_validator.js).
  *
  * 1. Drift: the committed artifact must equal a fresh generation from the
- *    release branch canonical schema, so a
+ *    installed @kazibee-internal/connect-protocol canonical schema, so a
  *    package schema bump can never silently run against a stale validator.
  * 2. No runtime codegen: the generated source has no require/new Function/eval
  *    and the validator runs with the string-to-code entry points disabled.
@@ -18,14 +18,14 @@ import { readFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import path from "node:path";
 import Ajv2020 from "ajv/dist/2020.js";
-import protocolSchema from "../../../packages/kazi-connect-protocol/schemas/kazi-connect-v1.schema.json" with { type: "json" };
+import protocolSchema from "@kazibee-internal/connect-protocol/canonical/schemas/kazi-connect-v1.schema.json" with { type: "json" };
 import validate, { SCHEMA_SHA256 } from "../../../src/server/services/generated/connect_protocol_validator.js";
 
 const ROOT = path.resolve(__dirname, "../../..");
 const GENERATOR = path.join(ROOT, "scripts/generate-connect-validator.mjs");
 const GENERATED = path.join(ROOT, "src/server/services/generated/connect_protocol_validator.js");
 const require = createRequire(import.meta.url);
-const SCHEMA_PATH = require.resolve("../../../packages/kazi-connect-protocol/schemas/kazi-connect-v1.schema.json");
+const SCHEMA_PATH = require.resolve("@kazibee-internal/connect-protocol/canonical/schemas/kazi-connect-v1.schema.json");
 const CODEGEN_MESSAGE = "Code generation from strings disallowed for this context";
 
 const command = {

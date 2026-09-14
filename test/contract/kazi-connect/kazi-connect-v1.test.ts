@@ -1,9 +1,14 @@
 import { createHash } from 'node:crypto';
 import { readFileSync, readdirSync } from 'node:fs';
-import { isAbsolute, join, relative, resolve } from 'node:path';
+import { createRequire } from 'node:module';
+import { dirname, isAbsolute, join, relative } from 'node:path';
 import Ajv2020 from 'ajv/dist/2020.js';
 
-const root = resolve('packages/kazi-connect-protocol');
+// The canonical Kazi Connect V1 artifacts are owned by the installed internal package; the
+// former Website-owned `packages/kazi-connect-protocol` copy no longer exists.
+const CANONICAL_PACKAGE = '@kazibee-internal/connect-protocol';
+const packageRoot = dirname(createRequire(import.meta.url).resolve(`${CANONICAL_PACKAGE}/package.json`));
+const root = join(packageRoot, 'canonical');
 const schemaPath = join(root, 'schemas/kazi-connect-v1.schema.json');
 const readJson = <T>(path: string): T =>
   JSON.parse(readFileSync(path, 'utf8')) as T;
@@ -449,7 +454,14 @@ describe('artifact safety and integrity', () => {
     const manifest = readJson<{
       package: string;
       packageVersion: string;
+      protocolVersion: string;
       checksumAlgorithm: string;
+      canonicalSource: {
+        package: string;
+        packageVersion: string;
+        license: string;
+        manifestSha256: string;
+      };
       authContracts: {
         desktopClaimCreate: {
           header: string;
@@ -470,7 +482,7 @@ describe('artifact safety and integrity', () => {
       files: Array<{ path: string; sha256: string }>;
     }>(join(root, 'manifest.json'));
     const packageMetadata = readJson<{ name: string; version: string }>(
-      join(root, 'package.json'),
+      join(packageRoot, 'package.json'),
     );
     const expected = [
       ...findJsonFiles(join(root, 'fixtures')),
@@ -479,8 +491,19 @@ describe('artifact safety and integrity', () => {
       join(root, 'types-by-schema.d.ts'),
     ].map((path) => relative(root, path));
     expect(manifest.package).toBe(packageMetadata.name);
+    expect(manifest.package).toBe(CANONICAL_PACKAGE);
     expect(manifest.packageVersion).toBe(packageMetadata.version);
-    expect(manifest.packageVersion).toBe('1.0.8');
+    // The wire protocol stays the literal 1.0 and the artifact bytes remain the reviewed 1.0.8
+    // Website-owned source; the internal package version is independent of both.
+    expect(manifest.protocolVersion).toBe('1.0');
+    expect(manifest.canonicalSource).toEqual(
+      expect.objectContaining({
+        package: '@kazibee/connect-protocol',
+        packageVersion: '1.0.8',
+        license: 'MIT',
+        manifestSha256: '480fda83a7b713968a3125cfc6a32c59374fe9ccdc4e4c889218a4bd14cea9c1',
+      }),
+    );
     expect(manifest.checksumAlgorithm).toBe('sha256');
     expect(manifest.authContracts.desktopClaimCreate).toEqual(
       expect.objectContaining({

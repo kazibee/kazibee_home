@@ -1,35 +1,31 @@
 /**
- * Remote tools (MCP + grant management) routes through testDinner (no
- * server, no database).
+ * Remote tools (MCP + grant management) routes through root testApp over the
+ * original configuration (no server, no database). Historical case names
+ * remain stable.
  *
- * Real production source (src/server/openapi/connect/remote-tools.yaml),
- * real controller → grant/dispatch/session service graph. Bearer
- * authentication happens inside the controller, so the MCP surface is fully
- * driven at route depth by stubbing the grant repo; dispatch runs real and
- * reports EXECUTOR_OFFLINE because this deployment has no coordinator
- * routing (no EXECUTOR_COORDINATOR binding, no dev coordinator origin) —
- * no network is ever touched.
+ * Real production remote-tools.yaml module selection (remoteTools), real
+ * controller → grant/dispatch/session service graph. Bearer authentication
+ * happens inside the controller, so the MCP surface is fully driven at route
+ * depth by replacing only the grant repo boundary through singular method
+ * controls; dispatch runs real and reports EXECUTOR_OFFLINE because this
+ * deployment has no coordinator routing (no EXECUTOR_COORDINATOR binding, no
+ * dev coordinator origin) — no network is ever touched. resourceCase owns
+ * environment cleanup.
  */
 import { describe, it, expect } from 'vitest';
-import { readFileSync } from 'node:fs';
 import { createHash } from 'node:crypto';
 import path from 'node:path';
-import { load as parseYaml } from 'js-yaml';
-import { testDinner } from '@noego/dinner/testing';
-import { test as control } from '@noego/testing';
-import RemoteToolsController from '../../../src/server/controller/remote_tools.controller';
+import { testApp } from '@noego/app';
+import { test as control, testStub, resourceCase } from '@noego/testing';
 import RemoteToolGrantRepo from '../../../src/server/repo/remote_tool_grant_repo';
 import ConnectExecutorRepo from '../../../src/server/repo/connect_executor_repo';
 import ConnectBrowserSessionRepo from '../../../src/server/repo/connect_browser_session_repo';
 import ConnectAccountRepo from '../../../src/server/repo/connect_account_repo';
 
 // Force the "no coordinator routing" branch regardless of the shell env.
-delete process.env.KAZIBEE_DEV_COORDINATOR_ORIGIN;
-delete process.env.EXECUTOR_COORDINATOR;
 
-const remoteToolsSource = parseYaml(
-  readFileSync(path.resolve(__dirname, '../../../src/server/openapi/connect/remote-tools.yaml'), 'utf8')
-) as Record<string, unknown>;
+const CONFIG = path.resolve(__dirname, '../../../noego.config.yml');
+const SELECT = { server: { module: ['remoteTools'] } } as const;
 
 const sha256 = (value: string) => createHash('sha256').update(value, 'utf8').digest('hex');
 
@@ -97,44 +93,29 @@ const executorRow = () => ({
   last_seen_at: '2026-01-01T00:00:00.000Z',
 });
 
-const patAuthMethods = () => ([
-  [RemoteToolGrantRepo, {
-    findByTokenHash: control.returns(Promise.resolve(grantRow())),
-    touchLastUsed: control.returns(Promise.resolve(undefined)),
-  }],
-] as const);
+// A live PAT grant: reusable replacement description, not an application
+// constructor (same tokens/slots/descriptors as before).
+const patAuth = () => testStub()
+  .method(RemoteToolGrantRepo, 'findByTokenHash', control.returns(Promise.resolve(grantRow())))
+  .method(RemoteToolGrantRepo, 'touchLastUsed', control.returns(Promise.resolve(undefined)));
 
-const browserSessionMethods = () => ([
-  [ConnectBrowserSessionRepo, {
-    findByTokenHash: control.returns(Promise.resolve(sessionRow())),
-    touchSession: control.returns(Promise.resolve(undefined)),
-  }],
-  [ConnectAccountRepo, {
-    findByUserId: control.returns(Promise.resolve(accountRow())),
-  }],
-] as const);
+// A live browser session resolving to an active account.
+const browserSession = () => testStub()
+  .method(ConnectBrowserSessionRepo, 'findByTokenHash', control.returns(Promise.resolve(sessionRow())))
+  .method(ConnectBrowserSessionRepo, 'touchSession', control.returns(Promise.resolve(undefined)))
+  .method(ConnectAccountRepo, 'findByUserId', control.returns(Promise.resolve(accountRow())));
 
 const ownerHeaders = () => ({
   cookie: `kazi_connect_session=${SESSION_TOKEN}; kazi_connect_csrf=${CSRF_TOKEN}`,
   'x-csrf-token': CSRF_TOKEN,
 });
 
-const base = () =>
-  testDinner(remoteToolsSource)
-    .select({ module: 'remoteTools' })
-    .controllers({ 'remote_tools.controller': RemoteToolsController })
-    // Legacy {req,res} controllers: compat hooks with default real-IoC
-    // construction (per-request child scope, disposed after the request).
-    .hooks({});
-
 describe('remote tools routes through testDinner (no server, no database)', () => {
-  it('POST /mcp without a bearer answers 401 with RFC 9728 resource metadata', async () => {
-    const env = await base()
-      .methods([
-        [RemoteToolGrantRepo, { findByTokenHash: control.never() }],
-      ])
+  it('POST /mcp without a bearer answers 401 with RFC 9728 resource metadata', resourceCase(async () => {
+    const env = await testApp(CONFIG).select(SELECT)
+      .method(RemoteToolGrantRepo, 'findByTokenHash', control.never())
       .build();
-    const response = await env.dinner.request({
+    const response = await env.request({
       method: 'POST',
       path: '/v1/remote-tools/mcp',
       body: { jsonrpc: '2.0', id: 1, method: 'initialize' },
@@ -143,12 +124,11 @@ describe('remote tools routes through testDinner (no server, no database)', () =
     expect(response.headers.get('www-authenticate')).toContain('oauth-protected-resource');
     expect(await response.json()).toMatchObject({ error: true });
     await env.verify();
-    await env.dispose();
-  });
+  }));
 
-  it('POST /mcp initialize negotiates the protocol for a valid PAT bearer', async () => {
-    const env = await base().methods(patAuthMethods()).build();
-    const response = await env.dinner.request({
+  it('POST /mcp initialize negotiates the protocol for a valid PAT bearer', resourceCase(async () => {
+    const env = await testApp(CONFIG).select(SELECT).use(patAuth()).build();
+    const response = await env.request({
       method: 'POST',
       path: '/v1/remote-tools/mcp',
       headers: { authorization: `Bearer ${PAT}` },
@@ -161,24 +141,23 @@ describe('remote tools routes through testDinner (no server, no database)', () =
       protocolVersion: '2025-03-26',
       serverInfo: { name: 'Kazibee Remote Tool Service' },
     });
-    await env.dispose();
-  });
+  }));
 
-  it('POST /mcp acknowledges notifications with 202 and no body', async () => {
-    const env = await base().methods(patAuthMethods()).build();
-    const response = await env.dinner.request({
+  it('POST /mcp acknowledges notifications with 202 and no body', resourceCase(async () => {
+    const env = await testApp(CONFIG).select(SELECT).use(patAuth()).build();
+    const response = await env.request({
       method: 'POST',
       path: '/v1/remote-tools/mcp',
       headers: { authorization: `Bearer ${PAT}` },
       body: { jsonrpc: '2.0', method: 'notifications/initialized' },
     });
     expect(response.status).toBe(202);
-    await env.dispose();
-  });
+    await response.body?.cancel(); // Status-only assertion still owns its HTTP body lease.
+  }));
 
-  it('POST /mcp tools/call surfaces EXECUTOR_OFFLINE as an isError tool result when no routing exists', async () => {
-    const env = await base().methods(patAuthMethods()).build();
-    const response = await env.dinner.request({
+  it('POST /mcp tools/call surfaces EXECUTOR_OFFLINE as an isError tool result when no routing exists', resourceCase(async () => {
+    const env = await testApp(CONFIG).select(SELECT).use(patAuth()).build();
+    const response = await env.request({
       method: 'POST',
       path: '/v1/remote-tools/mcp',
       headers: { authorization: `Bearer ${PAT}` },
@@ -191,12 +170,11 @@ describe('remote tools routes through testDinner (no server, no database)', () =
     const payload = await response.json() as { result: { isError: boolean; structuredContent: Record<string, unknown> } };
     expect(payload.result.isError).toBe(true);
     expect(payload.result.structuredContent).toMatchObject({ ok: false, code: 'EXECUTOR_OFFLINE' });
-    await env.dispose();
-  });
+  }));
 
-  it('POST /mcp answers -32601 for unknown methods', async () => {
-    const env = await base().methods(patAuthMethods()).build();
-    const response = await env.dinner.request({
+  it('POST /mcp answers -32601 for unknown methods', resourceCase(async () => {
+    const env = await testApp(CONFIG).select(SELECT).use(patAuth()).build();
+    const response = await env.request({
       method: 'POST',
       path: '/v1/remote-tools/mcp',
       headers: { authorization: `Bearer ${PAT}` },
@@ -204,23 +182,16 @@ describe('remote tools routes through testDinner (no server, no database)', () =
     });
     expect(response.status).toBe(200);
     expect(await response.json()).toMatchObject({ id: 2, error: { code: -32601 } });
-    await env.dispose();
-  });
+  }));
 
-  it('POST /grants mints a grant and returns the raw token exactly once', async () => {
-    const env = await base()
-      .methods([
-        ...browserSessionMethods(),
-        [ConnectExecutorRepo, {
-          findByExecutorId: control.once(control.returns(Promise.resolve(executorRow()))),
-        }],
-        [RemoteToolGrantRepo, {
-          createGrant: control.once(control.returns(Promise.resolve(undefined))),
-          findByTokenHash: control.once(control.returns(Promise.resolve(grantRow()))),
-        }],
-      ])
+  it('POST /grants mints a grant and returns the raw token exactly once', resourceCase(async () => {
+    const env = await testApp(CONFIG).select(SELECT)
+      .use(browserSession())
+      .method(ConnectExecutorRepo, 'findByExecutorId', control.once(control.returns(Promise.resolve(executorRow()))))
+      .method(RemoteToolGrantRepo, 'createGrant', control.once(control.returns(Promise.resolve(undefined))))
+      .method(RemoteToolGrantRepo, 'findByTokenHash', control.once(control.returns(Promise.resolve(grantRow()))))
       .build();
-    const response = await env.dinner.request({
+    const response = await env.request({
       method: 'POST',
       path: '/v1/remote-tools/grants',
       headers: ownerHeaders(),
@@ -237,17 +208,14 @@ describe('remote tools routes through testDinner (no server, no database)', () =
     });
     expect(typeof payload.token).toBe('string');
     await env.verify();
-    await env.dispose();
-  });
+  }));
 
-  it('POST /grants rejects an invalid scope closure with 400', async () => {
-    const env = await base()
-      .methods([
-        ...browserSessionMethods(),
-        [RemoteToolGrantRepo, { createGrant: control.never() }],
-      ])
+  it('POST /grants rejects an invalid scope closure with 400', resourceCase(async () => {
+    const env = await testApp(CONFIG).select(SELECT)
+      .use(browserSession())
+      .method(RemoteToolGrantRepo, 'createGrant', control.never())
       .build();
-    const response = await env.dinner.request({
+    const response = await env.request({
       method: 'POST',
       path: '/v1/remote-tools/grants',
       headers: ownerHeaders(),
@@ -261,19 +229,14 @@ describe('remote tools routes through testDinner (no server, no database)', () =
       message: 'Grant creation failed: invalid_scopes.',
     });
     await env.verify();
-    await env.dispose();
-  });
+  }));
 
-  it('GET /grants answers 401 when the session cookie resolves to nothing', async () => {
-    const env = await base()
-      .methods([
-        [ConnectBrowserSessionRepo, {
-          findByTokenHash: control.once(control.returns(Promise.resolve(null))),
-        }],
-        [RemoteToolGrantRepo, { listByOwner: control.never() }],
-      ])
+  it('GET /grants answers 401 when the session cookie resolves to nothing', resourceCase(async () => {
+    const env = await testApp(CONFIG).select(SELECT)
+      .method(ConnectBrowserSessionRepo, 'findByTokenHash', control.once(control.returns(Promise.resolve(null))))
+      .method(RemoteToolGrantRepo, 'listByOwner', control.never())
       .build();
-    const response = await env.dinner.request({
+    const response = await env.request({
       method: 'GET',
       path: '/v1/remote-tools/grants',
       headers: { cookie: `kazi_connect_session=${SESSION_TOKEN}` },
@@ -282,6 +245,5 @@ describe('remote tools routes through testDinner (no server, no database)', () =
     expect(response.status).toBe(401);
     expect(await response.json()).toMatchObject({ error: true, message: 'Not signed in.' });
     await env.verify();
-    await env.dispose();
-  });
+  }));
 });

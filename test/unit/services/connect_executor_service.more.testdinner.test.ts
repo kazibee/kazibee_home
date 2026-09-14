@@ -5,13 +5,12 @@
  * connect_executor_service.testdinner.test.ts — same harness, same seams.
  */
 import { describe, it, expect } from 'vitest';
-import { readFileSync } from 'node:fs';
+
 import path from 'node:path';
-import { load as parseYaml } from 'js-yaml';
-import { testDinner } from '@noego/dinner/testing';
-import { test as control } from '@noego/testing';
-import ConnectExecutorController from '../../../src/server/controller/connect_executor.controller';
-import ConnectChannelController from '../../../src/server/controller/connect_channel.controller';
+
+import { testApp } from "@noego/app";
+import { resourceCase, test as control } from "@noego/testing";
+
 import ConnectExecutorService from '../../../src/server/services/connect_executor_service';
 import type { ConnectExecutorActor } from '../../../src/server/services/connect_executor_actor_resolver';
 import type { ClaimCreateInput, ClaimDecisionInput } from '../../../src/server/services/connect_executor_request_parser';
@@ -19,9 +18,7 @@ import ConnectExecutorClaimRepo from '../../../src/server/repo/connect_executor_
 import ConnectExecutorRepo from '../../../src/server/repo/connect_executor_repo';
 import ConnectExecutorAuditRepo from '../../../src/server/repo/connect_executor_audit_repo';
 
-const executorsSource = parseYaml(
-  readFileSync(path.resolve(__dirname, '../../../src/server/openapi/connect/executors.yaml'), 'utf8')
-) as Record<string, unknown>;
+const CONFIG = path.resolve(__dirname, "../../../noego.config.yml");
 
 const BOOTSTRAP_TOKEN = 'B'.repeat(43);
 const CLAIM_ID = 'clm_abcdefgh';
@@ -49,65 +46,42 @@ const decisionInput = (): ClaimDecisionInput => ({
 });
 
 const returns = (value: unknown) => control.returns(Promise.resolve(value));
-type Methods = readonly (readonly [unknown, Record<string, unknown>])[];
-
-const base = () =>
-  testDinner(executorsSource)
-    .select({ module: 'connectExecutors' })
-    .controllers({
-      'connect_executor.controller': ConnectExecutorController,
-      'connect_channel.controller': ConnectChannelController,
-    })
-    .hooks({});
-
-async function withService(
-  methods: Methods,
-  run: (service: ConnectExecutorService) => Promise<void>,
-) {
-  const env = await base().methods(methods as never).build();
-  try {
-    await run(await env.get<ConnectExecutorService>(ConnectExecutorService));
-    await env.verify();
-  } finally {
-    await env.dispose();
-  }
-}
 
 describe('createClaim persistence invariant', () => {
-  it('degrades to failed when the freshly created claim cannot be read back', async () => {
-    await withService([
-      [ConnectExecutorClaimRepo, {
-        findByIdempotencyKey: returns(null),
-        findByClaimId: control.calls([returns(null), returns(null)]),
-        createClaim: control.once(returns(undefined)),
-      }],
-      [ConnectExecutorRepo, {
-        findByExecutorId: returns(null),
-        createExecutor: control.once(returns(undefined)),
-      }],
-      [ConnectExecutorAuditRepo, { appendEvent: control.once(returns(undefined)) }],
-    ], async (service) => {
+  it('degrades to failed when the freshly created claim cannot be read back', resourceCase(async () => {
+    const env = await testApp(CONFIG).select({ server: { module: ["connectExecutors"] } })
+      .method(ConnectExecutorClaimRepo, "findByIdempotencyKey", returns(null))
+      .method(ConnectExecutorClaimRepo, "findByClaimId", control.calls([returns(null), returns(null)]))
+      .method(ConnectExecutorClaimRepo, "createClaim", control.once(returns(undefined)))
+      .method(ConnectExecutorRepo, "findByExecutorId", returns(null))
+      .method(ConnectExecutorRepo, "createExecutor", control.once(returns(undefined)))
+      .method(ConnectExecutorAuditRepo, "appendEvent", control.once(returns(undefined)))
+      .build();
+    const service = await env.get<ConnectExecutorService>(ConnectExecutorService);
       expect(await service.createClaim(claimInput(), BOOTSTRAP_TOKEN)).toEqual({ outcome: 'failed' });
-    });
-  });
+
+    await env.verify();
+  }));
 });
 
 describe('decide failure mapping', () => {
-  it('degrades a repository failure with a nested cause to failed', async () => {
-    await withService([
-      [ConnectExecutorClaimRepo, {
-        findByClaimId: control.throws(new Error('boom', { cause: new Error('socket reset') })),
-      }],
-    ], async (service) => {
+  it('degrades a repository failure with a nested cause to failed', resourceCase(async () => {
+    const env = await testApp(CONFIG).select({ server: { module: ["connectExecutors"] } })
+      .method(ConnectExecutorClaimRepo, "findByClaimId", control.throws(new Error('boom', { cause: new Error('socket reset') })))
+      .build();
+    const service = await env.get<ConnectExecutorService>(ConnectExecutorService);
       expect(await service.decide(browserActor, decisionInput())).toEqual({ outcome: 'failed' });
-    });
-  });
 
-  it('degrades a non-Error throw to failed without losing the log context', async () => {
-    await withService([
-      [ConnectExecutorClaimRepo, { findByClaimId: control.throws('wire torn') }],
-    ], async (service) => {
+    await env.verify();
+  }));
+
+  it('degrades a non-Error throw to failed without losing the log context', resourceCase(async () => {
+    const env = await testApp(CONFIG).select({ server: { module: ["connectExecutors"] } })
+      .method(ConnectExecutorClaimRepo, "findByClaimId", control.throws('wire torn'))
+      .build();
+    const service = await env.get<ConnectExecutorService>(ConnectExecutorService);
       expect(await service.decide(browserActor, decisionInput())).toEqual({ outcome: 'failed' });
-    });
-  });
+
+    await env.verify();
+  }));
 });

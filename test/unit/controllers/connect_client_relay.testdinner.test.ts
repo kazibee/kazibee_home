@@ -1,23 +1,22 @@
 /**
- * Connect client relay (Desktop-facing) routes through testDinner (no
- * server, no database).
+ * Connect client relay (Desktop-facing) routes through root testApp over the
+ * original configuration (no server, no database). Historical case names
+ * remain stable.
  *
- * Real production source (src/server/openapi/connect/client-relay.yaml),
+ * Real production client-relay.yaml module selection (connectClientRelay),
  * real controller → parser/resolver → logic → service graph, real in-memory
  * ConnectExecutorConnectionRegistry / ConnectClientRelayService. Desktop
  * credential authentication happens inside the controller from raw headers,
- * so it is fully driven at route depth by stubbing the credential/device
- * repos. The long-lived SSE success branch of GET /events is not driven
- * (it never settles in-process); its auth branch is.
+ * so it is fully driven at route depth by replacing only the credential/device
+ * repo boundary through singular method controls. The long-lived SSE success
+ * branch of GET /events is not driven (it never settles in-process); its auth
+ * branch is. resourceCase owns environment cleanup.
  */
 import { describe, it, expect } from 'vitest';
-import { readFileSync } from 'node:fs';
 import { createHash } from 'node:crypto';
 import path from 'node:path';
-import { load as parseYaml } from 'js-yaml';
-import { testDinner } from '@noego/dinner/testing';
-import { test as control } from '@noego/testing';
-import ConnectClientRelayController from '../../../src/server/controller/connect_client_relay.controller';
+import { testApp } from '@noego/app';
+import { test as control, testStub, resourceCase } from '@noego/testing';
 import ConnectClientRelayLogic from '../../../src/server/logic/connect_client_relay.logic';
 import type { DesktopRelayActor } from '../../../src/server/services/connect_desktop_actor_resolver';
 import type { SseSink } from '../../../src/server/services/sse_stream';
@@ -26,9 +25,9 @@ import ConnectDesktopCredentialRepo from '../../../src/server/repo/connect_deskt
 import ConnectWebsiteDeploymentIdentityRepo from '../../../src/server/repo/connect_website_deployment_identity_repo';
 import ConnectDesktopDeviceRepo from '../../../src/server/repo/connect_desktop_device_repo';
 
-const clientRelaySource = parseYaml(
-  readFileSync(path.resolve(__dirname, '../../../src/server/openapi/connect/client-relay.yaml'), 'utf8')
-) as Record<string, unknown>;
+// The original application receives an empty test environment: presence stays in process.
+
+const CONFIG = path.resolve(__dirname, '../../../noego.config.yml');
 
 const sha256 = (value: string) => createHash('sha256').update(value, 'utf8').digest('hex');
 
@@ -94,14 +93,12 @@ const executorRow = () => ({
   last_seen_at: '2026-01-01T00:00:00.000Z',
 });
 
-const desktopAuthMethods = () => ([
-  [ConnectDesktopCredentialRepo, {
-    findByTokenHash: control.returns(Promise.resolve(credentialRow())),
-  }],
-  [ConnectDesktopDeviceRepo, {
-    findByDeviceId: control.returns(Promise.resolve(deviceRow())),
-  }],
-] as const);
+// Desktop-device-authenticated repos: token hash → credential row → device
+// row. A reusable replacement description (same tokens/slots/descriptors/
+// order as before), not an application constructor.
+const desktopAuth = () => testStub()
+  .method(ConnectDesktopCredentialRepo, 'findByTokenHash', control.returns(Promise.resolve(credentialRow())))
+  .method(ConnectDesktopDeviceRepo, 'findByDeviceId', control.returns(Promise.resolve(deviceRow())));
 
 const commandFrame = () => ({
   kind: 'command.post',
@@ -127,25 +124,13 @@ const fakeSink = (): SseSink => {
   };
 };
 
-const base = () =>
-  testDinner(clientRelaySource)
-    .select({ module: 'connectClientRelay' })
-    .controllers({ 'connect_client_relay.controller': ConnectClientRelayController })
-    // Legacy {req,res} controllers: compat hooks with default real-IoC
-    // construction (per-request child scope, disposed after the request).
-    .hooks({});
-
 describe('connect client relay routes through testDinner (no server, no database)', () => {
-  it('GET /executors returns the owner-filtered executor list for a valid Desktop credential', async () => {
-    const env = await base()
-      .methods([
-        ...desktopAuthMethods(),
-        [ConnectExecutorRepo, {
-          listByOwner: control.once(control.returns(Promise.resolve([executorRow()]))),
-        }],
-      ])
+  it('GET /executors returns the owner-filtered executor list for a valid Desktop credential', resourceCase(async () => {
+    const env = await testApp(CONFIG).select({ server: { module: ['connectClientRelay'] } })
+      .use(desktopAuth())
+      .method(ConnectExecutorRepo, 'listByOwner', control.once(control.returns(Promise.resolve([executorRow()]))))
       .build();
-    const response = await env.dinner.request({
+    const response = await env.request({
       method: 'GET',
       path: '/v1/connect/client-relay/executors',
       headers: relayHeaders(),
@@ -167,19 +152,14 @@ describe('connect client relay routes through testDinner (no server, no database
       correlationId: CORRELATION_ID,
     });
     await env.verify();
-    await env.dispose();
-  });
+  }));
 
-  it('GET /executors answers 401 revoked when the credential row is unknown', async () => {
-    const env = await base()
-      .methods([
-        [ConnectDesktopCredentialRepo, {
-          findByTokenHash: control.once(control.returns(Promise.resolve(null))),
-        }],
-        [ConnectExecutorRepo, { listByOwner: control.never() }],
-      ])
+  it('GET /executors answers 401 revoked when the credential row is unknown', resourceCase(async () => {
+    const env = await testApp(CONFIG).select({ server: { module: ['connectClientRelay'] } })
+      .method(ConnectDesktopCredentialRepo, 'findByTokenHash', control.once(control.returns(Promise.resolve(null))))
+      .method(ConnectExecutorRepo, 'listByOwner', control.never())
       .build();
-    const response = await env.dinner.request({
+    const response = await env.request({
       method: 'GET',
       path: '/v1/connect/client-relay/executors',
       headers: relayHeaders(),
@@ -188,17 +168,14 @@ describe('connect client relay routes through testDinner (no server, no database
     expect(response.status).toBe(401);
     expect(await response.json()).toMatchObject({ kind: 'error', code: 'revoked' });
     await env.verify();
-    await env.dispose();
-  });
+  }));
 
-  it('GET /executors rejects extra query keys before touching any credential repo', async () => {
-    const env = await base()
-      .methods([
-        [ConnectDesktopCredentialRepo, { findByTokenHash: control.never() }],
-        [ConnectExecutorRepo, { listByOwner: control.never() }],
-      ])
+  it('GET /executors rejects extra query keys before touching any credential repo', resourceCase(async () => {
+    const env = await testApp(CONFIG).select({ server: { module: ['connectClientRelay'] } })
+      .method(ConnectDesktopCredentialRepo, 'findByTokenHash', control.never())
+      .method(ConnectExecutorRepo, 'listByOwner', control.never())
       .build();
-    const response = await env.dinner.request({
+    const response = await env.request({
       method: 'GET',
       path: '/v1/connect/client-relay/executors',
       headers: relayHeaders(),
@@ -211,18 +188,13 @@ describe('connect client relay routes through testDinner (no server, no database
       correlationId: CORRELATION_ID,
     });
     await env.verify();
-    await env.dispose();
-  });
+  }));
 
-  it('POST /commands answers 401 revoked before parsing when authentication fails', async () => {
-    const env = await base()
-      .methods([
-        [ConnectDesktopCredentialRepo, {
-          findByTokenHash: control.once(control.returns(Promise.resolve(null))),
-        }],
-      ])
+  it('POST /commands answers 401 revoked before parsing when authentication fails', resourceCase(async () => {
+    const env = await testApp(CONFIG).select({ server: { module: ['connectClientRelay'] } })
+      .method(ConnectDesktopCredentialRepo, 'findByTokenHash', control.once(control.returns(Promise.resolve(null))))
       .build();
-    const response = await env.dinner.request({
+    const response = await env.request({
       method: 'POST',
       path: '/v1/connect/client-relay/commands',
       headers: relayHeaders(),
@@ -235,27 +207,33 @@ describe('connect client relay routes through testDinner (no server, no database
       correlationId: 'cor_invalid000',
     });
     await env.verify();
-    await env.dispose();
-  });
+  }));
 
-  it('POST /commands rejects malformed bodies at both validation layers (400)', async () => {
-    const env = await base()
-      .methods(desktopAuthMethods())
-      .build();
+  it('POST /commands rejects malformed bodies at both validation layers (400)', resourceCase(async () => {
+    const env = await testApp(CONFIG).select({ server: { module: ['connectClientRelay'] } }).use(desktopAuth()).build();
     // Layer 1: the OpenAPI request schema (dinner) rejects a body missing
-    // required envelope fields before the controller runs.
-    const schemaReject = await env.dinner.request({
+    // required envelope fields before the controller runs. Over the original
+    // configuration the production onRequestError shaper
+    // (src/server/middleware/connect_request_error.ts, wired in
+    // src/server/server.ts) maps that rejection onto the canonical
+    // invalid-envelope error envelope; the earlier testDinner harness ran with
+    // empty hooks and surfaced the framework's default validation payload.
+    const schemaReject = await env.request({
       method: 'POST',
       path: '/v1/connect/client-relay/commands',
       headers: relayHeaders(),
       body: { kind: 'command.post', protocolVersion: '1.0', correlationId: CORRELATION_ID },
     });
     expect(schemaReject.status).toBe(400);
-    expect(await schemaReject.json()).toMatchObject({ error: true, message: 'Request validation failed' });
+    expect(await schemaReject.json()).toMatchObject({
+      kind: 'error',
+      code: 'invalid-envelope',
+      correlationId: CORRELATION_ID,
+    });
     // Layer 2: a body that satisfies the route schema but violates the
     // canonical Kazi Connect protocol schema (workspaces.read payload must
     // carry limit) is the controller's own invalid-envelope.
-    const protocolReject = await env.dinner.request({
+    const protocolReject = await env.request({
       method: 'POST',
       path: '/v1/connect/client-relay/commands',
       headers: relayHeaders(),
@@ -267,23 +245,16 @@ describe('connect client relay routes through testDinner (no server, no database
       code: 'invalid-envelope',
       correlationId: CORRELATION_ID,
     });
-    await env.dispose();
-  });
+  }));
 
-  it('POST /commands reports executor-offline (503, retryable) when the target executor has no live channel', async () => {
-    const env = await base()
-      .methods([
-        ...desktopAuthMethods(),
-        [ConnectWebsiteDeploymentIdentityRepo, {
-          findSingleton: control.returns(Promise.resolve({
-            website_deployment_id: WDP,
-            created_at: '2026-01-01T00:00:00.000Z',
-          })),
-        }],
-        [ConnectExecutorRepo, {
-          findByExecutorId: control.returns(Promise.resolve(executorRow())),
-        }],
-      ])
+  it('POST /commands reports executor-offline (503, retryable) when the target executor has no live channel', resourceCase(async () => {
+    const env = await testApp(CONFIG).select({ server: { module: ['connectClientRelay'] } })
+      .use(desktopAuth())
+      .method(ConnectWebsiteDeploymentIdentityRepo, 'findSingleton', control.returns(Promise.resolve({
+        website_deployment_id: WDP,
+        created_at: '2026-01-01T00:00:00.000Z',
+      })))
+      .method(ConnectExecutorRepo, 'findByExecutorId', control.returns(Promise.resolve(executorRow())))
       .build();
     // The command path requires the Desktop's own events channel to be open;
     // open it directly through the real logic/service with an inert sink.
@@ -293,32 +264,30 @@ describe('connect client relay routes through testDinner (no server, no database
       protocolVersion: '1.0', audience: 'desktop-relay', credentialState: 'active', expiresAt: FUTURE,
     };
     const fence = logic.open(actor, fakeSink());
-    const response = await env.dinner.request({
-      method: 'POST',
-      path: '/v1/connect/client-relay/commands',
-      headers: relayHeaders(),
-      body: commandFrame(),
-    });
-    expect(response.status).toBe(503);
-    expect(await response.json()).toMatchObject({
-      kind: 'error',
-      code: 'executor-offline',
-      retryable: true,
-      correlationId: CORRELATION_ID,
-    });
-    logic.close(DEVICE_ID, fence);
-    await env.dispose();
-  });
+    try {
+      const response = await env.request({
+        method: 'POST',
+        path: '/v1/connect/client-relay/commands',
+        headers: relayHeaders(),
+        body: commandFrame(),
+      });
+      expect(response.status).toBe(503);
+      expect(await response.json()).toMatchObject({
+        kind: 'error',
+        code: 'executor-offline',
+        retryable: true,
+        correlationId: CORRELATION_ID,
+      });
+    } finally {
+      logic.close(DEVICE_ID, fence);
+    }
+  }));
 
-  it('GET /events answers 401 revoked instead of opening a stream when authentication fails', async () => {
-    const env = await base()
-      .methods([
-        [ConnectDesktopCredentialRepo, {
-          findByTokenHash: control.once(control.returns(Promise.resolve(null))),
-        }],
-      ])
+  it('GET /events answers 401 revoked instead of opening a stream when authentication fails', resourceCase(async () => {
+    const env = await testApp(CONFIG).select({ server: { module: ['connectClientRelay'] } })
+      .method(ConnectDesktopCredentialRepo, 'findByTokenHash', control.once(control.returns(Promise.resolve(null))))
       .build();
-    const response = await env.dinner.request({
+    const response = await env.request({
       method: 'GET',
       path: '/v1/connect/client-relay/events',
       headers: relayHeaders(),
@@ -326,6 +295,5 @@ describe('connect client relay routes through testDinner (no server, no database
     expect(response.status).toBe(401);
     expect(await response.json()).toMatchObject({ kind: 'error', code: 'revoked' });
     await env.verify();
-    await env.dispose();
-  });
+  }));
 });

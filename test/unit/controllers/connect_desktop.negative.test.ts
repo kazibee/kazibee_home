@@ -1,16 +1,23 @@
 /**
- * Remaining negative HTTP branches of ConnectDesktopController, driven with a
- * directly constructed controller (real parser + policy, fake actor resolver
- * and logic) and a captured fake response — no server, no database.
+ * Remaining negative HTTP branches of ConnectDesktopController, driven
+ * directly against the production controller resolved from root testApp over
+ * the original configuration (../../../noego.config.yml): the real parser and
+ * policy run; the browser actor resolution and logic boundary are replaced
+ * through singular .method controls. Hand-built CompatRequest/CompatResponse
+ * fakes are handed straight to the controller methods — no server, no
+ * database. resourceCase owns environment cleanup.
  */
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it } from "vitest";
+import path from "node:path";
+import { testApp } from "@noego/app";
+import { test as control, testStub, resourceCase } from "@noego/testing";
 import type { CompatRequest as Request, CompatResponse as Response } from "@noego/dinner";
 import ConnectDesktopController from "../../../src/server/controller/connect_desktop.controller";
-import ConnectDesktopRequestParser from "../../../src/server/services/connect_desktop_request_parser";
-import ConnectDesktopPolicy from "../../../src/server/services/connect_desktop_policy";
-import type ConnectDesktopLogic from "../../../src/server/logic/connect_desktop.logic";
-import type ConnectDesktopActorResolver from "../../../src/server/services/connect_desktop_actor_resolver";
-import type { ConnectDesktopActor } from "../../../src/server/services/connect_desktop_actor_resolver";
+import ConnectDesktopLogic from "../../../src/server/logic/connect_desktop.logic";
+import ConnectDesktopActorResolver from "../../../src/server/services/connect_desktop_actor_resolver";
+import type { ActorResolution, ConnectDesktopActor } from "../../../src/server/services/connect_desktop_actor_resolver";
+
+const CONFIG = path.resolve(__dirname, "../../../noego.config.yml");
 
 const SESSION_ID = "ses_fixed0001";
 const CORRELATION = "cor_abcdefgh";
@@ -45,152 +52,171 @@ function requestFor(parts: Partial<Record<"body" | "query" | "params" | "headers
   return { body: {}, query: {}, params: {}, headers: {}, ...parts } as unknown as Request;
 }
 
-function controllerWith(options: {
-  logic?: Record<string, unknown>;
-  browser?: (...args: unknown[]) => Promise<unknown>;
-} = {}) {
-  const parser = new ConnectDesktopRequestParser(new ConnectDesktopPolicy());
-  const actors = { browser: options.browser ?? vi.fn(async () => ({ ok: true, actor: browserActor })) };
-  return new ConnectDesktopController(
-    (options.logic ?? {}) as unknown as ConnectDesktopLogic,
-    parser,
-    actors as unknown as ConnectDesktopActorResolver,
-  );
-}
+// Browser actor resolution replacement description (immutable), not an
+// application constructor: the resolution is fixed per case.
+const actors = (resolution: ActorResolution = { ok: true, actor: browserActor }) => testStub()
+  .method(ConnectDesktopActorResolver, "browser", control.returns(Promise.resolve(resolution)));
+const unauthorized: ActorResolution = { ok: false, reason: "unauthorized" };
+const csrf: ActorResolution = { ok: false, reason: "csrf" };
+
+const build = (resolution?: ActorResolution) =>
+  testApp(CONFIG).select({ server: { module: ["connectDesktops"] } }).use(actors(resolution));
 
 describe("claimStatus envelope validation", () => {
-  it("rejects a malformed claimId path with a 400 and the query correlation id", async () => {
+  it("rejects a malformed claimId path with a 400 and the query correlation id", resourceCase(async () => {
+    const env = await build().build();
+    const controller = await env.dinner.controller(ConnectDesktopController);
     const res = fakeResponse();
-    await controllerWith().claimStatus({
+    await controller.claimStatus({
       req: requestFor({ params: { claimId: "nope" }, query: { correlationId: CORRELATION } }), res,
     });
     expect(res.statusCode).toBe(400);
     expect(res.body).toMatchObject({ code: "invalid-envelope", correlationId: CORRELATION });
-  });
+  }));
 });
 
 describe("reviewClaim envelope and lookup validation", () => {
-  it("rejects a malformed browser query before touching the lookup", async () => {
+  it("rejects a malformed browser query before touching the lookup", resourceCase(async () => {
+    const env = await build().build();
+    const controller = await env.dinner.controller(ConnectDesktopController);
     const res = fakeResponse();
-    await controllerWith().reviewClaim({
+    await controller.reviewClaim({
       req: requestFor({ params: { lookup: CLAIM_ID }, query: { sessionId: SESSION_ID } }), res,
     });
     expect(res.statusCode).toBe(400);
     expect(res.body).toMatchObject({ code: "invalid-envelope", correlationId: "cor_invalid000" });
-  });
+  }));
 
-  it("rejects an unparseable lookup with a 400 carrying the query correlation id", async () => {
+  it("rejects an unparseable lookup with a 400 carrying the query correlation id", resourceCase(async () => {
+    const env = await build().build();
+    const controller = await env.dinner.controller(ConnectDesktopController);
     const res = fakeResponse();
-    await controllerWith().reviewClaim({
+    await controller.reviewClaim({
       req: requestFor({ params: { lookup: "not-a-claim-or-code" }, query: browserQuery }), res,
     });
     expect(res.statusCode).toBe(400);
     expect(res.body).toMatchObject({ code: "invalid-envelope", correlationId: CORRELATION });
-  });
+  }));
 });
 
 describe("list auth failure", () => {
-  it("maps an unauthorized session onto a uniform 401", async () => {
+  it("maps an unauthorized session onto a uniform 401", resourceCase(async () => {
+    const env = await build(unauthorized).build();
+    const controller = await env.dinner.controller(ConnectDesktopController);
     const res = fakeResponse();
-    await controllerWith({ browser: vi.fn(async () => ({ ok: false, reason: "unauthorized" })) }).list({
-      req: requestFor({ query: browserQuery }), res,
-    });
+    await controller.list({ req: requestFor({ query: browserQuery }), res });
     expect(res.statusCode).toBe(401);
     expect(res.body).toMatchObject({ code: "revoked", correlationId: CORRELATION });
-  });
+  }));
 });
 
 describe("detail negative branches", () => {
-  it("rejects a malformed browser query with a 400", async () => {
+  it("rejects a malformed browser query with a 400", resourceCase(async () => {
+    const env = await build().build();
+    const controller = await env.dinner.controller(ConnectDesktopController);
     const res = fakeResponse();
-    await controllerWith().detail({
+    await controller.detail({
       req: requestFor({ params: { deviceId: DEVICE_ID }, query: { sessionId: SESSION_ID } }), res,
     });
     expect(res.statusCode).toBe(400);
-  });
+  }));
 
-  it("maps an auth failure onto a 401 before the logic runs", async () => {
-    const detail = vi.fn();
+  it("maps an auth failure onto a 401 before the logic runs", resourceCase(async () => {
+    const env = await build(unauthorized)
+      .method(ConnectDesktopLogic, "detail", control.never())
+      .build();
+    const controller = await env.dinner.controller(ConnectDesktopController);
     const res = fakeResponse();
-    await controllerWith({
-      logic: { detail },
-      browser: vi.fn(async () => ({ ok: false, reason: "unauthorized" })),
-    }).detail({ req: requestFor({ params: { deviceId: DEVICE_ID }, query: browserQuery }), res });
+    await controller.detail({ req: requestFor({ params: { deviceId: DEVICE_ID }, query: browserQuery }), res });
     expect(res.statusCode).toBe(401);
-    expect(detail).not.toHaveBeenCalled();
-  });
+    await env.verify();
+  }));
 
-  it("treats a missing deviceId path segment as an empty lookup", async () => {
-    const detail = vi.fn(async () => ({ outcome: "not-found" }));
+  it("treats a missing deviceId path segment as an empty lookup", resourceCase(async () => {
+    const env = await build()
+      .method(ConnectDesktopLogic, "detail", control.returns(Promise.resolve({ outcome: "not-found" })))
+      .build();
+    const controller = await env.dinner.controller(ConnectDesktopController);
     const res = fakeResponse();
-    await controllerWith({ logic: { detail } }).detail({
+    await controller.detail({
       req: requestFor({ params: {}, query: browserQuery }), res,
     });
-    expect(detail).toHaveBeenCalledWith(browserActor, "");
+    expect(control.inspect(env, ConnectDesktopLogic, "detail").calls.map((call) => call.args))
+      .toEqual([[browserActor, ""]]);
     expect(res.statusCode).toBe(404);
-  });
+  }));
 });
 
 describe("rename negative branches", () => {
-  it("rejects a malformed body with a 400 before the query is read", async () => {
+  it("rejects a malformed body with a 400 before the query is read", resourceCase(async () => {
+    const env = await build().build();
+    const controller = await env.dinner.controller(ConnectDesktopController);
     const res = fakeResponse();
-    await controllerWith().rename({
+    await controller.rename({
       req: requestFor({ body: { nonsense: true }, params: { deviceId: DEVICE_ID } }), res,
     });
     expect(res.statusCode).toBe(400);
     expect(res.body).toMatchObject({ code: "invalid-envelope", correlationId: "cor_invalid000" });
-  });
+  }));
 
-  it("rejects a valid body with a malformed browser query", async () => {
+  it("rejects a valid body with a malformed browser query", resourceCase(async () => {
+    const env = await build().build();
+    const controller = await env.dinner.controller(ConnectDesktopController);
     const res = fakeResponse();
-    await controllerWith().rename({
+    await controller.rename({
       req: requestFor({
         body: renameBody, params: { deviceId: DEVICE_ID }, query: { sessionId: SESSION_ID },
       }), res,
     });
     expect(res.statusCode).toBe(400);
-  });
+  }));
 
-  it("maps a csrf auth failure onto a 403", async () => {
+  it("maps a csrf auth failure onto a 403", resourceCase(async () => {
+    const env = await build(csrf).build();
+    const controller = await env.dinner.controller(ConnectDesktopController);
     const res = fakeResponse();
-    await controllerWith({ browser: vi.fn(async () => ({ ok: false, reason: "csrf" })) }).rename({
+    await controller.rename({
       req: requestFor({ body: renameBody, params: { deviceId: DEVICE_ID }, query: browserQuery }), res,
     });
     expect(res.statusCode).toBe(403);
     expect(res.body).toMatchObject({ code: "invalid-envelope", message: "CSRF validation failed" });
-  });
+  }));
 });
 
 describe("revoke negative branches", () => {
-  it("rejects a malformed body with a 400 before the query is read", async () => {
+  it("rejects a malformed body with a 400 before the query is read", resourceCase(async () => {
+    const env = await build().build();
+    const controller = await env.dinner.controller(ConnectDesktopController);
     const res = fakeResponse();
-    await controllerWith().revoke({
+    await controller.revoke({
       req: requestFor({ body: { nonsense: true }, params: { deviceId: DEVICE_ID } }), res,
     });
     expect(res.statusCode).toBe(400);
     expect(res.body).toMatchObject({ code: "invalid-envelope", correlationId: "cor_invalid000" });
-  });
+  }));
 
-  it("rejects a valid body with a malformed browser query", async () => {
+  it("rejects a valid body with a malformed browser query", resourceCase(async () => {
+    const env = await build().build();
+    const controller = await env.dinner.controller(ConnectDesktopController);
     const res = fakeResponse();
-    await controllerWith().revoke({
+    await controller.revoke({
       req: requestFor({
         body: revokeBody, params: { deviceId: DEVICE_ID }, query: { sessionId: SESSION_ID },
       }), res,
     });
     expect(res.statusCode).toBe(400);
-  });
+  }));
 
-  it("maps an unauthorized session onto a 401 before the logic runs", async () => {
-    const revoke = vi.fn();
+  it("maps an unauthorized session onto a 401 before the logic runs", resourceCase(async () => {
+    const env = await build(unauthorized)
+      .method(ConnectDesktopLogic, "revoke", control.never())
+      .build();
+    const controller = await env.dinner.controller(ConnectDesktopController);
     const res = fakeResponse();
-    await controllerWith({
-      logic: { revoke },
-      browser: vi.fn(async () => ({ ok: false, reason: "unauthorized" })),
-    }).revoke({
+    await controller.revoke({
       req: requestFor({ body: revokeBody, params: { deviceId: DEVICE_ID }, query: browserQuery }), res,
     });
     expect(res.statusCode).toBe(401);
-    expect(revoke).not.toHaveBeenCalled();
-  });
+    await env.verify();
+  }));
 });

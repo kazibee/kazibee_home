@@ -1,19 +1,19 @@
 /**
- * Connect auth deep flows through testDinner (no server, no database).
+ * Connect auth deep flows through root testApp over the original
+ * configuration (no server, no database). Historical case names remain stable.
  *
  * Extends connect_auth.testdinner.test.ts with the Google sign-in route
- * (real ConnectGoogleTokenVerifier over a stubbed global fetch), the signup
+ * (real ConnectGoogleTokenVerifier over its per-root HTTP boundary), the signup
  * linking/duplicate branches, session/logout HTTP routes, and parser edge
- * shapes. Globals and env are restored after every test.
+ * shapes. No globals are patched; resourceCase owns environment cleanup.
  */
-import { afterEach, describe, it, expect, vi } from 'vitest';
-import { readFileSync } from 'node:fs';
+import { describe, it, expect } from 'vitest';
 import path from 'node:path';
 import { createHash } from 'node:crypto';
-import { load as parseYaml } from 'js-yaml';
-import { testDinner } from '@noego/dinner/testing';
-import { test as control } from '@noego/testing';
-import ConnectAuthController from '../../../src/server/controller/connect_auth.controller';
+import { testApp } from '@noego/app';
+import { test as control, testStub, resourceCase } from '@noego/testing';
+import Env from '../../../src/server/services/env';
+import ConnectGoogleTokenInfoClient from '../../../src/server/services/connect_google_token_info_client';
 import ConnectAuthRequestParser from '../../../src/server/services/connect_auth_request_parser';
 import ConnectAccountRepo from '../../../src/server/repo/connect_account_repo';
 import ConnectIdentityRepo from '../../../src/server/repo/connect_identity_repo';
@@ -21,21 +21,12 @@ import ConnectBrowserSessionRepo from '../../../src/server/repo/connect_browser_
 import { ConnectIdGenerator } from '../../../src/server/services/connect_auth_primitives';
 import { ConnectClock } from '../../../src/server/services/connect_auth_primitives';
 
-const authSource = parseYaml(
-  readFileSync(path.resolve(__dirname, '../../../src/server/openapi/connect/auth.yaml'), 'utf8')
-) as Record<string, unknown>;
+const CONFIG = path.resolve(__dirname, '../../../noego.config.yml');
 
 const NOW = new Date('2026-01-01T00:00:00.000Z');
 const sha256 = (value: string) => createHash('sha256').update(value, 'utf8').digest('hex');
 
-const base = () =>
-  testDinner(authSource)
-    .select({ module: 'connectAuth' })
-    .controllers({ 'connect_auth.controller': ConnectAuthController })
-    .hooks({});
-
 const GOOGLE_CLIENT_ID = 'test-google-client-id.apps.googleusercontent.com';
-const savedGoogleClientId = process.env.GOOGLE_CLIENT_ID;
 
 const account = {
   user_id: 'usr_existing01', username: 'shavyg2', email: 'shavyg2@gmail.com',
@@ -51,16 +42,17 @@ const googleBody = {
   correlationId: 'cor_abcdefgh',
 };
 
-function stubTokeninfo(claims: Record<string, unknown> | null) {
-  vi.stubGlobal('fetch', vi.fn(async (input: unknown) => {
-    expect(String(input)).toContain('https://oauth2.googleapis.com/tokeninfo?id_token=');
+const tokeninfo = (claims: Record<string, unknown> | null) => testStub()
+  .function(Env, () => {
+    const env = new Env();
+    env.load({ GOOGLE_CLIENT_ID });
+    return env;
+  })
+  .method(ConnectGoogleTokenInfoClient, 'request', control.watch(() => async (input: string) => {
+    expect(input).toContain('https://oauth2.googleapis.com/tokeninfo?id_token=');
     if (!claims) return new Response('bad token', { status: 400 });
-    return new Response(JSON.stringify(claims), {
-      status: 200,
-      headers: { 'content-type': 'application/json' },
-    });
+    return Response.json(claims);
   }));
-}
 
 const validClaims = {
   aud: GOOGLE_CLIENT_ID,
@@ -69,41 +61,24 @@ const validClaims = {
   email_verified: 'true',
 };
 
-afterEach(() => {
-  vi.unstubAllGlobals();
-  vi.restoreAllMocks();
-  if (savedGoogleClientId === undefined) delete process.env.GOOGLE_CLIENT_ID;
-  else process.env.GOOGLE_CLIENT_ID = savedGoogleClientId;
-});
-
 describe('connect auth google route (real verifier, stubbed fetch)', () => {
-  it.each(['shavyg2@gmail.com', 'sashaun13@gmail.com'])('signs up %s with its own username, links the identity, and starts a session', async (email) => {
-    process.env.GOOGLE_CLIENT_ID = GOOGLE_CLIENT_ID;
-    stubTokeninfo({ ...validClaims, email });
-    const env = await base()
-      .methods([
-        [ConnectAccountRepo, {
-          findByEmail: control.calls([
-            control.returns(Promise.resolve(null)),
-            control.returns(Promise.resolve({ ...account, user_id: 'usr_fixed0001', username: 'usr_fixed0001', email })),
-          ]),
-          createAccount: control.once(control.returns(Promise.resolve())),
-        }],
-        [ConnectIdentityRepo, {
-          linkGoogle: control.once(control.returns(Promise.resolve())),
-        }],
-        [ConnectBrowserSessionRepo, {
-          createSession: control.once(control.returns(Promise.resolve())),
-        }],
-        [ConnectIdGenerator, {
-          userId: control.returns('usr_fixed0001'),
-          identityId: control.returns('idn_fixed0001'),
-          sessionId: control.returns('ses_fixed0001'),
-        }],
-        [ConnectClock, { now: control.returns(NOW) }],
-      ])
+  it.each(['shavyg2@gmail.com', 'sashaun13@gmail.com'])('signs up %s with its own username, links the identity, and starts a session', resourceCase(async (_resources, email: string) => {
+
+    const env = await testApp(CONFIG).select({ server: { module: ['connectAuth'] } })
+      .use(tokeninfo({ ...validClaims, email }))
+      .method(ConnectAccountRepo, 'findByEmail', control.calls([
+        control.returns(Promise.resolve(null)),
+        control.returns(Promise.resolve({ ...account, user_id: 'usr_fixed0001', username: 'usr_fixed0001', email })),
+      ]))
+      .method(ConnectAccountRepo, 'createAccount', control.once(control.returns(Promise.resolve())))
+      .method(ConnectIdentityRepo, 'linkGoogle', control.once(control.returns(Promise.resolve())))
+      .method(ConnectBrowserSessionRepo, 'createSession', control.once(control.returns(Promise.resolve())))
+      .method(ConnectIdGenerator, 'userId', control.returns('usr_fixed0001'))
+      .method(ConnectIdGenerator, 'identityId', control.returns('idn_fixed0001'))
+      .method(ConnectIdGenerator, 'sessionId', control.returns('ses_fixed0001'))
+      .method(ConnectClock, 'now', control.returns(NOW))
       .build();
-    const response = await env.dinner.request({
+    const response = await env.request({
       method: 'POST', path: '/v1/connect/auth/google', body: googleBody,
     });
     expect(response.status).toBe(200);
@@ -119,91 +94,78 @@ describe('connect auth google route (real verifier, stubbed fetch)', () => {
     });
     expect(response.headers.get('set-cookie') ?? '').toContain('kazi_connect_session');
     await env.verify();
-    await env.dispose();
-  });
+  }));
 
-  it('logs an existing Google account in without creating a new one', async () => {
-    process.env.GOOGLE_CLIENT_ID = GOOGLE_CLIENT_ID;
-    stubTokeninfo(validClaims);
-    const env = await base()
-      .methods([
-        [ConnectAccountRepo, {
-          findByEmail: control.once(control.returns(Promise.resolve(account))),
-          createAccount: control.never(),
-        }],
-        [ConnectIdentityRepo, {
-          linkGoogle: control.once(control.returns(Promise.resolve())),
-        }],
-        [ConnectBrowserSessionRepo, {
-          createSession: control.once(control.returns(Promise.resolve())),
-        }],
-        [ConnectIdGenerator, {
-          identityId: control.returns('idn_fixed0001'),
-          sessionId: control.returns('ses_fixed0001'),
-        }],
-        [ConnectClock, { now: control.returns(NOW) }],
-      ])
+  it('logs an existing Google account in without creating a new one', resourceCase(async () => {
+
+    const env = await testApp(CONFIG).select({ server: { module: ['connectAuth'] } })
+      .use(tokeninfo(validClaims))
+      .method(ConnectAccountRepo, 'findByEmail', control.once(control.returns(Promise.resolve(account))))
+      .method(ConnectAccountRepo, 'createAccount', control.never())
+      .method(ConnectIdentityRepo, 'linkGoogle', control.once(control.returns(Promise.resolve())))
+      .method(ConnectBrowserSessionRepo, 'createSession', control.once(control.returns(Promise.resolve())))
+      .method(ConnectIdGenerator, 'identityId', control.returns('idn_fixed0001'))
+      .method(ConnectIdGenerator, 'sessionId', control.returns('ses_fixed0001'))
+      .method(ConnectClock, 'now', control.returns(NOW))
       .build();
-    const response = await env.dinner.request({
+    const response = await env.request({
       method: 'POST', path: '/v1/connect/auth/google', body: googleBody,
     });
     expect(response.status).toBe(200);
+    await response.body?.cancel(); // Status-only assertion still owns its HTTP body lease.
     await env.verify();
-    await env.dispose();
-  });
+  }));
 
-  it('a rejected Google token (non-2xx tokeninfo) is a uniform 401', async () => {
-    process.env.GOOGLE_CLIENT_ID = GOOGLE_CLIENT_ID;
-    stubTokeninfo(null);
-    const env = await base()
-      .methods([ [ConnectAccountRepo, { findByEmail: control.never() }] ])
+  it('a rejected Google token (non-2xx tokeninfo) is a uniform 401', resourceCase(async () => {
+
+    const env = await testApp(CONFIG).select({ server: { module: ['connectAuth'] } })
+      .use(tokeninfo(null))
+      .method(ConnectAccountRepo, 'findByEmail', control.never())
       .build();
-    const response = await env.dinner.request({
+    const response = await env.request({
       method: 'POST', path: '/v1/connect/auth/google', body: googleBody,
     });
     expect(response.status).toBe(401);
     expect(await response.json()).toMatchObject({ kind: 'error', message: 'Invalid Google account' });
     await env.verify();
-    await env.dispose();
-  });
+  }));
 
-  it('a token for another audience or an unverified/disallowed email is a 401', async () => {
-    process.env.GOOGLE_CLIENT_ID = GOOGLE_CLIENT_ID;
+  it('a token for another audience or an unverified/disallowed email is a 401', resourceCase(async () => {
+
     for (const claims of [
       { ...validClaims, aud: 'someone-else' },
       { ...validClaims, email_verified: 'false' },
       { ...validClaims, email: 'stranger@example.com' },
     ]) {
-      stubTokeninfo(claims);
-      const env = await base()
-        .methods([ [ConnectAccountRepo, { findByEmail: control.never() }] ])
+      const env = await testApp(CONFIG).select({ server: { module: ['connectAuth'] } })
+        .use(tokeninfo(claims))
+        .method(ConnectAccountRepo, 'findByEmail', control.never())
         .build();
-      const response = await env.dinner.request({
+      const response = await env.request({
         method: 'POST', path: '/v1/connect/auth/google', body: googleBody,
       });
       expect(response.status).toBe(401);
+      await response.body?.cancel();
       await env.verify();
-      await env.dispose();
-      vi.unstubAllGlobals();
-    }
-  });
 
-  it('an unconfigured verifier (no GOOGLE_CLIENT_ID) degrades to a structured 500', async () => {
-    delete process.env.GOOGLE_CLIENT_ID;
-    const env = await base()
-      .methods([ [ConnectAccountRepo, { findByEmail: control.never() }] ])
+    }
+  }));
+
+  it('an unconfigured verifier (no GOOGLE_CLIENT_ID) degrades to a structured 500', resourceCase(async () => {
+
+    const env = await testApp(CONFIG).select({ server: { module: ['connectAuth'] } })
+      .method(ConnectAccountRepo, 'findByEmail', control.never())
       .build();
-    const response = await env.dinner.request({
+    const response = await env.request({
       method: 'POST', path: '/v1/connect/auth/google', body: googleBody,
     });
     expect(response.status).toBe(500);
     expect(await response.json()).toMatchObject({ kind: 'error', message: 'Internal server error' });
     await env.verify();
-    await env.dispose();
-  });
+  }));
 
-  it('parser edge shapes: extra keys, oversized credentials, bad kinds are invalid envelopes', async () => {
-    const env = await base().build();
+  it('parser edge shapes: extra keys, oversized credentials, bad kinds are invalid envelopes', resourceCase(async () => {
+    const env = await testApp(CONFIG).select({ server: { module: ['connectAuth'] } }).build();
     const parser = await env.get<ConnectAuthRequestParser>(ConnectAuthRequestParser);
     expect(parser.google({ ...googleBody, extra: 'key' })).toMatchObject({
       ok: false, reason: 'invalid-envelope', correlationId: 'cor_abcdefgh',
@@ -220,8 +182,7 @@ describe('connect auth google route (real verifier, stubbed fetch)', () => {
     expect(parser.google({ ...googleBody, protocolVersion: '2.0' })).toMatchObject({
       ok: false, reason: 'protocol-version-mismatch',
     });
-    await env.dispose();
-  });
+  }));
 });
 
 const signupBody = {
@@ -235,18 +196,14 @@ const signupBody = {
 };
 
 describe('connect auth signup/login remaining branches', () => {
-  it('signup links a password onto an existing password-less account', async () => {
-    const env = await base()
-      .methods([
-        [ConnectAccountRepo, {
-          findPasswordlessByEmail: control.once(control.returns(Promise.resolve(account))),
-          setPassword: control.once(control.returns(Promise.resolve())),
-          createAccount: control.never(),
-        }],
-        [ConnectClock, { now: control.returns(NOW) }],
-      ])
+  it('signup links a password onto an existing password-less account', resourceCase(async () => {
+    const env = await testApp(CONFIG).select({ server: { module: ['connectAuth'] } })
+      .method(ConnectAccountRepo, 'findPasswordlessByEmail', control.once(control.returns(Promise.resolve(account))))
+      .method(ConnectAccountRepo, 'setPassword', control.once(control.returns(Promise.resolve())))
+      .method(ConnectAccountRepo, 'createAccount', control.never())
+      .method(ConnectClock, 'now', control.returns(NOW))
       .build();
-    const response = await env.dinner.request({
+    const response = await env.request({
       method: 'POST', path: '/v1/connect/auth/signup', body: signupBody,
     });
     expect(response.status).toBe(201);
@@ -256,46 +213,36 @@ describe('connect auth signup/login remaining branches', () => {
       username: 'shavyg2',
     });
     await env.verify();
-    await env.dispose();
-  });
+  }));
 
-  it('a unique-constraint race on createAccount maps to the 409 duplicate outcome', async () => {
+  it('a unique-constraint race on createAccount maps to the 409 duplicate outcome', resourceCase(async () => {
     const violation = Object.assign(new Error('duplicate key value violates unique constraint'), {
       code: '23505',
     });
-    const env = await base()
-      .methods([
-        [ConnectAccountRepo, {
-          findPasswordlessByEmail: control.once(control.returns(Promise.resolve(null))),
-          createAccount: control.once(control.throws(violation)),
-        }],
-        [ConnectClock, { now: control.returns(NOW) }],
-      ])
+    const env = await testApp(CONFIG).select({ server: { module: ['connectAuth'] } })
+      .method(ConnectAccountRepo, 'findPasswordlessByEmail', control.once(control.returns(Promise.resolve(null))))
+      .method(ConnectAccountRepo, 'createAccount', control.once(control.throws(violation)))
+      .method(ConnectClock, 'now', control.returns(NOW))
       .build();
-    const response = await env.dinner.request({
+    const response = await env.request({
       method: 'POST', path: '/v1/connect/auth/signup', body: signupBody,
     });
     expect(response.status).toBe(409);
     expect(await response.json()).toMatchObject({ kind: 'error', code: 'invalid-envelope' });
     await env.verify();
-    await env.dispose();
-  });
+  }));
 
-  it('login accepts the allowed email as identifier but a disabled account is still a 401', async () => {
-    const env = await base()
-      .methods([
-        [ConnectAccountRepo, {
-          findByEmail: control.once(control.returns(Promise.resolve({
-            ...account,
-            password_hash: '$2b$04$invalidhashinvalidhashinvalidhashinvalidhashinvalid.',
-            status: 'disabled',
-          }))),
-          findByUsername: control.never(),
-        }],
-        [ConnectBrowserSessionRepo, { createSession: control.never() }],
-      ])
+  it('login accepts the allowed email as identifier but a disabled account is still a 401', resourceCase(async () => {
+    const env = await testApp(CONFIG).select({ server: { module: ['connectAuth'] } })
+      .method(ConnectAccountRepo, 'findByEmail', control.once(control.returns(Promise.resolve({
+        ...account,
+        password_hash: '$2b$04$invalidhashinvalidhashinvalidhashinvalidhashinvalid.',
+        status: 'disabled',
+      }))))
+      .method(ConnectAccountRepo, 'findByUsername', control.never())
+      .method(ConnectBrowserSessionRepo, 'createSession', control.never())
       .build();
-    const response = await env.dinner.request({
+    const response = await env.request({
       method: 'POST', path: '/v1/connect/auth/login',
       body: {
         kind: 'auth.login.request', protocolVersion: '1.0',
@@ -306,19 +253,14 @@ describe('connect auth signup/login remaining branches', () => {
     expect(response.status).toBe(401);
     expect(await response.json()).toMatchObject({ kind: 'error', message: 'Invalid credentials' });
     await env.verify();
-    await env.dispose();
-  });
+  }));
 
-  it('a password-less account takes the canary verification path and stays a 401', async () => {
-    const env = await base()
-      .methods([
-        [ConnectAccountRepo, {
-          findByUsername: control.once(control.returns(Promise.resolve(account))),
-        }],
-        [ConnectBrowserSessionRepo, { createSession: control.never() }],
-      ])
+  it('a password-less account takes the canary verification path and stays a 401', resourceCase(async () => {
+    const env = await testApp(CONFIG).select({ server: { module: ['connectAuth'] } })
+      .method(ConnectAccountRepo, 'findByUsername', control.once(control.returns(Promise.resolve(account))))
+      .method(ConnectBrowserSessionRepo, 'createSession', control.never())
       .build();
-    const response = await env.dinner.request({
+    const response = await env.request({
       method: 'POST', path: '/v1/connect/auth/login',
       body: {
         kind: 'auth.login.request', protocolVersion: '1.0',
@@ -327,12 +269,12 @@ describe('connect auth signup/login remaining branches', () => {
       },
     });
     expect(response.status).toBe(401);
+    await response.body?.cancel();
     await env.verify();
-    await env.dispose();
-  });
+  }));
 
-  it('parser depth: protocol mismatch, oversized identifiers, and disallowed identifiers', async () => {
-    const env = await base().build();
+  it('parser depth: protocol mismatch, oversized identifiers, and disallowed identifiers', resourceCase(async () => {
+    const env = await testApp(CONFIG).select({ server: { module: ['connectAuth'] } }).build();
     const parser = await env.get<ConnectAuthRequestParser>(ConnectAuthRequestParser);
     const loginBody = {
       kind: 'auth.login.request', protocolVersion: '1.0',
@@ -359,8 +301,7 @@ describe('connect auth signup/login remaining branches', () => {
     expect(parser.signup({
       ...signupBody, email: 'stranger@example.com',
     })).toMatchObject({ ok: false, reason: 'invalid-envelope' });
-    await env.dispose();
-  });
+  }));
 });
 
 describe('connect auth session/logout HTTP routes', () => {
@@ -379,19 +320,13 @@ describe('connect auth session/logout HTTP routes', () => {
     sessionId: 'ses_fixed0001', actorRole: 'browser_session', correlationId: 'cor_abcdefgh',
   };
 
-  it('GET /session with a valid cookie authenticates via the query envelope', async () => {
-    const env = await base()
-      .methods([
-        [ConnectBrowserSessionRepo, {
-          findByTokenHash: control.once(control.returns(Promise.resolve(sessionRow))),
-          touchSession: control.returns(Promise.resolve()),
-        }],
-        [ConnectAccountRepo, {
-          findByUserId: control.once(control.returns(Promise.resolve({ ...account, password_hash: 'x' }))),
-        }],
-      ])
+  it('GET /session with a valid cookie authenticates via the query envelope', resourceCase(async () => {
+    const env = await testApp(CONFIG).select({ server: { module: ['connectAuth'] } })
+      .method(ConnectBrowserSessionRepo, 'findByTokenHash', control.once(control.returns(Promise.resolve(sessionRow))))
+      .method(ConnectBrowserSessionRepo, 'touchSession', control.returns(Promise.resolve()))
+      .method(ConnectAccountRepo, 'findByUserId', control.once(control.returns(Promise.resolve({ ...account, password_hash: 'x' }))))
       .build();
-    const response = await env.dinner.request({
+    const response = await env.request({
       method: 'GET', path: '/v1/connect/auth/session',
       query: sessionQuery,
       headers: { cookie: `kazi_connect_session=${sessionToken}` },
@@ -404,11 +339,10 @@ describe('connect auth session/logout HTTP routes', () => {
       expiresAt: sessionRow.absolute_expires_at,
     });
     await env.verify();
-    await env.dispose();
-  });
+  }));
 
-  it('parser depth: session/logout envelopes, cookie readers, and the query fallback', async () => {
-    const env = await base().build();
+  it('parser depth: session/logout envelopes, cookie readers, and the query fallback', resourceCase(async () => {
+    const env = await testApp(CONFIG).select({ server: { module: ['connectAuth'] } }).build();
     const parser = await env.get<ConnectAuthRequestParser>(ConnectAuthRequestParser);
     const request = (overrides: Record<string, unknown>) => ({
       body: {}, query: {}, cookies: {}, headers: {}, ...overrides,
@@ -443,41 +377,30 @@ describe('connect auth session/logout HTTP routes', () => {
     expect(parser.csrfCookie(request({ cookies: undefined }))).toBeNull();
     expect(parser.csrfHeader(request({ headers: { 'x-csrf-token': 'csrf' } }))).toBe('csrf');
     expect(parser.csrfHeader(request({ headers: {} }))).toBeNull();
-    await env.dispose();
-  });
+  }));
 
-  it('a repo failure during session lookup degrades to a structured 500', async () => {
-    const env = await base()
-      .methods([
-        [ConnectBrowserSessionRepo, {
-          findByTokenHash: control.once(control.throws(new Error('connection refused'))),
-        }],
-      ])
+  it('a repo failure during session lookup degrades to a structured 500', resourceCase(async () => {
+    const env = await testApp(CONFIG).select({ server: { module: ['connectAuth'] } })
+      .method(ConnectBrowserSessionRepo, 'findByTokenHash', control.once(control.throws(new Error('connection refused'))))
       .build();
-    const response = await env.dinner.request({
+    const response = await env.request({
       method: 'GET', path: '/v1/connect/auth/session',
       query: sessionQuery,
       headers: { cookie: `kazi_connect_session=${sessionToken}` },
     });
     expect(response.status).toBe(500);
-    await env.dispose();
-  });
+    await response.body?.cancel();
+  }));
 
-  it('POST /logout with session + CSRF proof revokes the session and clears cookies', async () => {
-    const env = await base()
-      .methods([
-        [ConnectBrowserSessionRepo, {
-          findByTokenHash: control.once(control.returns(Promise.resolve(sessionRow))),
-          touchSession: control.returns(Promise.resolve()),
-          revokeSession: control.once(control.returns(Promise.resolve())),
-        }],
-        [ConnectAccountRepo, {
-          findByUserId: control.once(control.returns(Promise.resolve({ ...account, password_hash: 'x' }))),
-        }],
-        [ConnectClock, { now: control.returns(NOW) }],
-      ])
+  it('POST /logout with session + CSRF proof revokes the session and clears cookies', resourceCase(async () => {
+    const env = await testApp(CONFIG).select({ server: { module: ['connectAuth'] } })
+      .method(ConnectBrowserSessionRepo, 'findByTokenHash', control.once(control.returns(Promise.resolve(sessionRow))))
+      .method(ConnectBrowserSessionRepo, 'touchSession', control.returns(Promise.resolve()))
+      .method(ConnectBrowserSessionRepo, 'revokeSession', control.once(control.returns(Promise.resolve())))
+      .method(ConnectAccountRepo, 'findByUserId', control.once(control.returns(Promise.resolve({ ...account, password_hash: 'x' }))))
+      .method(ConnectClock, 'now', control.returns(NOW))
       .build();
-    const response = await env.dinner.request({
+    const response = await env.request({
       method: 'POST', path: '/v1/connect/auth/logout',
       headers: {
         cookie: `kazi_connect_session=${sessionToken}; kazi_connect_csrf=${csrfToken}`,
@@ -497,19 +420,14 @@ describe('connect auth session/logout HTTP routes', () => {
     });
     expect(response.headers.get('set-cookie') ?? '').toContain('kazi_connect_session=;');
     await env.verify();
-    await env.dispose();
-  });
+  }));
 
-  it('POST /logout without any session is a 401 that clears cookies', async () => {
-    const env = await base()
-      .methods([
-        [ConnectBrowserSessionRepo, {
-          findByTokenHash: control.never(),
-          revokeSession: control.never(),
-        }],
-      ])
+  it('POST /logout without any session is a 401 that clears cookies', resourceCase(async () => {
+    const env = await testApp(CONFIG).select({ server: { module: ['connectAuth'] } })
+      .method(ConnectBrowserSessionRepo, 'findByTokenHash', control.never())
+      .method(ConnectBrowserSessionRepo, 'revokeSession', control.never())
       .build();
-    const response = await env.dinner.request({
+    const response = await env.request({
       method: 'POST', path: '/v1/connect/auth/logout',
       body: {
         kind: 'auth.logout.request', protocolVersion: '1.0',
@@ -520,23 +438,16 @@ describe('connect auth session/logout HTTP routes', () => {
     expect(response.status).toBe(401);
     expect(await response.json()).toMatchObject({ kind: 'error', code: 'revoked' });
     await env.verify();
-    await env.dispose();
-  });
+  }));
 
-  it('a logout for a different sessionId than the cookie session is unauthorized', async () => {
-    const env = await base()
-      .methods([
-        [ConnectBrowserSessionRepo, {
-          findByTokenHash: control.once(control.returns(Promise.resolve(sessionRow))),
-          touchSession: control.returns(Promise.resolve()),
-          revokeSession: control.never(),
-        }],
-        [ConnectAccountRepo, {
-          findByUserId: control.once(control.returns(Promise.resolve({ ...account, password_hash: 'x' }))),
-        }],
-      ])
+  it('a logout for a different sessionId than the cookie session is unauthorized', resourceCase(async () => {
+    const env = await testApp(CONFIG).select({ server: { module: ['connectAuth'] } })
+      .method(ConnectBrowserSessionRepo, 'findByTokenHash', control.once(control.returns(Promise.resolve(sessionRow))))
+      .method(ConnectBrowserSessionRepo, 'touchSession', control.returns(Promise.resolve()))
+      .method(ConnectBrowserSessionRepo, 'revokeSession', control.never())
+      .method(ConnectAccountRepo, 'findByUserId', control.once(control.returns(Promise.resolve({ ...account, password_hash: 'x' }))))
       .build();
-    const response = await env.dinner.request({
+    const response = await env.request({
       method: 'POST', path: '/v1/connect/auth/logout',
       headers: {
         cookie: `kazi_connect_session=${sessionToken}; kazi_connect_csrf=${csrfToken}`,
@@ -549,7 +460,7 @@ describe('connect auth session/logout HTTP routes', () => {
       },
     });
     expect(response.status).toBe(401);
+    await response.body?.cancel();
     await env.verify();
-    await env.dispose();
-  });
+  }));
 });

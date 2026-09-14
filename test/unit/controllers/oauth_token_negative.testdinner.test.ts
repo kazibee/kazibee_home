@@ -1,37 +1,26 @@
 /**
- * OAuth registration/token negative edges through testDinner (no server, no
- * database). Extends oauth.testdinner.test.ts with the remaining
+ * OAuth registration/token negative edges through root testApp over the
+ * original MCP satellite configuration (apps/mcp/noego.config.yml; no
+ * server, no database). Extends oauth.testdinner.test.ts with the remaining
  * registration-metadata arms and the OAuthFlowService PKCE-method guard.
+ * Historical case names remain stable; resourceCase owns cleanup.
  */
 import { describe, it, expect } from 'vitest';
-import { readFileSync } from 'node:fs';
 import path from 'node:path';
-import { load as parseYaml } from 'js-yaml';
-import { testDinner } from '@noego/dinner/testing';
-import { test as control } from '@noego/testing';
-import OAuthController from '../../../src/server/controller/oauth.controller';
+import { testApp } from '@noego/app';
+import { test as control, resourceCase } from '@noego/testing';
 import OAuthClientService from '../../../src/server/services/oauth_client_service';
 import OAuthFlowService from '../../../src/server/services/oauth_flow_service';
-import formBody from '../../../src/middleware/form_body';
 import OAuthRepo from '../../../src/server/repo/oauth_repo';
 
-const oauthSource = parseYaml(
-  readFileSync(path.resolve(__dirname, '../../../src/mcp/openapi/oauth.yaml'), 'utf8')
-) as Record<string, unknown>;
-
-const base = () =>
-  testDinner(oauthSource)
-    .select({ module: 'oauth' })
-    .controllers({ 'oauth.controller': OAuthController })
-    .middleware({ form_body: formBody })
-    .hooks({});
+const CONFIG = path.resolve(__dirname, '../../../apps/mcp/noego.config.yml');
 
 describe('oauth registration negative metadata arms', () => {
-  it('rejects a redirect_uris list containing a non-string entry (service depth)', async () => {
+  it('rejects a redirect_uris list containing a non-string entry (service depth)', resourceCase(async () => {
     // The OpenAPI schema already rejects this shape at the HTTP boundary, so
     // the service-level guard is exercised directly.
-    const env = await base()
-      .methods([ [OAuthRepo, { createClient: control.never() }] ])
+    const env = await testApp(CONFIG).select({ server: { module: ['oauth'] } })
+      .method(OAuthRepo, 'createClient', control.never())
       .build();
     const clients = await env.get<OAuthClientService>(OAuthClientService);
     const result = await clients.registerClient({
@@ -40,14 +29,13 @@ describe('oauth registration negative metadata arms', () => {
     });
     expect(result).toEqual({ ok: false, error: 'invalid_client_metadata' });
     await env.verify();
-    await env.dispose();
-  });
+  }));
 
-  it('rejects an unparseable redirect URI string', async () => {
-    const env = await base()
-      .methods([ [OAuthRepo, { createClient: control.never() }] ])
+  it('rejects an unparseable redirect URI string', resourceCase(async () => {
+    const env = await testApp(CONFIG).select({ server: { module: ['oauth'] } })
+      .method(OAuthRepo, 'createClient', control.never())
       .build();
-    const response = await env.dinner.request({
+    const response = await env.request({
       method: 'POST',
       path: '/oauth/register',
       headers: { 'content-type': 'application/json' },
@@ -56,16 +44,13 @@ describe('oauth registration negative metadata arms', () => {
     expect(response.status).toBe(400);
     expect(await response.json()).toEqual({ error: 'invalid_client_metadata' });
     await env.verify();
-    await env.dispose();
-  });
+  }));
 
-  it('registers a client without a client_name (stored name is null)', async () => {
-    const env = await base()
-      .methods([
-        [OAuthRepo, { createClient: control.once(control.returns(Promise.resolve(undefined))) }],
-      ])
+  it('registers a client without a client_name (stored name is null)', resourceCase(async () => {
+    const env = await testApp(CONFIG).select({ server: { module: ['oauth'] } })
+      .method(OAuthRepo, 'createClient', control.once(control.returns(Promise.resolve(undefined))))
       .build();
-    const response = await env.dinner.request({
+    const response = await env.request({
       method: 'POST',
       path: '/oauth/register',
       headers: { 'content-type': 'application/json' },
@@ -76,14 +61,13 @@ describe('oauth registration negative metadata arms', () => {
     expect(payload.client_id).toMatch(/^oac_[0-9a-f]{32}$/);
     expect(payload.redirect_uris).toEqual(['https://client.example/callback']);
     await env.verify();
-    await env.dispose();
-  });
+  }));
 });
 
 describe('OAuthFlowService PKCE method guard', () => {
-  it('createAuthorizationCode refuses any method other than S256', async () => {
-    const env = await base()
-      .methods([ [OAuthRepo, { createCode: control.never() }] ])
+  it('createAuthorizationCode refuses any method other than S256', resourceCase(async () => {
+    const env = await testApp(CONFIG).select({ server: { module: ['oauth'] } })
+      .method(OAuthRepo, 'createCode', control.never())
       .build();
     const service = await env.get<OAuthFlowService>(OAuthFlowService);
     await expect(service.createAuthorizationCode({
@@ -96,6 +80,5 @@ describe('OAuthFlowService PKCE method guard', () => {
       resource: 'https://mcp-dev.kazibee.com/mcp',
     })).rejects.toThrow(RangeError);
     await env.verify();
-    await env.dispose();
-  });
+  }));
 });

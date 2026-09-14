@@ -1,43 +1,29 @@
 /**
- * NoEgo canonical testing (testDinner + @noego/testing) for the OAuth
- * token/metadata/registration module (src/mcp/openapi/oauth.yaml).
+ * NoEgo canonical testing (root testApp + @noego/testing) for the OAuth
+ * token/metadata/registration module (src/mcp/openapi/oauth.yaml), built
+ * from the original MCP satellite configuration (apps/mcp/noego.config.yml).
+ * Historical case names remain stable.
  *
  * Real production source, real controller -> service graph (OAuthFlowService,
- * OAuthClientService, OAuthOrigins), real form_body middleware bound to its
- * production x-middleware identity. Only the @Query repo boundary (OAuthRepo)
- * is controlled; no server, no database, no global state.
+ * OAuthClientService, OAuthOrigins), real form_body middleware bound by the
+ * original configuration's x-middleware identity. Only the @Query repo
+ * boundary (OAuthRepo) is controlled; no server, no database, no global
+ * state. resourceCase owns cleanup.
  */
 import { describe, it, expect } from 'vitest';
-import { readFileSync } from 'node:fs';
 import { createHash } from 'node:crypto';
 import path from 'node:path';
-import { load as parseYaml } from 'js-yaml';
-import { testDinner } from '@noego/dinner/testing';
-import { test as control } from '@noego/testing';
-import OAuthController from '../../../src/server/controller/oauth.controller';
-import formBody from '../../../src/middleware/form_body';
+import { testApp } from '@noego/app';
+import { test as control, resourceCase } from '@noego/testing';
 import OAuthRepo from '../../../src/server/repo/oauth_repo';
 
-// Real production source — the same document production stitching includes.
-const oauthSource = parseYaml(
-  readFileSync(path.resolve(__dirname, '../../../src/mcp/openapi/oauth.yaml'), 'utf8')
-) as Record<string, unknown>;
+const CONFIG = path.resolve(__dirname, '../../../apps/mcp/noego.config.yml');
 
 const RESOURCE = 'https://mcp-dev.kazibee.com/mcp';
 const CODE_VERIFIER = 'test-verifier-0123456789-0123456789-0123456789';
 const CODE_CHALLENGE = createHash('sha256')
   .update(CODE_VERIFIER, 'utf8')
   .digest('base64url');
-
-const base = () =>
-  testDinner(oauthSource)
-    .select({ module: 'oauth' })
-    .controllers({ 'oauth.controller': OAuthController })
-    // Real production middleware executable bound to its production identity.
-    .middleware({ form_body: formBody })
-    // Legacy {req,res} controllers: compat hooks with default real-IoC
-    // construction (per-request child scope, disposed after the request).
-    .hooks({});
 
 function form(fields: Record<string, string>): {
   headers: Record<string, string>;
@@ -76,9 +62,9 @@ const activeConnection = {
 };
 
 describe('oauth token/metadata/register routes through testDinner (no server, no database)', () => {
-  it('GET /.well-known/oauth-protected-resource returns the resource metadata', async () => {
-    const env = await base().build();
-    const response = await env.dinner.request({
+  it('GET /.well-known/oauth-protected-resource returns the resource metadata', resourceCase(async () => {
+    const env = await testApp(CONFIG).select({ server: { module: ['oauth'] } }).build();
+    const response = await env.request({
       method: 'GET',
       path: '/.well-known/oauth-protected-resource',
     });
@@ -90,12 +76,11 @@ describe('oauth token/metadata/register routes through testDinner (no server, no
       bearer_methods_supported: ['header'],
     });
     expect(payload.scopes_supported).toContain('kazibee:read');
-    await env.dispose();
-  });
+  }));
 
-  it('GET /.well-known/oauth-authorization-server advertises the code+PKCE server', async () => {
-    const env = await base().build();
-    const response = await env.dinner.request({
+  it('GET /.well-known/oauth-authorization-server advertises the code+PKCE server', resourceCase(async () => {
+    const env = await testApp(CONFIG).select({ server: { module: ['oauth'] } }).build();
+    const response = await env.request({
       method: 'GET',
       path: '/.well-known/oauth-authorization-server',
     });
@@ -109,19 +94,14 @@ describe('oauth token/metadata/register routes through testDinner (no server, no
       code_challenge_methods_supported: ['S256'],
       authorization_response_iss_parameter_supported: true,
     });
-    await env.dispose();
-  });
+  }));
 
-  it('POST /oauth/token without grant_type is invalid_request and never reaches the repo', async () => {
-    const env = await base()
-      .methods([
-        [OAuthRepo, {
-          consumeCode: control.never(),
-          findActiveTokenWithConnection: control.never(),
-        }],
-      ])
+  it('POST /oauth/token without grant_type is invalid_request and never reaches the repo', resourceCase(async () => {
+    const env = await testApp(CONFIG).select({ server: { module: ['oauth'] } })
+      .method(OAuthRepo, 'consumeCode', control.never())
+      .method(OAuthRepo, 'findActiveTokenWithConnection', control.never())
       .build();
-    const response = await env.dinner.request({
+    const response = await env.request({
       method: 'POST',
       path: '/oauth/token',
       ...form({ client_id: 'oac_client_1', resource: RESOURCE }),
@@ -130,35 +110,29 @@ describe('oauth token/metadata/register routes through testDinner (no server, no
     expect(await response.json()).toEqual({ error: 'invalid_request' });
     expect(response.headers.get('cache-control')).toBe('no-store');
     await env.verify();
-    await env.dispose();
-  });
+  }));
 
-  it('POST /oauth/token with an unknown grant_type is unsupported_grant_type', async () => {
-    const env = await base().build();
-    const response = await env.dinner.request({
+  it('POST /oauth/token with an unknown grant_type is unsupported_grant_type', resourceCase(async () => {
+    const env = await testApp(CONFIG).select({ server: { module: ['oauth'] } }).build();
+    const response = await env.request({
       method: 'POST',
       path: '/oauth/token',
       ...form({ grant_type: 'password', client_id: 'oac_client_1', resource: RESOURCE }),
     });
     expect(response.status).toBe(400);
     expect(await response.json()).toEqual({ error: 'unsupported_grant_type' });
-    await env.dispose();
-  });
+  }));
 
-  it('authorization_code exchange mints a Bearer token pair (real PKCE, real form_body)', async () => {
-    const env = await base()
-      .methods([
-        [OAuthRepo, {
-          consumeCode: control.once(control.returns(Promise.resolve(codeRow()))),
-          findActiveConnectionById: control.once(
-            control.returns(Promise.resolve(activeConnection)),
-          ),
-          // Access token + refresh token: two writes.
-          createToken: control.returns(Promise.resolve(undefined)),
-        }],
-      ])
+  it('authorization_code exchange mints a Bearer token pair (real PKCE, real form_body)', resourceCase(async () => {
+    const env = await testApp(CONFIG).select({ server: { module: ['oauth'] } })
+      .method(OAuthRepo, 'consumeCode', control.once(control.returns(Promise.resolve(codeRow()))))
+      .method(OAuthRepo, 'findActiveConnectionById', control.once(
+        control.returns(Promise.resolve(activeConnection)),
+      ))
+      // Access token + refresh token: two writes.
+      .method(OAuthRepo, 'createToken', control.returns(Promise.resolve(undefined)))
       .build();
-    const response = await env.dinner.request({
+    const response = await env.request({
       method: 'POST',
       path: '/oauth/token',
       ...form({
@@ -181,21 +155,16 @@ describe('oauth token/metadata/register routes through testDinner (no server, no
     expect(typeof payload.access_token).toBe('string');
     expect(typeof payload.refresh_token).toBe('string');
     await env.verify();
-    await env.dispose();
-  });
+  }));
 
-  it('authorization_code exchange for the wrong client is a 401 invalid_client', async () => {
-    const env = await base()
-      .methods([
-        [OAuthRepo, {
-          consumeCode: control.once(
-            control.returns(Promise.resolve(codeRow({ client_id: 'oac_someone_else' }))),
-          ),
-          createToken: control.never(),
-        }],
-      ])
+  it('authorization_code exchange for the wrong client is a 401 invalid_client', resourceCase(async () => {
+    const env = await testApp(CONFIG).select({ server: { module: ['oauth'] } })
+      .method(OAuthRepo, 'consumeCode', control.once(
+        control.returns(Promise.resolve(codeRow({ client_id: 'oac_someone_else' }))),
+      ))
+      .method(OAuthRepo, 'createToken', control.never())
       .build();
-    const response = await env.dinner.request({
+    const response = await env.request({
       method: 'POST',
       path: '/oauth/token',
       ...form({
@@ -210,18 +179,13 @@ describe('oauth token/metadata/register routes through testDinner (no server, no
     expect(response.status).toBe(401);
     expect(await response.json()).toEqual({ error: 'invalid_client' });
     await env.verify();
-    await env.dispose();
-  });
+  }));
 
-  it('POST /oauth/register registers a dynamic client and echoes its metadata', async () => {
-    const env = await base()
-      .methods([
-        [OAuthRepo, {
-          createClient: control.once(control.returns(Promise.resolve(undefined))),
-        }],
-      ])
+  it('POST /oauth/register registers a dynamic client and echoes its metadata', resourceCase(async () => {
+    const env = await testApp(CONFIG).select({ server: { module: ['oauth'] } })
+      .method(OAuthRepo, 'createClient', control.once(control.returns(Promise.resolve(undefined))))
       .build();
-    const response = await env.dinner.request({
+    const response = await env.request({
       method: 'POST',
       path: '/oauth/register',
       headers: { 'content-type': 'application/json' },
@@ -239,18 +203,13 @@ describe('oauth token/metadata/register routes through testDinner (no server, no
       redirect_uris: ['https://client.example/callback', 'http://127.0.0.1/callback'],
     });
     await env.verify();
-    await env.dispose();
-  });
+  }));
 
-  it('POST /oauth/register rejects non-loopback http redirect URIs without touching the repo', async () => {
-    const env = await base()
-      .methods([
-        [OAuthRepo, {
-          createClient: control.never(),
-        }],
-      ])
+  it('POST /oauth/register rejects non-loopback http redirect URIs without touching the repo', resourceCase(async () => {
+    const env = await testApp(CONFIG).select({ server: { module: ['oauth'] } })
+      .method(OAuthRepo, 'createClient', control.never())
       .build();
-    const response = await env.dinner.request({
+    const response = await env.request({
       method: 'POST',
       path: '/oauth/register',
       headers: { 'content-type': 'application/json' },
@@ -259,6 +218,5 @@ describe('oauth token/metadata/register routes through testDinner (no server, no
     expect(response.status).toBe(400);
     expect(await response.json()).toEqual({ error: 'invalid_client_metadata' });
     await env.verify();
-    await env.dispose();
-  });
+  }));
 });

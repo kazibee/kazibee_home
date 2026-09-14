@@ -7,21 +7,7 @@
  * - Test isolation settings
  */
 import 'reflect-metadata';
-import dotenv from 'dotenv';
-
-// Set NODE_ENV to test BEFORE loading dotenv
-process.env.NODE_ENV = 'test';
-
-// Load environment variables from .env file
-try {
-  if (typeof dotenv?.config === 'function') {
-    dotenv.config();
-  }
-} catch {
-  // Ignore when dotenv is not installed or fails to load
-}
-
-// Ensure test environment after dotenv load (dotenv may override NODE_ENV)
+// Test inputs come from explicit fixtures, never production .env files.
 process.env.NODE_ENV = 'test';
 
 // Configure test-specific environment variables

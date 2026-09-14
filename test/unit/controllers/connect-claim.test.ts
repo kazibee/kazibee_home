@@ -1,3 +1,7 @@
+import path from 'node:path';
+import { testApp } from '@noego/app';
+import { APP_CLIENT_RUNTIME, type AppClientRuntime } from '@noego/app/client';
+import { testStub, resourceCase } from '@noego/testing';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import ConnectClaimController from '../../../src/ui/controllers/connect_claim.svelte.ts';
 import type { ConnectControllerDependencies } from '../../../src/ui/controllers/connect_shared.ts';
@@ -36,20 +40,20 @@ function dependencies(fetchMock = vi.fn(), sessionId: string | null = 'ses_12345
 afterEach(() => vi.restoreAllMocks());
 
 describe('ConnectClaimController', () => {
-  it('preserves the exact claim target when redirecting an unauthenticated user', async () => {
+  it('preserves the exact claim target when redirecting an unauthenticated user', resourceCase(async (_scope) => {
     const deps = dependencies(vi.fn(), null);
-    const controller = new ConnectClaimController(deps);
+    const controller = await (await testApp(CONFIG).select({ client: { path: ["/connect/claim/:claimId"] } }).use(runtimeBoundary(deps)).build()).client!.get<ConnectClaimController>(ConnectClaimController);
     controller.initialize({ claimId: claim.claimId, skipInitialLoad: true });
     await controller.input.refresh();
     expect(controller.data.status).toBe('signed-out');
     expect(deps.navigate).toHaveBeenCalledWith(
       '/connect/login?returnTo=%2Fconnect%2Fclaim%2Fclm_12345678',
     );
-  });
+  }));
 
-  it('loads a pending claim and owns display formatting', async () => {
+  it('loads a pending claim and owns display formatting', resourceCase(async (_scope) => {
     const fetchMock = vi.fn().mockResolvedValue(jsonResponse(200, claim));
-    const controller = new ConnectClaimController(dependencies(fetchMock));
+    const controller = await (await testApp(CONFIG).select({ client: { path: ["/connect/claim/:claimId"] } }).use(runtimeBoundary(dependencies(fetchMock))).build()).client!.get<ConnectClaimController>(ConnectClaimController);
     controller.initialize({ claimId: claim.claimId, skipInitialLoad: true });
     const loading = controller.input.refresh();
     expect(controller.data.status).toBe('loading');
@@ -58,9 +62,9 @@ describe('ConnectClaimController', () => {
     expect(controller.data.claim?.status).toBe('pending');
     expect(controller.data.fingerprintLabel.split(' ')).toHaveLength(8);
     expect(fetchMock.mock.calls[0][0]).toContain(`/claims/review/${claim.claimId}?`);
-  });
+  }));
 
-  it('falls back to a Desktop claim only after the executor returns canonical not-found', async () => {
+  it('falls back to a Desktop claim only after the executor returns canonical not-found', resourceCase(async (_scope) => {
     const desktop = {
       ...claim,
       kind: 'desktop.claim.review.response',
@@ -72,7 +76,7 @@ describe('ConnectClaimController', () => {
         message: 'Claim not found', retryable: false, correlationId: 'cor_12345678',
       }))
       .mockResolvedValueOnce(jsonResponse(200, desktop));
-    const controller = new ConnectClaimController(dependencies(fetchMock));
+    const controller = await (await testApp(CONFIG).select({ client: { path: ["/connect/claim/:claimId"] } }).use(runtimeBoundary(dependencies(fetchMock))).build()).client!.get<ConnectClaimController>(ConnectClaimController);
     controller.initialize({ claimId: claim.claimId, skipInitialLoad: true });
     await controller.input.refresh();
     expect(fetchMock.mock.calls.map(([url]) => url)).toEqual([
@@ -83,25 +87,25 @@ describe('ConnectClaimController', () => {
       claimKind: 'desktop',
       clientVersion: '2.0.0',
     });
-  });
+  }));
 
-  it('does not fall back to Desktop for authentication or server failures', async () => {
+  it('does not fall back to Desktop for authentication or server failures', resourceCase(async (_scope) => {
     const fetchMock = vi.fn().mockResolvedValue(jsonResponse(500, {
       kind: 'error', code: 'invalid-envelope', message: 'Unavailable',
     }));
-    const controller = new ConnectClaimController(dependencies(fetchMock));
+    const controller = await (await testApp(CONFIG).select({ client: { path: ["/connect/claim/:claimId"] } }).use(runtimeBoundary(dependencies(fetchMock))).build()).client!.get<ConnectClaimController>(ConnectClaimController);
     controller.initialize({ claimId: claim.claimId, skipInitialLoad: true });
     await controller.input.refresh();
     expect(fetchMock).toHaveBeenCalledTimes(1);
     expect(controller.data.status).toBe('error');
-  });
+  }));
 
   it.each([
     ['accepted', 'accept'],
     ['denied', 'deny'],
-  ] as const)('covers %s claim decisions', async (status, decision) => {
+  ] as const)('covers %s claim decisions', resourceCase(async (_scope, status, decision) => {
     const fetchMock = vi.fn().mockResolvedValue(jsonResponse(200, { status }));
-    const controller = new ConnectClaimController(dependencies(fetchMock));
+    const controller = await (await testApp(CONFIG).select({ client: { path: ["/connect/claim/:claimId"] } }).use(runtimeBoundary(dependencies(fetchMock))).build()).client!.get<ConnectClaimController>(ConnectClaimController);
     controller.initialize({ claim, skipInitialLoad: true });
     await controller.input.decide(decision);
     expect(controller.data.claim?.status).toBe(status);
@@ -114,29 +118,44 @@ describe('ConnectClaimController', () => {
       decision,
       sessionId: 'ses_12345678',
     });
-  });
+  }));
 
-  it.each(['accepted', 'denied', 'expired'] as const)('hydrates terminal %s state without deciding', (status) => {
-    const controller = new ConnectClaimController(dependencies());
+  it.each(['accepted', 'denied', 'expired'] as const)('hydrates terminal %s state without deciding', resourceCase(async (_scope, status) => {
+    const controller = await (await testApp(CONFIG).select({ client: { path: ["/connect/claim/:claimId"] } }).use(runtimeBoundary(dependencies())).build()).client!.get<ConnectClaimController>(ConnectClaimController);
     controller.initialize({ claim: { ...claim, status }, skipInitialLoad: true });
     expect(controller.data.claim?.status).toBe(status);
     expect(controller.data.status).toBe('ready');
-  });
+  }));
 
-  it('covers review and decision API errors without losing claim details', async () => {
+  it('covers review and decision API errors without losing claim details', resourceCase(async (_scope) => {
     const reviewFetch = vi.fn().mockResolvedValue(jsonResponse(404, { message: 'Request not found.' }));
-    const review = new ConnectClaimController(dependencies(reviewFetch));
+    const review = await (await testApp(CONFIG).select({ client: { path: ["/connect/claim/:claimId"] } }).use(runtimeBoundary(dependencies(reviewFetch))).build()).client!.get<ConnectClaimController>(ConnectClaimController);
     review.initialize({ claimId: claim.claimId, skipInitialLoad: true });
     await review.input.refresh();
     expect(review.data.status).toBe('error');
     expect(review.data.error).toBe('Request not found.');
 
     const decisionFetch = vi.fn().mockResolvedValue(jsonResponse(409, { message: 'Request already decided.' }));
-    const decisionController = new ConnectClaimController(dependencies(decisionFetch));
+    const decisionController = await (await testApp(CONFIG).select({ client: { path: ["/connect/claim/:claimId"] } }).use(runtimeBoundary(dependencies(decisionFetch))).build()).client!.get<ConnectClaimController>(ConnectClaimController);
     decisionController.initialize({ claim, skipInitialLoad: true });
     await decisionController.input.decide('accept');
     expect(decisionController.data.decisionStatus).toBe('idle');
     expect(decisionController.data.claim?.displayName).toBe('Office Mac');
     expect(decisionController.data.error).toBe('Request already decided.');
-  });
+  }));
 });
+
+// Fresh browser boundary data only; application construction remains visible per case.
+const CONFIG = path.resolve(__dirname, '../../../noego.config.yml');
+function runtimeBoundary(deps: ConnectControllerDependencies) {
+  const runtime: AppClientRuntime = {
+    fetch: deps.fetch, navigate: deps.navigate, origin: deps.origin,
+    cookie: () => deps.getCsrfToken(),
+    storage: {
+      getItem: () => deps.getSessionId(),
+      setItem: (_key, value) => deps.setSessionId(value),
+      removeItem: () => deps.clearSessionId(),
+    },
+  };
+  return testStub().value(APP_CLIENT_RUNTIME, runtime, { owner: 'client' });
+}

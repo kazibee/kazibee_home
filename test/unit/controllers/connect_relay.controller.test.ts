@@ -1,15 +1,21 @@
-import { describe, expect, it, vi } from "vitest";
+/**
+ * Executor relay controller driven directly against the production
+ * controller resolved from root testApp over the original configuration
+ * (../../../noego.config.yml): the real parser runs; the device auth
+ * verifier and logic are replaced through singular .method controls. Covers
+ * header fencing, identity cross-checks, frame validation, and the
+ * ack/no-content split. resourceCase owns environment cleanup.
+ */
+import { describe, expect, it } from "vitest";
+import path from "node:path";
+import { testApp } from "@noego/app";
+import { test as control, testStub, resourceCase, type TestResourceScope } from "@noego/testing";
 import type { CompatRequest as Request, CompatResponse as Response } from "@noego/dinner";
 import ConnectRelayController from "../../../src/server/controller/connect_relay.controller";
-import ConnectRelayRequestParser from "../../../src/server/services/connect_relay_request_parser";
-import type ConnectRelayLogic from "../../../src/server/logic/connect_relay.logic";
-import type { ConnectExecutorDeviceAuthVerifier } from "../../../src/server/services/connect_executor_actor_resolver";
+import ConnectRelayLogic from "../../../src/server/logic/connect_relay.logic";
+import { ConnectExecutorDeviceAuthVerifier } from "../../../src/server/services/connect_executor_actor_resolver";
 
-/**
- * Executor relay controller with the real parser and faked auth/logic:
- * header fencing, identity cross-checks, frame validation, and the
- * ack/no-content split.
- */
+const CONFIG = path.resolve(__dirname, "../../../noego.config.yml");
 
 const actor = {
   role: "executor_device" as const, executorId: "exe_relayctrl01",
@@ -46,38 +52,33 @@ function requestFor(rawHeaders: string[], body?: unknown): Request {
   return { rawHeaders, body } as unknown as Request;
 }
 
-function fixture(overrides: { verifiedActor?: Record<string, unknown> | null } = {}) {
-  const verified = overrides.verifiedActor === undefined ? actor : overrides.verifiedActor;
-  const logic = {
-    receive: vi.fn(async (_actor: unknown, frame: { kind: string; correlationId: string }) =>
-      frame.kind === "channel.hello" || frame.kind === "channel.heartbeat"
-        ? { kind: "channel.ack", acknowledgedKind: frame.kind } : null),
-    open: vi.fn(() => "fen_relayctrl01"),
-  };
-  const auth = {
-    verify: vi.fn(async () => verified ? { ok: true, actor: verified } : { ok: false }),
-  };
-  const controller = new ConnectRelayController(
-    logic as unknown as ConnectRelayLogic,
-    new ConnectRelayRequestParser(),
-    auth as unknown as ConnectExecutorDeviceAuthVerifier,
-  );
-  return { controller, logic, auth };
-}
+// Reusable replacement descriptions (immutable), not application constructors.
+const auth = (verifiedActor: Record<string, unknown> | null = actor) => testStub()
+  .method(ConnectExecutorDeviceAuthVerifier, "verify", control.returns(
+    Promise.resolve(verifiedActor ? { ok: true, actor: verifiedActor } : { ok: false }),
+  ));
+// The hello/heartbeat acknowledgement the faked logic answered before; output
+// frames are answered with null per case.
+const ack = (kind: string) => ({ kind: "channel.ack", acknowledgedKind: kind });
+const logic = (receive: unknown) => testStub()
+  .method(ConnectRelayLogic, "receive", control.returns(Promise.resolve(receive)))
+  .method(ConnectRelayLogic, "open", control.returns("fen_relayctrl01"));
 
 describe("ConnectRelayController.post", () => {
-  it("acknowledges a hello frame from a verified executor", async () => {
-    const { controller, logic } = fixture();
+  it("acknowledges a hello frame from a verified executor", resourceCase(async () => {
+    const env = await testApp(CONFIG).select({ server: { module: ["connectRelay"] } }).use(auth()).use(logic(ack("channel.hello"))).build();
+    const controller = await env.dinner.controller(ConnectRelayController);
     const res = fakeResponse();
     await controller.post({ req: requestFor(headers, hello), res });
     expect(res.statusCode).toBe(200);
     expect(res.body).toMatchObject({ kind: "channel.ack" });
     expect(res.headers["x-kazi-protocol-version"]).toBe("1.0");
-    expect(logic.receive).toHaveBeenCalled();
-  });
+    expect(control.inspect(env, ConnectRelayLogic, "receive").count).toBeGreaterThan(0);
+  }));
 
-  it("answers 204 for an output frame the logic does not acknowledge", async () => {
-    const { controller } = fixture();
+  it("answers 204 for an output frame the logic does not acknowledge", resourceCase(async () => {
+    const env = await testApp(CONFIG).select({ server: { module: ["connectRelay"] } }).use(auth()).use(logic(null)).build();
+    const controller = await env.dinner.controller(ConnectRelayController);
     const res = fakeResponse();
     await controller.post({
       req: requestFor(headers, {
@@ -91,10 +92,11 @@ describe("ConnectRelayController.post", () => {
     });
     expect(res.statusCode).toBe(204);
     expect(res.ended).toBe(true);
-  });
+  }));
 
-  it("answers 409 protocol-version-mismatch before verifying credentials", async () => {
-    const { controller, auth } = fixture();
+  it("answers 409 protocol-version-mismatch before verifying credentials", resourceCase(async () => {
+    const env = await testApp(CONFIG).select({ server: { module: ["connectRelay"] } }).use(auth()).use(logic(ack("channel.hello"))).build();
+    const controller = await env.dinner.controller(ConnectRelayController);
     const res = fakeResponse();
     const wrongProtocol = [...headers];
     wrongProtocol[wrongProtocol.indexOf("1.0")] = "2.0";
@@ -104,42 +106,48 @@ describe("ConnectRelayController.post", () => {
       code: "protocol-version-mismatch", message: "Protocol version mismatch",
       retryable: false, correlationId: "cor_relayinvalid",
     });
-    expect(auth.verify).not.toHaveBeenCalled();
-  });
+    expect(control.inspect(env, ConnectExecutorDeviceAuthVerifier, "verify").count).toBe(0);
+  }));
 
-  it("answers 401 revoked when the token does not verify", async () => {
-    const { controller } = fixture({ verifiedActor: null });
+  it("answers 401 revoked when the token does not verify", resourceCase(async () => {
+    const env = await testApp(CONFIG).select({ server: { module: ["connectRelay"] } }).use(auth(null)).use(logic(ack("channel.hello"))).build();
+    const controller = await env.dinner.controller(ConnectRelayController);
     const res = fakeResponse();
     await controller.post({ req: requestFor(headers, hello), res });
     expect(res.statusCode).toBe(401);
     expect(res.body).toMatchObject({ code: "revoked", message: "Authentication failed" });
-  });
+  }));
 
   it.each([
     ["role", { role: "desktop_device" }],
     ["executorId", { executorId: "exe_otherexec01" }],
     ["deviceId", { deviceId: "dev_otherdevice" }],
     ["generation", { generation: 2 }],
-  ] as const)("answers 401 when the verified %s disagrees with the headers", async (_name, patch) => {
-    const { controller, logic } = fixture({ verifiedActor: { ...actor, ...patch } });
+  ] as const)("answers 401 when the verified %s disagrees with the headers", resourceCase(async (
+    _scope: TestResourceScope, _name: string, patch: Record<string, unknown>,
+  ) => {
+    const env = await testApp(CONFIG).select({ server: { module: ["connectRelay"] } }).use(auth({ ...actor, ...patch })).use(logic(ack("channel.hello"))).build();
+    const controller = await env.dinner.controller(ConnectRelayController);
     const res = fakeResponse();
     await controller.post({ req: requestFor(headers, hello), res });
     expect(res.statusCode).toBe(401);
-    expect(logic.receive).not.toHaveBeenCalled();
-  });
+    expect(control.inspect(env, ConnectRelayLogic, "receive").count).toBe(0);
+  }));
 
-  it("answers 400 invalid-envelope for a frame that fails validation", async () => {
-    const { controller } = fixture();
+  it("answers 400 invalid-envelope for a frame that fails validation", resourceCase(async () => {
+    const env = await testApp(CONFIG).select({ server: { module: ["connectRelay"] } }).use(auth()).use(logic(ack("channel.hello"))).build();
+    const controller = await env.dinner.controller(ConnectRelayController);
     const res = fakeResponse();
     await controller.post({ req: requestFor(headers, { ...hello, extra: true }), res });
     expect(res.statusCode).toBe(400);
     expect(res.body).toMatchObject({
       code: "invalid-envelope", message: "Invalid request envelope",
     });
-  });
+  }));
 
-  it("answers 413 with the invalid-envelope code for an oversize frame", async () => {
-    const { controller } = fixture();
+  it("answers 413 with the invalid-envelope code for an oversize frame", resourceCase(async () => {
+    const env = await testApp(CONFIG).select({ server: { module: ["connectRelay"] } }).use(auth()).use(logic(ack("channel.hello"))).build();
+    const controller = await env.dinner.controller(ConnectRelayController);
     const res = fakeResponse();
     await controller.post({
       req: requestFor(headers, {
@@ -150,26 +158,29 @@ describe("ConnectRelayController.post", () => {
     });
     expect(res.statusCode).toBe(413);
     expect(res.body).toMatchObject({ code: "invalid-envelope" });
-  });
+  }));
 });
 
 describe("ConnectRelayController.events", () => {
-  it("answers 401 with the protocol header before opening a stream", async () => {
-    const { controller, logic } = fixture({ verifiedActor: null });
+  it("answers 401 with the protocol header before opening a stream", resourceCase(async () => {
+    const env = await testApp(CONFIG).select({ server: { module: ["connectRelay"] } }).use(auth(null)).use(logic(ack("channel.hello"))).build();
+    const controller = await env.dinner.controller(ConnectRelayController);
     const res = fakeResponse();
     await controller.events({ req: requestFor(headers), res });
     expect(res.statusCode).toBe(401);
     expect(res.headers["x-kazi-protocol-version"]).toBe("1.0");
-    expect(logic.open).not.toHaveBeenCalled();
-  });
+    expect(control.inspect(env, ConnectRelayLogic, "open").count).toBe(0);
+  }));
 
-  it("opens an SSE stream for a verified executor", async () => {
-    const { controller, logic } = fixture();
+  it("opens an SSE stream for a verified executor", resourceCase(async () => {
+    const env = await testApp(CONFIG).select({ server: { module: ["connectRelay"] } }).use(auth()).use(logic(ack("channel.hello"))).build();
+    const controller = await env.dinner.controller(ConnectRelayController);
     const res = fakeResponse();
     const response = await controller.events({ req: requestFor(headers), res }) as globalThis.Response;
     expect(response.headers.get("x-kazi-protocol-version")).toBe("1.0");
     expect(response.headers.get("content-type")).toBe("text/event-stream");
-    expect(logic.open).toHaveBeenCalledWith(actor, expect.objectContaining({ write: expect.any(Function) }));
+    expect(control.inspect(env, ConnectRelayLogic, "open").calls.map((call) => call.args))
+      .toEqual([[actor, expect.objectContaining({ write: expect.any(Function) })]]);
     await response.body?.cancel();
-  });
+  }));
 });

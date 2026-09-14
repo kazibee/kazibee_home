@@ -1,9 +1,12 @@
 /**
- * Connect desktop routes (connect_desktop.controller) through testDinner.
+ * Connect desktop routes (connect_desktop.controller) through root testApp
+ * over the original configuration (no server, no database). Historical case
+ * names remain stable.
  *
- * Real production desktops.yaml source, real controller → logic → service →
- * policy graph. Only the @Query repos and the deterministic primitives
- * (ConnectClock) are replaced.
+ * Real production desktops.yaml module selection, real controller → logic →
+ * service → policy graph. Only the @Query repos and the deterministic
+ * primitives (ConnectClock) are replaced through singular method controls.
+ * resourceCase owns cleanup.
  *
  * Transactional branches (createClaim success, decide, rename, revoke) run
  * under sqlstack @transaction and need a live transaction context, so those
@@ -11,22 +14,18 @@
  * skipped; see the non-transactional claimStatus/review/list/detail coverage.
  */
 import { describe, it, expect } from 'vitest';
-import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { createHash } from 'node:crypto';
-import { load as parseYaml } from 'js-yaml';
-import { testDinner } from '@noego/dinner/testing';
-import { test as control } from '@noego/testing';
-import ConnectDesktopController from '../../../src/server/controller/connect_desktop.controller';
+import { testApp } from '@noego/app';
+import { test as control, resourceCase } from '@noego/testing';
 import ConnectDesktopLogic from '../../../src/server/logic/connect_desktop.logic';
 import type { ConnectDesktopActor } from '../../../src/server/services/connect_desktop_actor_resolver';
 import ConnectDesktopClaimRepo from '../../../src/server/repo/connect_desktop_claim_repo';
 import ConnectDesktopDeviceRepo from '../../../src/server/repo/connect_desktop_device_repo';
 import { ConnectClock } from '../../../src/server/services/connect_auth_primitives';
 
-const desktopsSource = parseYaml(
-  readFileSync(path.resolve(__dirname, '../../../src/server/openapi/connect/desktops.yaml'), 'utf8')
-) as Record<string, unknown>;
+const CONFIG = path.resolve(__dirname, '../../../noego.config.yml');
+const SELECT = { server: { module: ['connectDesktops'] } } as const;
 
 const sha256 = (value: string) => createHash('sha256').update(value, 'utf8').digest('hex');
 
@@ -54,22 +53,12 @@ const browserActor: ConnectDesktopActor = {
   role: 'browser_session', userId: 'usr_owner001', sessionId: 'ses_fixed0001',
 };
 
-const base = () =>
-  testDinner(desktopsSource)
-    .select({ module: 'connectDesktops' })
-    .controllers({ 'connect_desktop.controller': ConnectDesktopController })
-    .hooks({});
-
 describe('connect desktop routes through testDinner (no server, no database)', () => {
-  it('GET /claims/{claimId}/status for an unknown claim is 404 with the request correlation id', async () => {
-    const env = await base()
-      .methods([
-        [ConnectDesktopClaimRepo, {
-          findByClaimId: control.once(control.returns(Promise.resolve(null))),
-        }],
-      ])
+  it('GET /claims/{claimId}/status for an unknown claim is 404 with the request correlation id', resourceCase(async () => {
+    const env = await testApp(CONFIG).select(SELECT)
+      .method(ConnectDesktopClaimRepo, 'findByClaimId', control.once(control.returns(Promise.resolve(null))))
       .build();
-    const response = await env.dinner.request({
+    const response = await env.request({
       method: 'GET', path: `/v1/connect/desktops/claims/${CLAIM_ID}/status`,
       headers: { 'x-kazi-bootstrap-token': TOKEN },
       query: { correlationId: CORRELATION },
@@ -79,19 +68,14 @@ describe('connect desktop routes through testDinner (no server, no database)', (
       kind: 'error', code: 'invalid-envelope', message: 'Claim not found', correlationId: CORRELATION,
     });
     await env.verify();
-    await env.dispose();
-  });
+  }));
 
-  it('GET /claims/{claimId}/status with a wrong bootstrap token is a uniform 401', async () => {
-    const env = await base()
-      .methods([
-        [ConnectDesktopClaimRepo, {
-          findByClaimId: control.once(control.returns(Promise.resolve(claim))),
-        }],
-        [ConnectDesktopDeviceRepo, { findByDeviceId: control.never() }],
-      ])
+  it('GET /claims/{claimId}/status with a wrong bootstrap token is a uniform 401', resourceCase(async () => {
+    const env = await testApp(CONFIG).select(SELECT)
+      .method(ConnectDesktopClaimRepo, 'findByClaimId', control.once(control.returns(Promise.resolve(claim))))
+      .method(ConnectDesktopDeviceRepo, 'findByDeviceId', control.never())
       .build();
-    const response = await env.dinner.request({
+    const response = await env.request({
       method: 'GET', path: `/v1/connect/desktops/claims/${CLAIM_ID}/status`,
       headers: { 'x-kazi-bootstrap-token': 'C'.repeat(43) },
       query: { correlationId: CORRELATION },
@@ -99,19 +83,14 @@ describe('connect desktop routes through testDinner (no server, no database)', (
     expect(response.status).toBe(401);
     expect(await response.json()).toMatchObject({ kind: 'error', code: 'revoked' });
     await env.verify();
-    await env.dispose();
-  });
+  }));
 
-  it('GET /claims/{claimId}/status reports pending for a live claim with the right token', async () => {
-    const env = await base()
-      .methods([
-        [ConnectDesktopClaimRepo, {
-          findByClaimId: control.once(control.returns(Promise.resolve(claim))),
-        }],
-        [ConnectClock, { now: control.returns(NOW) }],
-      ])
+  it('GET /claims/{claimId}/status reports pending for a live claim with the right token', resourceCase(async () => {
+    const env = await testApp(CONFIG).select(SELECT)
+      .method(ConnectDesktopClaimRepo, 'findByClaimId', control.once(control.returns(Promise.resolve(claim))))
+      .method(ConnectClock, 'now', control.returns(NOW))
       .build();
-    const response = await env.dinner.request({
+    const response = await env.request({
       method: 'GET', path: `/v1/connect/desktops/claims/${CLAIM_ID}/status`,
       headers: { 'x-kazi-bootstrap-token': TOKEN },
       query: { correlationId: CORRELATION },
@@ -122,19 +101,14 @@ describe('connect desktop routes through testDinner (no server, no database)', (
       claimId: CLAIM_ID, status: 'pending', correlationId: CORRELATION,
     });
     await env.verify();
-    await env.dispose();
-  });
+  }));
 
-  it('an expired pending claim is reported as expired, straight from the clock', async () => {
-    const env = await base()
-      .methods([
-        [ConnectDesktopClaimRepo, {
-          findByClaimId: control.once(control.returns(Promise.resolve(claim))),
-        }],
-        [ConnectClock, { now: control.returns(new Date(NOW.getTime() + 3_600_000)) }],
-      ])
+  it('an expired pending claim is reported as expired, straight from the clock', resourceCase(async () => {
+    const env = await testApp(CONFIG).select(SELECT)
+      .method(ConnectDesktopClaimRepo, 'findByClaimId', control.once(control.returns(Promise.resolve(claim))))
+      .method(ConnectClock, 'now', control.returns(new Date(NOW.getTime() + 3_600_000)))
       .build();
-    const response = await env.dinner.request({
+    const response = await env.request({
       method: 'GET', path: `/v1/connect/desktops/claims/${CLAIM_ID}/status`,
       headers: { 'x-kazi-bootstrap-token': TOKEN },
       query: { correlationId: CORRELATION },
@@ -142,20 +116,16 @@ describe('connect desktop routes through testDinner (no server, no database)', (
     expect(response.status).toBe(200);
     expect(await response.json()).toMatchObject({ status: 'expired' });
     await env.verify();
-    await env.dispose();
-  });
+  }));
 
-  it('POST /claims with a malformed envelope is a 400 that never reaches the repos', async () => {
-    const env = await base()
-      .methods([
-        [ConnectDesktopClaimRepo, {
-          findByIdempotencyKey: control.never(), findByClaimId: control.never(),
-          createClaim: control.never(),
-        }],
-        [ConnectDesktopDeviceRepo, { createDevice: control.never() }],
-      ])
+  it('POST /claims with a malformed envelope is a 400 that never reaches the repos', resourceCase(async () => {
+    const env = await testApp(CONFIG).select(SELECT)
+      .method(ConnectDesktopClaimRepo, 'findByIdempotencyKey', control.never())
+      .method(ConnectDesktopClaimRepo, 'findByClaimId', control.never())
+      .method(ConnectDesktopClaimRepo, 'createClaim', control.never())
+      .method(ConnectDesktopDeviceRepo, 'createDevice', control.never())
       .build();
-    const response = await env.dinner.request({
+    const response = await env.request({
       method: 'POST', path: '/v1/connect/desktops/claims',
       headers: { 'x-kazi-bootstrap-token': TOKEN },
       body: {
@@ -167,58 +137,41 @@ describe('connect desktop routes through testDinner (no server, no database)', (
       },
     });
     expect(response.status).toBe(400);
+    await response.body?.cancel(); // Status-only assertion still owns its HTTP body lease.
     await env.verify();
-    await env.dispose();
-  });
+  }));
 
-  it('logic-depth list: owners see their devices; no browser session means an empty list', async () => {
-    const env = await base()
-      .methods([
-        [ConnectDesktopDeviceRepo, {
-          listByOwner: control.once(control.returns(Promise.resolve([device]))),
-        }],
-      ])
+  it('logic-depth list: owners see their devices; no browser session means an empty list', resourceCase(async () => {
+    const env = await testApp(CONFIG).select(SELECT)
+      .method(ConnectDesktopDeviceRepo, 'listByOwner', control.once(control.returns(Promise.resolve([device]))))
       .build();
     const logic = await env.get<ConnectDesktopLogic>(ConnectDesktopLogic);
     expect(await logic.list(browserActor)).toEqual([device]);
     expect(await logic.list({ role: 'desktop_device', deviceId: DEVICE_ID, generation: 1 })).toEqual([]);
     await env.verify();
-    await env.dispose();
-  });
+  }));
 
-  it('logic-depth detail: ownership is enforced on the device row', async () => {
-    const env = await base()
-      .methods([
-        [ConnectDesktopDeviceRepo, {
-          findByDeviceId: control.returns(Promise.resolve(device)),
-        }],
-      ])
+  it('logic-depth detail: ownership is enforced on the device row', resourceCase(async () => {
+    const env = await testApp(CONFIG).select(SELECT)
+      .method(ConnectDesktopDeviceRepo, 'findByDeviceId', control.returns(Promise.resolve(device)))
       .build();
     const logic = await env.get<ConnectDesktopLogic>(ConnectDesktopLogic);
     expect(await logic.detail(browserActor, DEVICE_ID)).toEqual({ outcome: 'found', device });
     expect(await logic.detail(
       { ...browserActor, userId: 'usr_intruder1' }, DEVICE_ID,
     )).toEqual({ outcome: 'not-found' });
-    await env.dispose();
-  });
+  }));
 
-  it('logic-depth review: a short code resolves through its hash to the claim and device', async () => {
-    const env = await base()
-      .methods([
-        [ConnectDesktopClaimRepo, {
-          findByCodeHash: control.once(control.returns(Promise.resolve(claim))),
-          findByClaimId: control.never(),
-        }],
-        [ConnectDesktopDeviceRepo, {
-          findByDeviceId: control.once(control.returns(Promise.resolve(device))),
-        }],
-        [ConnectClock, { now: control.returns(NOW) }],
-      ])
+  it('logic-depth review: a short code resolves through its hash to the claim and device', resourceCase(async () => {
+    const env = await testApp(CONFIG).select(SELECT)
+      .method(ConnectDesktopClaimRepo, 'findByCodeHash', control.once(control.returns(Promise.resolve(claim))))
+      .method(ConnectDesktopClaimRepo, 'findByClaimId', control.never())
+      .method(ConnectDesktopDeviceRepo, 'findByDeviceId', control.once(control.returns(Promise.resolve(device))))
+      .method(ConnectClock, 'now', control.returns(NOW))
       .build();
     const logic = await env.get<ConnectDesktopLogic>(ConnectDesktopLogic);
     const result = await logic.review(browserActor, { code: 'ABCD-EFGH' });
     expect(result).toEqual({ outcome: 'found', claim, device, status: 'pending' });
     await env.verify();
-    await env.dispose();
-  });
+  }));
 });

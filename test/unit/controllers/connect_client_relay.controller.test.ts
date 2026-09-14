@@ -1,16 +1,23 @@
-import { describe, expect, it, vi } from "vitest";
+/**
+ * Desktop client relay controller driven directly against the production
+ * controller resolved from root testApp over the original configuration
+ * (../../../noego.config.yml): the real parser runs; actor resolution and
+ * logic are replaced through singular .method controls. Covers command
+ * outcome mapping, executor listing fencing, and SSE lifecycle wiring.
+ * resourceCase owns environment cleanup.
+ */
+import { describe, expect, it } from "vitest";
+import path from "node:path";
+import { testApp } from "@noego/app";
+import { test as control, testStub, resourceCase, type TestResourceScope } from "@noego/testing";
 import type { CompatRequest as Request, CompatResponse as Response } from "@noego/dinner";
 import ConnectClientRelayController from "../../../src/server/controller/connect_client_relay.controller";
 import ConnectClientRelayRequestParser from "../../../src/server/services/connect_client_relay_request_parser";
-import type ConnectClientRelayLogic from "../../../src/server/logic/connect_client_relay.logic";
-import type { ConnectDesktopRelayActorResolver } from "../../../src/server/services/connect_desktop_actor_resolver";
+import ConnectClientRelayLogic from "../../../src/server/logic/connect_client_relay.logic";
+import { ConnectDesktopRelayActorResolver } from "../../../src/server/services/connect_desktop_actor_resolver";
 import type { CommandDispatchResult } from "../../../src/server/services/connect_client_relay_service";
 
-/**
- * Desktop client relay controller with the real parser and faked actor
- * resolution/logic: command outcome mapping, executor listing fencing, and
- * SSE lifecycle wiring.
- */
+const CONFIG = path.resolve(__dirname, "../../../noego.config.yml");
 
 const actor = {
   role: "desktop_device" as const, deviceId: "dev_clientctrl01", generation: 1,
@@ -45,42 +52,36 @@ function requestFor(body?: unknown, query: Record<string, unknown> = {}): Reques
   return { body, query } as unknown as Request;
 }
 
-function fixture(options: {
-  resolved?: boolean;
-  outcome?: CommandDispatchResult;
-} = {}) {
-  const logic = {
-    command: vi.fn(async () => options.outcome
-      ?? { outcome: "accepted", frame: { kind: "command.accepted" } }),
-    listExecutors: vi.fn(async () => [{ executorId: command.executorId }]),
-    open: vi.fn(() => "fen_clientctrl1"),
-    close: vi.fn(),
-  };
-  const actors = {
-    resolve: vi.fn(async () => options.resolved === false
-      ? { ok: false } : { ok: true, actor }),
-  };
-  const controller = new ConnectClientRelayController(
-    logic as unknown as ConnectClientRelayLogic,
-    new ConnectClientRelayRequestParser(),
-    actors as unknown as ConnectDesktopRelayActorResolver,
-  );
-  return { controller, logic, actors };
-}
+// Reusable replacement descriptions (immutable), not application constructors:
+// the desktop actor resolution and the logic boundary are fixed per case.
+const actors = (resolved = true) => testStub()
+  .method(ConnectDesktopRelayActorResolver, "resolve", control.returns(
+    Promise.resolve(resolved ? { ok: true, actor } : { ok: false }),
+  ));
+const logic = (outcome?: CommandDispatchResult) => testStub()
+  .method(ConnectClientRelayLogic, "command", control.returns(
+    Promise.resolve(outcome ?? { outcome: "accepted", frame: { kind: "command.accepted" } }),
+  ))
+  .method(ConnectClientRelayLogic, "listExecutors", control.returns(Promise.resolve([{ executorId: command.executorId }])))
+  .method(ConnectClientRelayLogic, "open", control.returns("fen_clientctrl1"))
+  .method(ConnectClientRelayLogic, "close", control.returns(undefined));
 
 describe("ConnectClientRelayController.commands", () => {
-  it("returns the accepted frame for a dispatched command", async () => {
-    const { controller, logic } = fixture();
+  it("returns the accepted frame for a dispatched command", resourceCase(async () => {
+    const env = await testApp(CONFIG).select({ server: { module: ["connectClientRelay"] } }).use(actors()).use(logic()).build();
+    const controller = await env.dinner.controller(ConnectClientRelayController);
     const res = fakeResponse();
     await controller.commands({ req: requestFor(command), res });
     expect(res.statusCode).toBe(200);
     expect(res.body).toEqual({ kind: "command.accepted" });
     expect(res.headers["x-kazi-protocol-version"]).toBe("1.0");
-    expect(logic.command).toHaveBeenCalledWith(actor, command, expect.any(Number));
-  });
+    expect(control.inspect(env, ConnectClientRelayLogic, "command").calls.map((call) => call.args))
+      .toEqual([[actor, command, expect.any(Number)]]);
+  }));
 
-  it("answers 401 revoked when the desktop actor does not resolve", async () => {
-    const { controller, logic } = fixture({ resolved: false });
+  it("answers 401 revoked when the desktop actor does not resolve", resourceCase(async () => {
+    const env = await testApp(CONFIG).select({ server: { module: ["connectClientRelay"] } }).use(actors(false)).use(logic()).build();
+    const controller = await env.dinner.controller(ConnectClientRelayController);
     const res = fakeResponse();
     await controller.commands({ req: requestFor(command), res });
     expect(res.statusCode).toBe(401);
@@ -88,29 +89,31 @@ describe("ConnectClientRelayController.commands", () => {
       code: "revoked", message: "Authentication failed",
       retryable: false, correlationId: "cor_invalid000",
     });
-    expect(logic.command).not.toHaveBeenCalled();
-  });
+    expect(control.inspect(env, ConnectClientRelayLogic, "command").count).toBe(0);
+  }));
 
-  it("answers 400 for an invalid envelope before reaching the logic", async () => {
-    const { controller, logic } = fixture();
+  it("answers 400 for an invalid envelope before reaching the logic", resourceCase(async () => {
+    const env = await testApp(CONFIG).select({ server: { module: ["connectClientRelay"] } }).use(actors()).use(logic()).build();
+    const controller = await env.dinner.controller(ConnectClientRelayController);
     const res = fakeResponse();
     await controller.commands({ req: requestFor({ ...command, extra: true }), res });
     expect(res.statusCode).toBe(400);
     expect(res.body).toMatchObject({
       code: "invalid-envelope", correlationId: command.correlationId,
     });
-    expect(logic.command).not.toHaveBeenCalled();
-  });
+    expect(control.inspect(env, ConnectClientRelayLogic, "command").count).toBe(0);
+  }));
 
-  it("answers 413 for an oversize command frame", async () => {
-    const { controller } = fixture();
+  it("answers 413 for an oversize command frame", resourceCase(async () => {
+    const env = await testApp(CONFIG).select({ server: { module: ["connectClientRelay"] } }).use(actors()).use(logic()).build();
+    const controller = await env.dinner.controller(ConnectClientRelayController);
     const res = fakeResponse();
     await controller.commands({
       req: requestFor({ ...command, payload: { note: "x".repeat(300_000) } }), res,
     });
     expect(res.statusCode).toBe(413);
     expect(res.body).toMatchObject({ code: "invalid-envelope" });
-  });
+  }));
 
   it.each([
     ["unauthorized", 401, "revoked", "Authentication failed", false],
@@ -119,8 +122,12 @@ describe("ConnectClientRelayController.commands", () => {
     ["accept-timeout", 503, "executor-offline", "Executor is offline", true],
     ["website-deployment-mismatch", 409, "website-deployment-mismatch", "Website deployment mismatch", false],
     ["invalid-envelope", 400, "invalid-envelope", "Invalid request envelope", false],
-  ] as const)("maps the %s outcome to %d", async (outcome, status, code, message, retryable) => {
-    const { controller } = fixture({ outcome: { outcome } as CommandDispatchResult });
+  ] as const)("maps the %s outcome to %d", resourceCase(async (
+    _scope: TestResourceScope, outcome: string, status: number,
+    code: string, message: string, retryable: boolean,
+  ) => {
+    const env = await testApp(CONFIG).select({ server: { module: ["connectClientRelay"] } }).use(actors()).use(logic({ outcome } as CommandDispatchResult)).build();
+    const controller = await env.dinner.controller(ConnectClientRelayController);
     const res = fakeResponse();
     await controller.commands({ req: requestFor(command), res });
     expect(res.statusCode).toBe(status);
@@ -128,21 +135,16 @@ describe("ConnectClientRelayController.commands", () => {
       kind: "error", protocolVersion: "1.0", code, message, retryable,
       correlationId: command.correlationId,
     });
-  });
+  }));
 
-  it("maps a parser protocol-version-mismatch failure to 409", async () => {
-    const { logic, actors } = fixture();
-    const parser = {
-      command: () => ({
+  it("maps a parser protocol-version-mismatch failure to 409", resourceCase(async () => {
+    const env = await testApp(CONFIG).select({ server: { module: ["connectClientRelay"] } }).use(actors()).use(logic())
+      .method(ConnectClientRelayRequestParser, "command", control.returns({
         ok: false as const, reason: "protocol-version-mismatch" as const,
         correlationId: command.correlationId,
-      }),
-    };
-    const controller = new ConnectClientRelayController(
-      logic as unknown as ConnectClientRelayLogic,
-      parser as unknown as ConnectClientRelayRequestParser,
-      actors as unknown as ConnectDesktopRelayActorResolver,
-    );
+      }))
+      .build();
+    const controller = await env.dinner.controller(ConnectClientRelayController);
     const res = fakeResponse();
     await controller.commands({ req: requestFor(command), res });
     expect(res.statusCode).toBe(409);
@@ -151,12 +153,13 @@ describe("ConnectClientRelayController.commands", () => {
       message: "Protocol version mismatch", retryable: false,
       correlationId: command.correlationId,
     });
-  });
+  }));
 });
 
 describe("ConnectClientRelayController.executors", () => {
-  it("lists executors for a resolved desktop actor", async () => {
-    const { controller, logic } = fixture();
+  it("lists executors for a resolved desktop actor", resourceCase(async () => {
+    const env = await testApp(CONFIG).select({ server: { module: ["connectClientRelay"] } }).use(actors()).use(logic()).build();
+    const controller = await env.dinner.controller(ConnectClientRelayController);
     const res = fakeResponse();
     await controller.executors({
       req: requestFor(undefined, { correlationId: "cor_listexec0001" }), res,
@@ -167,58 +170,66 @@ describe("ConnectClientRelayController.executors", () => {
       executors: [{ executorId: command.executorId }],
       correlationId: "cor_listexec0001",
     });
-    expect(logic.listExecutors).toHaveBeenCalledWith(actor);
-  });
+    expect(control.inspect(env, ConnectClientRelayLogic, "listExecutors").calls.map((call) => call.args))
+      .toEqual([[actor]]);
+  }));
 
-  it("answers 400 with the fallback correlation for a malformed correlation", async () => {
-    const { controller, actors } = fixture();
+  it("answers 400 with the fallback correlation for a malformed correlation", resourceCase(async () => {
+    const env = await testApp(CONFIG).select({ server: { module: ["connectClientRelay"] } }).use(actors()).use(logic()).build();
+    const controller = await env.dinner.controller(ConnectClientRelayController);
     const res = fakeResponse();
     await controller.executors({ req: requestFor(undefined, { correlationId: "bad" }), res });
     expect(res.statusCode).toBe(400);
     expect(res.body).toMatchObject({ code: "invalid-envelope", correlationId: "cor_invalid000" });
-    expect(actors.resolve).not.toHaveBeenCalled();
-  });
+    expect(control.inspect(env, ConnectDesktopRelayActorResolver, "resolve").count).toBe(0);
+  }));
 
-  it("answers 400 when unexpected query parameters are present", async () => {
-    const { controller } = fixture();
+  it("answers 400 when unexpected query parameters are present", resourceCase(async () => {
+    const env = await testApp(CONFIG).select({ server: { module: ["connectClientRelay"] } }).use(actors()).use(logic()).build();
+    const controller = await env.dinner.controller(ConnectClientRelayController);
     const res = fakeResponse();
     await controller.executors({
       req: requestFor(undefined, { correlationId: "cor_listexec0001", verbose: "1" }), res,
     });
     expect(res.statusCode).toBe(400);
     expect(res.body).toMatchObject({ correlationId: "cor_listexec0001" });
-  });
+  }));
 
-  it("answers 401 when the desktop actor does not resolve", async () => {
-    const { controller } = fixture({ resolved: false });
+  it("answers 401 when the desktop actor does not resolve", resourceCase(async () => {
+    const env = await testApp(CONFIG).select({ server: { module: ["connectClientRelay"] } }).use(actors(false)).use(logic()).build();
+    const controller = await env.dinner.controller(ConnectClientRelayController);
     const res = fakeResponse();
     await controller.executors({
       req: requestFor(undefined, { correlationId: "cor_listexec0001" }), res,
     });
     expect(res.statusCode).toBe(401);
     expect(res.body).toMatchObject({ code: "revoked", correlationId: "cor_listexec0001" });
-  });
+  }));
 });
 
 describe("ConnectClientRelayController.events", () => {
-  it("answers 401 with the protocol header before opening a stream", async () => {
-    const { controller, logic } = fixture({ resolved: false });
+  it("answers 401 with the protocol header before opening a stream", resourceCase(async () => {
+    const env = await testApp(CONFIG).select({ server: { module: ["connectClientRelay"] } }).use(actors(false)).use(logic()).build();
+    const controller = await env.dinner.controller(ConnectClientRelayController);
     const res = fakeResponse();
     await controller.events({ req: requestFor(), res });
     expect(res.statusCode).toBe(401);
     expect(res.headers["x-kazi-protocol-version"]).toBe("1.0");
-    expect(logic.open).not.toHaveBeenCalled();
-  });
+    expect(control.inspect(env, ConnectClientRelayLogic, "open").count).toBe(0);
+  }));
 
-  it("opens an SSE stream and closes the logic fence when the stream ends", async () => {
-    const { controller, logic } = fixture();
+  it("opens an SSE stream and closes the logic fence when the stream ends", resourceCase(async () => {
+    const env = await testApp(CONFIG).select({ server: { module: ["connectClientRelay"] } }).use(actors()).use(logic()).build();
+    const controller = await env.dinner.controller(ConnectClientRelayController);
     const res = fakeResponse();
     const response = await controller.events({ req: requestFor(), res }) as globalThis.Response;
     expect(response.headers.get("x-kazi-protocol-version")).toBe("1.0");
     expect(response.headers.get("content-type")).toBe("text/event-stream");
-    expect(logic.open).toHaveBeenCalledWith(actor, expect.objectContaining({ write: expect.any(Function) }));
-    expect(logic.close).not.toHaveBeenCalled();
+    expect(control.inspect(env, ConnectClientRelayLogic, "open").calls.map((call) => call.args))
+      .toEqual([[actor, expect.objectContaining({ write: expect.any(Function) })]]);
+    expect(control.inspect(env, ConnectClientRelayLogic, "close").count).toBe(0);
     await response.body?.cancel();
-    expect(logic.close).toHaveBeenCalledWith(actor.deviceId, "fen_clientctrl1");
-  });
+    expect(control.inspect(env, ConnectClientRelayLogic, "close").calls.map((call) => call.args))
+      .toEqual([[actor.deviceId, "fen_clientctrl1"]]);
+  }));
 });

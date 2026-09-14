@@ -1,24 +1,40 @@
 /**
  * RemoteToolDispatchService routing branches, in isolation.
  *
- * The service's only dependencies are the Env binding surface and global
- * fetch. Env.load() injects bindings per-instance (no process.env or global
- * SqlStack state is touched), and the network boundary is replaced with
- * vi.stubGlobal('fetch', ...) — restored after every test.
+ * Every subject is the real production instance resolved from the
+ * original-config root testApp (remoteTools module, no server, no database).
+ * Environment data comes from a caller-built Env loaded with exactly the
+ * case's bindings (process.env is never mutated), and the outbound HTTP
+ * boundary is the injectable RemoteToolCoordinatorClient, replaced per case
+ * through immutable method controls; no globals are stubbed. resourceCase
+ * owns environment cleanup.
  */
-import { describe, it, expect, afterEach, vi } from 'vitest';
+import { describe, it, expect } from 'vitest';
+import path from 'node:path';
+import { testApp } from '@noego/app';
+import { resourceCase, testStub, test as control } from '@noego/testing';
 import Env from '../../../src/server/services/env';
 import RemoteToolDispatchService, { type DispatchResult } from '../../../src/server/services/remote_tool_dispatch_service';
+import RemoteToolCoordinatorClient from '../../../src/server/services/remote_tool_coordinator_client';
 import type { RemoteToolGrant } from '../../../src/server/repo/remote_tool_grant_repo';
+
+const CONFIG = path.resolve(__dirname, '../../../noego.config.yml');
+const SELECT = { server: { module: ['remoteTools'] } } as const;
 
 const DEV_ORIGIN = 'http://127.0.0.1:9999';
 const EXECUTOR_ID = 'exe_machine01';
 
-function service(bindings: Record<string, unknown>): RemoteToolDispatchService {
+// Environment data for one case: a caller-built Env loaded with exactly the
+// case's bindings; process.env is never mutated.
+const envWith = (bindings: Record<string, unknown>) => () => {
   const env = new Env();
   env.load(bindings);
-  return new RemoteToolDispatchService(env);
-}
+  return env;
+};
+
+/** Coordinator HTTP behavior for one case: a handler over the outbound Request, recorded by the environment. */
+const coordinatorHttp = (handler: (request: Request) => Promise<Response> | Response) =>
+  control.watch(() => async (request: Request) => handler(request));
 
 function jsonResponse(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
@@ -43,31 +59,33 @@ function coordinatorNamespace(handler: (request: Request) => Promise<Response> |
   };
 }
 
-afterEach(() => {
-  vi.unstubAllGlobals();
-});
-
 describe('presence / presenceDetail', () => {
-  it('returns null when this deployment has no coordinator routing at all', async () => {
-    const dispatch = service({});
+  it('returns null when this deployment has no coordinator routing at all', resourceCase(async () => {
+    const env = await testApp(CONFIG).select(SELECT).use(testStub())
+      .function(Env, envWith({}))
+      .method(RemoteToolCoordinatorClient, 'fetch', control.never())
+      .build();
+    const dispatch = await env.get<RemoteToolDispatchService>(RemoteToolDispatchService);
     expect(await dispatch.presence(EXECUTOR_ID)).toBeNull();
     expect(await dispatch.presenceDetail(EXECUTOR_ID)).toBeNull();
-  });
+  }));
 
-  it('reports online state and workspace projection through the dev coordinator origin', async () => {
-    const fetchStub = vi.fn(async (request: Request) => {
-      expect(request.url).toBe(`${DEV_ORIGIN}/executors/${EXECUTOR_ID}/presence`);
-      return jsonResponse({
-        state: 'online',
-        workspaces: { workspaces: [
-          { workspaceId: 'wrk_workspace1', displayName: 'Site', state: 'available' },
-          { workspaceId: 'wrk_workspace2' },
-          { notAWorkspace: true },
-        ] },
-      });
-    });
-    vi.stubGlobal('fetch', fetchStub);
-    const dispatch = service({ KAZIBEE_DEV_COORDINATOR_ORIGIN: DEV_ORIGIN });
+  it('reports online state and workspace projection through the dev coordinator origin', resourceCase(async () => {
+    const env = await testApp(CONFIG).select(SELECT).use(testStub())
+      .function(Env, envWith({ KAZIBEE_DEV_COORDINATOR_ORIGIN: DEV_ORIGIN }))
+      .method(RemoteToolCoordinatorClient, 'fetch', coordinatorHttp((request) => {
+        expect(request.url).toBe(`${DEV_ORIGIN}/executors/${EXECUTOR_ID}/presence`);
+        return jsonResponse({
+          state: 'online',
+          workspaces: { workspaces: [
+            { workspaceId: 'wrk_workspace1', displayName: 'Site', state: 'available' },
+            { workspaceId: 'wrk_workspace2' },
+            { notAWorkspace: true },
+          ] },
+        });
+      }))
+      .build();
+    const dispatch = await env.get<RemoteToolDispatchService>(RemoteToolDispatchService);
     expect(await dispatch.presenceDetail(EXECUTOR_ID)).toEqual({
       state: 'online',
       workspaces: [
@@ -76,60 +94,84 @@ describe('presence / presenceDetail', () => {
       ],
     });
     expect(await dispatch.presence(EXECUTOR_ID)).toBe('online');
-    expect(fetchStub).toHaveBeenCalledTimes(2);
-  });
+    expect(control.inspect(env, RemoteToolCoordinatorClient, 'fetch').count).toBe(2);
+  }));
 
-  it('degrades a non-OK presence response to offline with no workspaces', async () => {
-    vi.stubGlobal('fetch', vi.fn(async () => jsonResponse({ error: true }, 503)));
-    const dispatch = service({ KAZIBEE_DEV_COORDINATOR_ORIGIN: DEV_ORIGIN });
+  it('degrades a non-OK presence response to offline with no workspaces', resourceCase(async () => {
+    const env = await testApp(CONFIG).select(SELECT).use(testStub())
+      .function(Env, envWith({ KAZIBEE_DEV_COORDINATOR_ORIGIN: DEV_ORIGIN }))
+      .method(RemoteToolCoordinatorClient, 'fetch', coordinatorHttp(() => jsonResponse({ error: true }, 503)))
+      .build();
+    const dispatch = await env.get<RemoteToolDispatchService>(RemoteToolDispatchService);
     expect(await dispatch.presenceDetail(EXECUTOR_ID)).toEqual({ state: 'offline', workspaces: [] });
-  });
+  }));
 
-  it('degrades a network failure to offline', async () => {
-    vi.stubGlobal('fetch', vi.fn(async () => { throw new Error('ECONNREFUSED'); }));
-    const dispatch = service({ KAZIBEE_DEV_COORDINATOR_ORIGIN: DEV_ORIGIN });
+  it('degrades a network failure to offline', resourceCase(async () => {
+    const env = await testApp(CONFIG).select(SELECT).use(testStub())
+      .function(Env, envWith({ KAZIBEE_DEV_COORDINATOR_ORIGIN: DEV_ORIGIN }))
+      .method(RemoteToolCoordinatorClient, 'fetch', control.throws(new Error('ECONNREFUSED')))
+      .build();
+    const dispatch = await env.get<RemoteToolDispatchService>(RemoteToolDispatchService);
     expect(await dispatch.presence(EXECUTOR_ID)).toBe('offline');
-  });
+  }));
 
-  it('maps an unrecognized state string to offline', async () => {
-    vi.stubGlobal('fetch', vi.fn(async () => jsonResponse({ state: 'weird' })));
-    const dispatch = service({ KAZIBEE_DEV_COORDINATOR_ORIGIN: DEV_ORIGIN });
+  it('maps an unrecognized state string to offline', resourceCase(async () => {
+    const env = await testApp(CONFIG).select(SELECT).use(testStub())
+      .function(Env, envWith({ KAZIBEE_DEV_COORDINATOR_ORIGIN: DEV_ORIGIN }))
+      .method(RemoteToolCoordinatorClient, 'fetch', coordinatorHttp(() => jsonResponse({ state: 'weird' })))
+      .build();
+    const dispatch = await env.get<RemoteToolDispatchService>(RemoteToolDispatchService);
     expect(await dispatch.presence(EXECUTOR_ID)).toBe('offline');
-  });
+  }));
 
-  it('routes presence through an EXECUTOR_COORDINATOR namespace when bound', async () => {
+  it('routes presence through an EXECUTOR_COORDINATOR namespace when bound', resourceCase(async () => {
     const namespace = coordinatorNamespace((request) => {
       expect(request.url).toBe('https://coordinator/presence');
       return jsonResponse({ state: 'stale' });
     });
-    const dispatch = service({ EXECUTOR_COORDINATOR: namespace });
+    const env = await testApp(CONFIG).select(SELECT).use(testStub())
+      .function(Env, envWith({ EXECUTOR_COORDINATOR: namespace }))
+      .method(RemoteToolCoordinatorClient, 'fetch', control.never())
+      .build();
+    const dispatch = await env.get<RemoteToolDispatchService>(RemoteToolDispatchService);
     expect(await dispatch.presence(EXECUTOR_ID)).toBe('stale');
-  });
+  }));
 
-  it('ignores a binding that does not implement the namespace contract', async () => {
-    const dispatch = service({ EXECUTOR_COORDINATOR: { not: 'a namespace' } });
+  it('ignores a binding that does not implement the namespace contract', resourceCase(async () => {
+    const env = await testApp(CONFIG).select(SELECT).use(testStub())
+      .function(Env, envWith({ EXECUTOR_COORDINATOR: { not: 'a namespace' } }))
+      .method(RemoteToolCoordinatorClient, 'fetch', control.never())
+      .build();
+    const dispatch = await env.get<RemoteToolDispatchService>(RemoteToolDispatchService);
     expect(await dispatch.presence(EXECUTOR_ID)).toBeNull();
-  });
+  }));
 });
 
 describe('callTarget / call', () => {
-  it('reports EXECUTOR_OFFLINE when no routing exists', async () => {
-    const dispatch = service({});
+  it('reports EXECUTOR_OFFLINE when no routing exists', resourceCase(async () => {
+    const env = await testApp(CONFIG).select(SELECT).use(testStub())
+      .function(Env, envWith({}))
+      .method(RemoteToolCoordinatorClient, 'fetch', control.never())
+      .build();
+    const dispatch = await env.get<RemoteToolDispatchService>(RemoteToolDispatchService);
     const outcome = await dispatch.callTarget(target(), 'read_file', { path: 'x' });
     expect(outcome).toMatchObject({ ok: false, code: 'EXECUTOR_OFFLINE' });
-  });
+  }));
 
-  it('dispatches a command.post frame to the dev coordinator and unwraps success', async () => {
+  it('dispatches a command.post frame to the dev coordinator and unwraps success', resourceCase(async () => {
     let seenFrame: Record<string, unknown> | null = null;
-    vi.stubGlobal('fetch', vi.fn(async (request: Request) => {
-      expect(request.url).toBe(`${DEV_ORIGIN}/executors/${EXECUTOR_ID}/dispatch`);
-      expect(request.method).toBe('POST');
-      seenFrame = await request.json() as Record<string, unknown>;
-      return jsonResponse({
-        result: { status: 'succeeded', payload: { bytes: 12 }, effectState: 'none' },
-      });
-    }));
-    const dispatch = service({ KAZIBEE_DEV_COORDINATOR_ORIGIN: DEV_ORIGIN });
+    const env = await testApp(CONFIG).select(SELECT).use(testStub())
+      .function(Env, envWith({ KAZIBEE_DEV_COORDINATOR_ORIGIN: DEV_ORIGIN }))
+      .method(RemoteToolCoordinatorClient, 'fetch', coordinatorHttp(async (request) => {
+        expect(request.url).toBe(`${DEV_ORIGIN}/executors/${EXECUTOR_ID}/dispatch`);
+        expect(request.method).toBe('POST');
+        seenFrame = await request.json() as Record<string, unknown>;
+        return jsonResponse({
+          result: { status: 'succeeded', payload: { bytes: 12 }, effectState: 'none' },
+        });
+      }))
+      .build();
+    const dispatch = await env.get<RemoteToolDispatchService>(RemoteToolDispatchService);
     const outcome = await dispatch.callTarget(target(), 'read_file', { path: 'README.md' });
     expect(outcome).toEqual({ ok: true, status: 'succeeded', payload: { bytes: 12 }, effectState: 'none' });
     expect(seenFrame).toMatchObject({
@@ -148,81 +190,107 @@ describe('callTarget / call', () => {
         grantGeneration: 1,
       },
     });
-  });
+  }));
 
-  it('unwraps a failed command.result frame into a structured failure', async () => {
-    vi.stubGlobal('fetch', vi.fn(async () => jsonResponse({
-      result: {
-        status: 'failed',
-        error: { code: 'SCOPE_DENIED', message: 'no', retryable: false, requiredAction: 'Re-grant.' },
-        effectState: 'none',
-      },
-    })));
-    const dispatch = service({ KAZIBEE_DEV_COORDINATOR_ORIGIN: DEV_ORIGIN });
+  it('unwraps a failed command.result frame into a structured failure', resourceCase(async () => {
+    const env = await testApp(CONFIG).select(SELECT).use(testStub())
+      .function(Env, envWith({ KAZIBEE_DEV_COORDINATOR_ORIGIN: DEV_ORIGIN }))
+      .method(RemoteToolCoordinatorClient, 'fetch', coordinatorHttp(() => jsonResponse({
+        result: {
+          status: 'failed',
+          error: { code: 'SCOPE_DENIED', message: 'no', retryable: false, requiredAction: 'Re-grant.' },
+          effectState: 'none',
+        },
+      })))
+      .build();
+    const dispatch = await env.get<RemoteToolDispatchService>(RemoteToolDispatchService);
     const outcome = await dispatch.callTarget(target(), 'write_file', {});
     expect(outcome).toEqual({
       ok: false, code: 'SCOPE_DENIED', message: 'no',
       retryable: false, requiredAction: 'Re-grant.', effectState: 'none',
     });
-  });
+  }));
 
-  it('maps a non-OK coordinator response onto its code and message', async () => {
-    vi.stubGlobal('fetch', vi.fn(async () => jsonResponse({ code: 'EXECUTOR_OFFLINE', message: 'gone' }, 503)));
-    const dispatch = service({ KAZIBEE_DEV_COORDINATOR_ORIGIN: DEV_ORIGIN });
+  it('maps a non-OK coordinator response onto its code and message', resourceCase(async () => {
+    const env = await testApp(CONFIG).select(SELECT).use(testStub())
+      .function(Env, envWith({ KAZIBEE_DEV_COORDINATOR_ORIGIN: DEV_ORIGIN }))
+      .method(RemoteToolCoordinatorClient, 'fetch',
+        coordinatorHttp(() => jsonResponse({ code: 'EXECUTOR_OFFLINE', message: 'gone' }, 503)))
+      .build();
+    const dispatch = await env.get<RemoteToolDispatchService>(RemoteToolDispatchService);
     expect(await dispatch.callTarget(target(), 't', {})).toEqual({
       ok: false, code: 'EXECUTOR_OFFLINE', message: 'gone',
     });
-  });
+  }));
 
-  it('defaults a non-OK response without a body shape to INTERNAL_ERROR', async () => {
-    vi.stubGlobal('fetch', vi.fn(async () => jsonResponse({}, 500)));
-    const dispatch = service({ KAZIBEE_DEV_COORDINATOR_ORIGIN: DEV_ORIGIN });
+  it('defaults a non-OK response without a body shape to INTERNAL_ERROR', resourceCase(async () => {
+    const env = await testApp(CONFIG).select(SELECT).use(testStub())
+      .function(Env, envWith({ KAZIBEE_DEV_COORDINATOR_ORIGIN: DEV_ORIGIN }))
+      .method(RemoteToolCoordinatorClient, 'fetch', coordinatorHttp(() => jsonResponse({}, 500)))
+      .build();
+    const dispatch = await env.get<RemoteToolDispatchService>(RemoteToolDispatchService);
     expect(await dispatch.callTarget(target(), 't', {})).toEqual({
       ok: false, code: 'INTERNAL_ERROR', message: 'Dispatch failed.',
     });
-  });
+  }));
 
-  it('reports EXECUTOR_OFFLINE when the dispatch fetch itself fails', async () => {
-    vi.stubGlobal('fetch', vi.fn(async () => { throw new Error('ECONNREFUSED'); }));
-    const dispatch = service({ KAZIBEE_DEV_COORDINATOR_ORIGIN: DEV_ORIGIN });
+  it('reports EXECUTOR_OFFLINE when the dispatch fetch itself fails', resourceCase(async () => {
+    const env = await testApp(CONFIG).select(SELECT).use(testStub())
+      .function(Env, envWith({ KAZIBEE_DEV_COORDINATOR_ORIGIN: DEV_ORIGIN }))
+      .method(RemoteToolCoordinatorClient, 'fetch', control.throws(new Error('ECONNREFUSED')))
+      .build();
+    const dispatch = await env.get<RemoteToolDispatchService>(RemoteToolDispatchService);
     expect(await dispatch.callTarget(target(), 't', {})).toEqual({
       ok: false, code: 'EXECUTOR_OFFLINE', message: 'Executor routing failed.',
     });
-  });
+  }));
 
-  it('reports INTERNAL_ERROR for a malformed coordinator response body', async () => {
-    vi.stubGlobal('fetch', vi.fn(async () => new Response('not json', { status: 200 })));
-    const dispatch = service({ KAZIBEE_DEV_COORDINATOR_ORIGIN: DEV_ORIGIN });
+  it('reports INTERNAL_ERROR for a malformed coordinator response body', resourceCase(async () => {
+    const env = await testApp(CONFIG).select(SELECT).use(testStub())
+      .function(Env, envWith({ KAZIBEE_DEV_COORDINATOR_ORIGIN: DEV_ORIGIN }))
+      .method(RemoteToolCoordinatorClient, 'fetch', coordinatorHttp(() => new Response('not json', { status: 200 })))
+      .build();
+    const dispatch = await env.get<RemoteToolDispatchService>(RemoteToolDispatchService);
     expect(await dispatch.callTarget(target(), 't', {})).toEqual({
       ok: false, code: 'INTERNAL_ERROR', message: 'Malformed coordinator response.',
     });
-  });
+  }));
 
-  it('reports INTERNAL_ERROR when an OK response carries no result frame', async () => {
-    vi.stubGlobal('fetch', vi.fn(async () => jsonResponse({ unrelated: true })));
-    const dispatch = service({ KAZIBEE_DEV_COORDINATOR_ORIGIN: DEV_ORIGIN });
+  it('reports INTERNAL_ERROR when an OK response carries no result frame', resourceCase(async () => {
+    const env = await testApp(CONFIG).select(SELECT).use(testStub())
+      .function(Env, envWith({ KAZIBEE_DEV_COORDINATOR_ORIGIN: DEV_ORIGIN }))
+      .method(RemoteToolCoordinatorClient, 'fetch', coordinatorHttp(() => jsonResponse({ unrelated: true })))
+      .build();
+    const dispatch = await env.get<RemoteToolDispatchService>(RemoteToolDispatchService);
     expect(await dispatch.callTarget(target(), 't', {})).toEqual({
       ok: false, code: 'INTERNAL_ERROR', message: 'Coordinator returned no result.',
     });
-  });
+  }));
 
-  it('routes dispatch through the EXECUTOR_COORDINATOR namespace when bound', async () => {
+  it('routes dispatch through the EXECUTOR_COORDINATOR namespace when bound', resourceCase(async () => {
     const namespace = coordinatorNamespace((request) => {
       expect(request.url).toBe('https://coordinator/dispatch');
       return jsonResponse({ result: { status: 'succeeded', payload: null, effectState: 'none' } });
     });
-    const dispatch = service({ EXECUTOR_COORDINATOR: namespace });
+    const env = await testApp(CONFIG).select(SELECT).use(testStub())
+      .function(Env, envWith({ EXECUTOR_COORDINATOR: namespace }))
+      .method(RemoteToolCoordinatorClient, 'fetch', control.never())
+      .build();
+    const dispatch = await env.get<RemoteToolDispatchService>(RemoteToolDispatchService);
     const outcome = await dispatch.callTarget(target(), 't', {});
     expect(outcome).toMatchObject({ ok: true, status: 'succeeded' });
-  });
+  }));
 
-  it('call() derives the dispatch target from a grant row', async () => {
+  it('call() derives the dispatch target from a grant row', resourceCase(async () => {
     let seenFrame: Record<string, unknown> | null = null;
-    vi.stubGlobal('fetch', vi.fn(async (request: Request) => {
-      seenFrame = await request.json() as Record<string, unknown>;
-      return jsonResponse({ result: { status: 'succeeded', payload: { ok: 1 }, effectState: 'none' } });
-    }));
-    const dispatch = service({ KAZIBEE_DEV_COORDINATOR_ORIGIN: DEV_ORIGIN });
+    const env = await testApp(CONFIG).select(SELECT).use(testStub())
+      .function(Env, envWith({ KAZIBEE_DEV_COORDINATOR_ORIGIN: DEV_ORIGIN }))
+      .method(RemoteToolCoordinatorClient, 'fetch', coordinatorHttp(async (request) => {
+        seenFrame = await request.json() as Record<string, unknown>;
+        return jsonResponse({ result: { status: 'succeeded', payload: { ok: 1 }, effectState: 'none' } });
+      }))
+      .build();
+    const dispatch = await env.get<RemoteToolDispatchService>(RemoteToolDispatchService);
     const grant = {
       grant_id: 'rtg_grant0001',
       owner_user_id: 'usr_owner001',
@@ -246,5 +314,5 @@ describe('callTarget / call', () => {
         toolSessionId: 'rts_grant0001',
       },
     });
-  });
+  }));
 });

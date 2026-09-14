@@ -1,0 +1,23 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "allowImportingTsExtensions": true,
+    "types": [
+      "node",
+      "svelte",
+      "vitest/globals"
+    ]
+  },
+  "include": [
+    "**/*.ts",
+    "**/*.tsx",
+    "vite.config.js"
+  ],
+  "exclude": [
+    "node_modules",
+    "dist",
+    "apps/mcp/dist",
+    "apps/agent/dist"
+  ]
+}

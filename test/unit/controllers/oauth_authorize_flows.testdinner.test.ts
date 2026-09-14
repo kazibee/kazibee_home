@@ -1,41 +1,31 @@
 /**
- * OAuth authorization deep flows through testDinner (no server, no database).
+ * OAuth authorization deep flows through root testApp over the original
+ * root configuration (noego.config.yml; no server, no database). Historical
+ * case names remain stable.
  *
  * Extends oauth_authorize.testdinner.test.ts with the consent APPROVE happy
  * path (connection -> code issuance), its compensation branch, the consent
  * context projection, remaining validate() branches, and the CIMD https
- * client-id resolution path (global fetch stubbed via vi.stubGlobal; restored
- * after every test).
+ * client-id resolution path (documents served through the app's own
+ * OAuthClientMetadataClient boundary via per-app testStub; no globals are
+ * patched). resourceCase owns environment cleanup.
  */
-import { afterEach, describe, it, expect, vi } from 'vitest';
-import { readFileSync } from 'node:fs';
+import { describe, it, expect } from 'vitest';
 import { createHash } from 'node:crypto';
 import path from 'node:path';
-import { load as parseYaml } from 'js-yaml';
-import { testDinner } from '@noego/dinner/testing';
-import { test as control } from '@noego/testing';
-import OAuthAuthorizeController from '../../../src/server/controller/oauth_authorize.controller';
+import { testApp } from '@noego/app';
+import { test as control, testStub, resourceCase } from '@noego/testing';
+import OAuthClientMetadataClient from '../../../src/server/services/oauth_client_metadata_client';
 import OAuthRepo from '../../../src/server/repo/oauth_repo';
 import ConnectExecutorRepo from '../../../src/server/repo/connect_executor_repo';
 import RemoteToolDispatchService from '../../../src/server/services/remote_tool_dispatch_service';
 import ConnectBrowserSessionRepo from '../../../src/server/repo/connect_browser_session_repo';
 import ConnectAccountRepo from '../../../src/server/repo/connect_account_repo';
 
-const authorizeSource = parseYaml(
-  readFileSync(
-    path.resolve(__dirname, '../../../src/server/openapi/oauth/authorize.yaml'),
-    'utf8',
-  )
-) as Record<string, unknown>;
+const CONFIG = path.resolve(__dirname, '../../../noego.config.yml');
 
 const RESOURCE = 'https://mcp-dev.kazibee.com/mcp';
 const REDIRECT_URI = 'https://client.example/callback';
-
-const base = () =>
-  testDinner(authorizeSource)
-    .select({ module: 'oauthAuthorization' })
-    .controllers({ 'oauth_authorize.controller': OAuthAuthorizeController })
-    .hooks({});
 
 const dcrClient = {
   client_id: 'oac_client_1',
@@ -96,42 +86,34 @@ const authedHeaders = {
   'x-csrf-token': CSRF_TOKEN,
 };
 
-/** Session + account stubs shared by every authenticated consent request. */
-const sessionStubs = () => ([
-  [ConnectBrowserSessionRepo, {
-    findByTokenHash: control.once(control.returns(Promise.resolve(activeSession))),
-    touchSession: control.returns(Promise.resolve(undefined)),
-  }],
-  [ConnectAccountRepo, {
-    findByUserId: control.once(control.returns(Promise.resolve(activeAccount))),
-  }],
-] as const);
+/** The app's CIMD metadata boundary answers exactly once with the given HTTP response. */
+const cimdResponse = (response: Response) => testStub()
+  .method(OAuthClientMetadataClient, 'request', control.once(control.returns(Promise.resolve(response))));
 
-afterEach(() => {
-  vi.unstubAllGlobals();
-  vi.restoreAllMocks();
+const jsonResponse = (body: unknown) => new Response(JSON.stringify(body), {
+  status: 200,
+  headers: { 'content-type': 'application/json' },
 });
 
 describe('oauth authorize deep flows through testDinner', () => {
-  it('POST /oauth/consent/approve succeeds with zero linked machines and writes connection then code', async () => {
+  it('POST /oauth/consent/approve succeeds with zero linked machines and writes connection then code', resourceCase(async () => {
     const written: string[] = [];
     const recorded = <T>(name: string, value: T) =>
       control.returns((async () => { written.push(name); return value; })());
-    const env = await base()
-      .methods([
-        ...sessionStubs(),
-        [OAuthRepo, {
-          findClientById: control.returns(Promise.resolve(dcrClient)),
-          createConnection: control.once(recorded('connection', undefined)),
-          createCode: control.once(recorded('code', undefined)),
-          revokeSupersededConnectionTokens: control.once(recorded('supersede-tokens', undefined)),
-          revokeSupersededConnections: control.once(recorded('supersede-connections', undefined)),
-          revokeConnection: control.never(),
-        }],
-        [ConnectExecutorRepo, { findByExecutorId: control.never() }],
-      ])
+    // Session + account stubs shared by every authenticated consent request.
+    const env = await testApp(CONFIG).select({ server: { module: ['oauthAuthorization'] } })
+      .method(ConnectBrowserSessionRepo, 'findByTokenHash', control.once(control.returns(Promise.resolve(activeSession))))
+      .method(ConnectBrowserSessionRepo, 'touchSession', control.returns(Promise.resolve(undefined)))
+      .method(ConnectAccountRepo, 'findByUserId', control.once(control.returns(Promise.resolve(activeAccount))))
+      .method(OAuthRepo, 'findClientById', control.returns(Promise.resolve(dcrClient)))
+      .method(OAuthRepo, 'createConnection', control.once(recorded('connection', undefined)))
+      .method(OAuthRepo, 'createCode', control.once(recorded('code', undefined)))
+      .method(OAuthRepo, 'revokeSupersededConnectionTokens', control.once(recorded('supersede-tokens', undefined)))
+      .method(OAuthRepo, 'revokeSupersededConnections', control.once(recorded('supersede-connections', undefined)))
+      .method(OAuthRepo, 'revokeConnection', control.never())
+      .method(ConnectExecutorRepo, 'findByExecutorId', control.never())
       .build();
-    const response = await env.dinner.request({
+    const response = await env.request({
       method: 'POST',
       path: '/oauth/consent/approve',
       headers: authedHeaders,
@@ -152,23 +134,20 @@ describe('oauth authorize deep flows through testDinner', () => {
       'connection', 'code', 'supersede-tokens', 'supersede-connections',
     ]);
     await env.verify();
-    await env.dispose();
-  });
+  }));
 
-  it('approve compensates: a failed code issuance revokes the fresh connection', async () => {
-    const env = await base()
-      .methods([
-        ...sessionStubs(),
-        [OAuthRepo, {
-          findClientById: control.returns(Promise.resolve(dcrClient)),
-          createConnection: control.once(control.returns(Promise.resolve(undefined))),
-          createCode: control.once(control.throws(new Error('code write failed'))),
-          revokeConnection: control.once(control.returns(Promise.resolve(undefined))),
-          revokeSupersededConnections: control.never(),
-        }],
-      ])
+  it('approve compensates: a failed code issuance revokes the fresh connection', resourceCase(async () => {
+    const env = await testApp(CONFIG).select({ server: { module: ['oauthAuthorization'] } })
+      .method(ConnectBrowserSessionRepo, 'findByTokenHash', control.once(control.returns(Promise.resolve(activeSession))))
+      .method(ConnectBrowserSessionRepo, 'touchSession', control.returns(Promise.resolve(undefined)))
+      .method(ConnectAccountRepo, 'findByUserId', control.once(control.returns(Promise.resolve(activeAccount))))
+      .method(OAuthRepo, 'findClientById', control.returns(Promise.resolve(dcrClient)))
+      .method(OAuthRepo, 'createConnection', control.once(control.returns(Promise.resolve(undefined))))
+      .method(OAuthRepo, 'createCode', control.once(control.throws(new Error('code write failed'))))
+      .method(OAuthRepo, 'revokeConnection', control.once(control.returns(Promise.resolve(undefined))))
+      .method(OAuthRepo, 'revokeSupersededConnections', control.never())
       .build();
-    const response = await env.dinner.request({
+    const response = await env.request({
       method: 'POST',
       path: '/oauth/consent/approve',
       headers: authedHeaders,
@@ -179,21 +158,19 @@ describe('oauth authorize deep flows through testDinner', () => {
       },
     });
     expect(response.status).toBe(500);
+    await response.body?.cancel(); // Status-only assertion still owns its HTTP body lease.
     await env.verify();
-    await env.dispose();
-  });
+  }));
 
-  it('approve rejects an approved scope that escalates read to read_write', async () => {
-    const env = await base()
-      .methods([
-        ...sessionStubs(),
-        [OAuthRepo, {
-          findClientById: control.returns(Promise.resolve(dcrClient)),
-          createConnection: control.never(),
-        }],
-      ])
+  it('approve rejects an approved scope that escalates read to read_write', resourceCase(async () => {
+    const env = await testApp(CONFIG).select({ server: { module: ['oauthAuthorization'] } })
+      .method(ConnectBrowserSessionRepo, 'findByTokenHash', control.once(control.returns(Promise.resolve(activeSession))))
+      .method(ConnectBrowserSessionRepo, 'touchSession', control.returns(Promise.resolve(undefined)))
+      .method(ConnectAccountRepo, 'findByUserId', control.once(control.returns(Promise.resolve(activeAccount))))
+      .method(OAuthRepo, 'findClientById', control.returns(Promise.resolve(dcrClient)))
+      .method(OAuthRepo, 'createConnection', control.never())
       .build();
-    const response = await env.dinner.request({
+    const response = await env.request({
       method: 'POST',
       path: '/oauth/consent/approve',
       headers: authedHeaders,
@@ -209,31 +186,24 @@ describe('oauth authorize deep flows through testDinner', () => {
       message: 'Approved scope exceeds the requested scope',
     });
     await env.verify();
-    await env.dispose();
-  });
+  }));
 
-  it('GET /oauth/consent/context projects the client and live executor presence', async () => {
-    const env = await base()
-      .methods([
-        ...sessionStubs(),
-        [OAuthRepo, {
-          findClientById: control.returns(Promise.resolve(dcrClient)),
-        }],
-        [ConnectExecutorRepo, {
-          listByOwner: control.once(control.returns(Promise.resolve([
-            executor,
-            { ...executor, executor_id: 'exe_pending', state: 'pending' },
-          ]))),
-        }],
-        [RemoteToolDispatchService, {
-          presenceDetail: control.once(control.returns(Promise.resolve({
-            state: 'online',
-            workspaces: [{ workspaceId: 'ws_1', displayName: 'Repo', state: 'ready' }],
-          }))),
-        }],
-      ])
+  it('GET /oauth/consent/context projects the client and live executor presence', resourceCase(async () => {
+    const env = await testApp(CONFIG).select({ server: { module: ['oauthAuthorization'] } })
+      .method(ConnectBrowserSessionRepo, 'findByTokenHash', control.once(control.returns(Promise.resolve(activeSession))))
+      .method(ConnectBrowserSessionRepo, 'touchSession', control.returns(Promise.resolve(undefined)))
+      .method(ConnectAccountRepo, 'findByUserId', control.once(control.returns(Promise.resolve(activeAccount))))
+      .method(OAuthRepo, 'findClientById', control.returns(Promise.resolve(dcrClient)))
+      .method(ConnectExecutorRepo, 'listByOwner', control.once(control.returns(Promise.resolve([
+        executor,
+        { ...executor, executor_id: 'exe_pending', state: 'pending' },
+      ]))))
+      .method(RemoteToolDispatchService, 'presenceDetail', control.once(control.returns(Promise.resolve({
+        state: 'online',
+        workspaces: [{ workspaceId: 'ws_1', displayName: 'Repo', state: 'ready' }],
+      }))))
       .build();
-    const response = await env.dinner.request({
+    const response = await env.request({
       method: 'GET',
       path: '/oauth/consent/context',
       query: { sessionId: 'ses_1', ...validParams },
@@ -254,23 +224,18 @@ describe('oauth authorize deep flows through testDinner', () => {
       }],
     });
     await env.verify();
-    await env.dispose();
-  });
+  }));
 
-  it('context with a null presence detail degrades the executor to offline', async () => {
-    const env = await base()
-      .methods([
-        ...sessionStubs(),
-        [OAuthRepo, { findClientById: control.returns(Promise.resolve({ ...dcrClient, client_name: '  ' })) }],
-        [ConnectExecutorRepo, {
-          listByOwner: control.once(control.returns(Promise.resolve([executor]))),
-        }],
-        [RemoteToolDispatchService, {
-          presenceDetail: control.once(control.returns(Promise.resolve(null))),
-        }],
-      ])
+  it('context with a null presence detail degrades the executor to offline', resourceCase(async () => {
+    const env = await testApp(CONFIG).select({ server: { module: ['oauthAuthorization'] } })
+      .method(ConnectBrowserSessionRepo, 'findByTokenHash', control.once(control.returns(Promise.resolve(activeSession))))
+      .method(ConnectBrowserSessionRepo, 'touchSession', control.returns(Promise.resolve(undefined)))
+      .method(ConnectAccountRepo, 'findByUserId', control.once(control.returns(Promise.resolve(activeAccount))))
+      .method(OAuthRepo, 'findClientById', control.returns(Promise.resolve({ ...dcrClient, client_name: '  ' })))
+      .method(ConnectExecutorRepo, 'listByOwner', control.once(control.returns(Promise.resolve([executor]))))
+      .method(RemoteToolDispatchService, 'presenceDetail', control.once(control.returns(Promise.resolve(null))))
       .build();
-    const response = await env.dinner.request({
+    const response = await env.request({
       method: 'GET',
       path: '/oauth/consent/context',
       query: { sessionId: 'ses_1', ...validParams },
@@ -287,17 +252,16 @@ describe('oauth authorize deep flows through testDinner', () => {
       workspaces: [],
     }]);
     await env.verify();
-    await env.dispose();
-  });
+  }));
 
-  it('context failures inside the service map to a 500 JSON error', async () => {
-    const env = await base()
-      .methods([
-        ...sessionStubs(),
-        [OAuthRepo, { findClientById: control.once(control.throws(new Error('db down'))) }],
-      ])
+  it('context failures inside the service map to a 500 JSON error', resourceCase(async () => {
+    const env = await testApp(CONFIG).select({ server: { module: ['oauthAuthorization'] } })
+      .method(ConnectBrowserSessionRepo, 'findByTokenHash', control.once(control.returns(Promise.resolve(activeSession))))
+      .method(ConnectBrowserSessionRepo, 'touchSession', control.returns(Promise.resolve(undefined)))
+      .method(ConnectAccountRepo, 'findByUserId', control.once(control.returns(Promise.resolve(activeAccount))))
+      .method(OAuthRepo, 'findClientById', control.once(control.throws(new Error('db down'))))
       .build();
-    const response = await env.dinner.request({
+    const response = await env.request({
       method: 'GET',
       path: '/oauth/consent/context',
       query: { sessionId: 'ses_1', ...validParams },
@@ -309,10 +273,9 @@ describe('oauth authorize deep flows through testDinner', () => {
       message: 'Could not load authorization context',
     });
     await env.verify();
-    await env.dispose();
-  });
+  }));
 
-  it('validate: missing code_challenge, bad method, bad resource, bad scope each redirect with the right error', async () => {
+  it('validate: missing code_challenge, bad method, bad resource, bad scope each redirect with the right error', resourceCase(async () => {
     const cases = [
       { override: { code_challenge: '' }, error: 'invalid_request' },
       { override: { code_challenge_method: 'plain' }, error: 'invalid_request' },
@@ -320,12 +283,10 @@ describe('oauth authorize deep flows through testDinner', () => {
       { override: { scope: 'kazibee:admin' }, error: 'invalid_scope' },
     ];
     for (const { override, error } of cases) {
-      const env = await base()
-        .methods([
-          [OAuthRepo, { findClientById: control.returns(Promise.resolve(dcrClient)) }],
-        ])
+      const env = await testApp(CONFIG).select({ server: { module: ['oauthAuthorization'] } })
+        .method(OAuthRepo, 'findClientById', control.returns(Promise.resolve(dcrClient)))
         .build();
-      const response = await env.dinner.request({
+      const response = await env.request({
         method: 'GET',
         path: '/oauth/authorize',
         query: { ...validParams, ...override },
@@ -334,95 +295,74 @@ describe('oauth authorize deep flows through testDinner', () => {
       const url = new URL(response.headers.get('location') as string);
       expect(url.searchParams.get('error')).toBe(error);
       expect(url.searchParams.get('state')).toBe('state-123');
-      await env.dispose();
+      await response.body?.cancel();
     }
-  });
+  }));
 
-  it('validate: an unregistered redirect_uri renders the plain 400 page, never a redirect', async () => {
-    const env = await base()
-      .methods([
-        [OAuthRepo, { findClientById: control.returns(Promise.resolve(dcrClient)) }],
-      ])
+  it('validate: an unregistered redirect_uri renders the plain 400 page, never a redirect', resourceCase(async () => {
+    const env = await testApp(CONFIG).select({ server: { module: ['oauthAuthorization'] } })
+      .method(OAuthRepo, 'findClientById', control.returns(Promise.resolve(dcrClient)))
       .build();
-    const response = await env.dinner.request({
+    const response = await env.request({
       method: 'GET',
       path: '/oauth/authorize',
       query: { ...validParams, redirect_uri: 'https://evil.example/callback' },
     });
     expect(response.status).toBe(400);
     expect(await response.text()).toContain('invalid_request');
-    await env.dispose();
-  });
+  }));
 
-  it('validate: a loopback redirect matches its registration ignoring the ephemeral port', async () => {
-    const env = await base()
-      .methods([
-        [OAuthRepo, { findClientById: control.returns(Promise.resolve(dcrClient)) }],
-      ])
+  it('validate: a loopback redirect matches its registration ignoring the ephemeral port', resourceCase(async () => {
+    const env = await testApp(CONFIG).select({ server: { module: ['oauthAuthorization'] } })
+      .method(OAuthRepo, 'findClientById', control.returns(Promise.resolve(dcrClient)))
       .build();
-    const response = await env.dinner.request({
+    const response = await env.request({
       method: 'GET',
       path: '/oauth/authorize',
       query: { ...validParams, redirect_uri: 'http://127.0.0.1:53211/callback' },
     });
     expect(response.status).toBe(200);
     expect(await response.text()).toContain('<div id="app">');
-    await env.dispose();
-  });
+  }));
 
-  it('an https client_id is resolved via CIMD fetch, cached, and serves the consent shell', async () => {
+  it('an https client_id is resolved via CIMD fetch, cached, and serves the consent shell', resourceCase(async () => {
     const CIMD_ID = 'https://client.example/oauth-client.json';
     const metadata = {
       client_id: CIMD_ID,
       client_name: 'CIMD Client',
       redirect_uris: [REDIRECT_URI],
     };
-    vi.stubGlobal('fetch', vi.fn(async (input: unknown) => {
-      expect(String(input)).toBe(CIMD_ID);
-      return new Response(JSON.stringify(metadata), {
-        status: 200,
-        headers: { 'content-type': 'application/json' },
-      });
-    }));
-    const env = await base()
-      .methods([
-        [OAuthRepo, {
-          findClientById: control.once(control.returns(Promise.resolve(null))),
-          createClient: control.once(control.returns(Promise.resolve(undefined))),
-        }],
-      ])
+    const env = await testApp(CONFIG).select({ server: { module: ['oauthAuthorization'] } })
+      .use(cimdResponse(jsonResponse(metadata)))
+      .method(OAuthRepo, 'findClientById', control.once(control.returns(Promise.resolve(null))))
+      .method(OAuthRepo, 'createClient', control.once(control.returns(Promise.resolve(undefined))))
       .build();
-    const response = await env.dinner.request({
+    const response = await env.request({
       method: 'GET',
       path: '/oauth/authorize',
       query: { ...validParams, client_id: CIMD_ID },
     });
     expect(response.status).toBe(200);
     expect(await response.text()).toContain('<div id="app">');
+    expect(control.inspect(env, OAuthClientMetadataClient, 'request').calls.map((call) => String(call.args[0])))
+      .toEqual([CIMD_ID]);
     await env.verify();
-    await env.dispose();
-  });
+  }));
 
-  it('CIMD resolution failures (non-2xx, mismatched id, thrown fetch) are all invalid_client', async () => {
+  it('CIMD resolution failures (non-2xx, mismatched id, thrown fetch) are all invalid_client', resourceCase(async () => {
     const CIMD_ID = 'https://client.example/oauth-client.json';
-    const attempts: Array<() => Promise<Response>> = [
-      async () => new Response('nope', { status: 404 }),
-      async () => new Response(JSON.stringify({ client_id: 'https://other.example', redirect_uris: [REDIRECT_URI] }), {
-        status: 200, headers: { 'content-type': 'application/json' },
-      }),
-      async () => { throw new Error('network unreachable'); },
+    const attempts = [
+      cimdResponse(new Response('nope', { status: 404 })),
+      cimdResponse(jsonResponse({ client_id: 'https://other.example', redirect_uris: [REDIRECT_URI] })),
+      testStub().method(OAuthClientMetadataClient, 'request', control.once(control.throws(new Error('network unreachable')))),
     ];
     for (const attempt of attempts) {
-      vi.stubGlobal('fetch', vi.fn(attempt));
-      const env = await base()
-        .methods([
-          [OAuthRepo, {
-            findClientById: control.once(control.returns(Promise.resolve(null))),
-            createClient: control.never(),
-          }],
-        ])
+      const env = await testApp(CONFIG).select({ server: { module: ['oauthAuthorization'] } })
+        .use(attempt)
+        .method(OAuthRepo, 'findClientById', control.once(control.returns(Promise.resolve(null))))
+        .method(OAuthRepo, 'createClient', control.never())
         .build();
-      const response = await env.dinner.request({
+      const response = await env.request({
         method: 'GET',
         path: '/oauth/authorize',
         query: { ...validParams, client_id: CIMD_ID },
@@ -430,38 +370,33 @@ describe('oauth authorize deep flows through testDinner', () => {
       expect(response.status).toBe(400);
       expect(await response.text()).toContain('invalid_client');
       await env.verify();
-      await env.dispose();
-      vi.unstubAllGlobals();
     }
-  });
+  }));
 
-  it('a cached CIMD client resolves without any fetch; a non-oac non-https id never queries', async () => {
+  it('a cached CIMD client resolves without any fetch; a non-oac non-https id never queries', resourceCase(async () => {
     const CIMD_ID = 'https://client.example/oauth-client.json';
-    vi.stubGlobal('fetch', vi.fn(async () => { throw new Error('must not fetch'); }));
-    const env = await base()
-      .methods([
-        [OAuthRepo, {
-          findClientById: control.once(control.returns(Promise.resolve({
-            ...dcrClient,
-            client_id: CIMD_ID,
-            kind: 'cimd',
-          }))),
-        }],
-      ])
+    const env = await testApp(CONFIG).select({ server: { module: ['oauthAuthorization'] } })
+      .method(OAuthClientMetadataClient, 'request', control.never())
+      .method(OAuthRepo, 'findClientById', control.once(control.returns(Promise.resolve({
+        ...dcrClient,
+        client_id: CIMD_ID,
+        kind: 'cimd',
+      }))))
       .build();
-    const cached = await env.dinner.request({
+    const cached = await env.request({
       method: 'GET',
       path: '/oauth/authorize',
       query: { ...validParams, client_id: CIMD_ID },
     });
     expect(cached.status).toBe(200);
+    await cached.body?.cancel(); // Status-only assertion still owns its HTTP body lease.
     await env.verify();
-    await env.dispose();
 
-    const env2 = await base()
-      .methods([ [OAuthRepo, { findClientById: control.never() }] ])
+    const env2 = await testApp(CONFIG).select({ server: { module: ['oauthAuthorization'] } })
+      .method(OAuthClientMetadataClient, 'request', control.never())
+      .method(OAuthRepo, 'findClientById', control.never())
       .build();
-    const bad = await env2.dinner.request({
+    const bad = await env2.request({
       method: 'GET',
       path: '/oauth/authorize',
       query: { ...validParams, client_id: 'ftp://weird' },
@@ -469,22 +404,18 @@ describe('oauth authorize deep flows through testDinner', () => {
     expect(bad.status).toBe(400);
     expect(await bad.text()).toContain('invalid_client');
     await env2.verify();
-    await env2.dispose();
-  });
+  }));
 
-  it('a validate() crash on GET /oauth/authorize renders the plain 500 error page', async () => {
-    const env = await base()
-      .methods([
-        [OAuthRepo, { findClientById: control.once(control.throws(new Error('db down'))) }],
-      ])
+  it('a validate() crash on GET /oauth/authorize renders the plain 500 error page', resourceCase(async () => {
+    const env = await testApp(CONFIG).select({ server: { module: ['oauthAuthorization'] } })
+      .method(OAuthRepo, 'findClientById', control.once(control.throws(new Error('db down'))))
       .build();
-    const response = await env.dinner.request({
+    const response = await env.request({
       method: 'GET',
       path: '/oauth/authorize',
       query: validParams,
     });
     expect(response.status).toBe(500);
     expect(await response.text()).toContain('server_error');
-    await env.dispose();
-  });
+  }));
 });

@@ -1,18 +1,36 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
-import type DownloadService from "../../../src/server/services/download_service";
+/**
+ * UpdateFeedService over the original-config root testApp (updates module,
+ * no server, no database). The service is the real production instance
+ * resolved from the built root; its DownloadService boundary is controlled
+ * through singular method replacements on the actual token and observed
+ * through the watched histories. Cases that pin the expiry override set
+ * process.env before the root is built (the service reads it at
+ * construction). resourceCase owns environment cleanup. normalizeUpdateArch is
+ * a pure export and needs no application.
+ */
+import { afterEach, describe, expect, it } from "vitest";
+import path from "node:path";
+import { testApp } from "@noego/app";
+import { resourceCase, test as control, testStub } from "@noego/testing";
+import DownloadService from "../../../src/server/services/download_service";
 import type { VersionsResult } from "../../../src/server/services/download_service";
 import UpdateFeedService, { normalizeUpdateArch } from "../../../src/server/services/update_feed_service";
 import { NotFoundError } from "../../../src/server/errors/domain_errors";
 
-function stubDownloadService(versions: VersionsResult, url = "https://signed.example/download.zip") {
-  const createDownload = vi.fn(async () => ({ key: "app/v1.4.2/Kazibee-mac-arm64.zip", url }));
-  const listVersions = vi.fn(async () => versions);
-  return {
-    service: { createDownload, listVersions } as unknown as DownloadService,
-    createDownload,
-    listVersions,
-  };
-}
+const CONFIG = path.resolve(__dirname, "../../../noego.config.yml");
+const SELECT = { server: { module: ["updates"] } } as const;
+
+type AppEnv = Awaited<ReturnType<ReturnType<typeof testApp>["build"]>>;
+
+// DownloadService boundary: a reusable replacement description (singular
+// method controls on the actual token), not an application constructor.
+const downloads = (versions: VersionsResult, url = "https://signed.example/download.zip") => testStub()
+  .method(DownloadService, "createDownload", control.returns(Promise.resolve({ key: "app/v1.4.2/Kazibee-mac-arm64.zip", url })))
+  .method(DownloadService, "listVersions", control.returns(Promise.resolve(versions)));
+
+// Recorded argument lists of one watched DownloadService method.
+const calls = (env: AppEnv, method: string) =>
+  control.inspect(env, DownloadService, method).calls.map((call) => call.args);
 
 function versionsFixture(): VersionsResult {
   return {
@@ -46,9 +64,9 @@ describe("UpdateFeedService", () => {
     delete process.env.KAZIBEE_UPDATE_FEED_EXPIRES_SECONDS;
   });
 
-  it("builds a Squirrel.Mac feed for the newest non-latest version (arm64)", async () => {
-    const { service, createDownload } = stubDownloadService(versionsFixture());
-    const feed = await new UpdateFeedService(service).createFeed("arm64");
+  it("builds a Squirrel.Mac feed for the newest non-latest version (arm64)", resourceCase(async (scope) => {
+    const env = scope.environment(await testApp(CONFIG).select(SELECT).use(downloads(versionsFixture())).build());
+    const feed = await (await env.get<UpdateFeedService>(UpdateFeedService)).createFeed("arm64");
 
     expect(feed.currentRelease).toBe("1.4.2");
     expect(feed.releases).toHaveLength(1);
@@ -60,23 +78,24 @@ describe("UpdateFeedService", () => {
       pub_date: "2026-08-09T00:00:00.000Z",
       notes: "",
     });
-    expect(createDownload).toHaveBeenCalledWith("app", "v1.4.2", "Kazibee-mac-arm64.zip", { expiresIn: 3600 });
-  });
+    expect(calls(env, "createDownload")).toContainEqual(["app", "v1.4.2", "Kazibee-mac-arm64.zip", { expiresIn: 3600 }]);
+  }));
 
-  it("selects the x64 archive for x64", async () => {
-    const { service, createDownload } = stubDownloadService(versionsFixture());
-    await new UpdateFeedService(service).createFeed("x64");
+  it("selects the x64 archive for x64", resourceCase(async (scope) => {
+    const env = scope.environment(await testApp(CONFIG).select(SELECT).use(downloads(versionsFixture())).build());
+    await (await env.get<UpdateFeedService>(UpdateFeedService)).createFeed("x64");
 
-    expect(createDownload).toHaveBeenCalledWith("app", "v1.4.2", "Kazibee-mac-x64.zip", { expiresIn: 3600 });
-  });
+    expect(calls(env, "createDownload")).toContainEqual(["app", "v1.4.2", "Kazibee-mac-x64.zip", { expiresIn: 3600 }]);
+  }));
 
-  it("throws NotFoundError when no versions exist", async () => {
-    const { service } = stubDownloadService({ versions: [] });
-    await expect(new UpdateFeedService(service).createFeed("arm64")).rejects.toBeInstanceOf(NotFoundError);
-  });
+  it("throws NotFoundError when no versions exist", resourceCase(async (scope) => {
+    const env = scope.environment(await testApp(CONFIG).select(SELECT).use(downloads({ versions: [] })).build());
+    const service = await env.get<UpdateFeedService>(UpdateFeedService);
+    await expect(service.createFeed("arm64")).rejects.toBeInstanceOf(NotFoundError);
+  }));
 
-  it("throws NotFoundError when the newest version has no matching mac zip", async () => {
-    const { service } = stubDownloadService({
+  it("throws NotFoundError when the newest version has no matching mac zip", resourceCase(async (scope) => {
+    const env = scope.environment(await testApp(CONFIG).select(SELECT).use(downloads({
       versions: [
         {
           version: "v1.4.2",
@@ -86,12 +105,13 @@ describe("UpdateFeedService", () => {
           ],
         },
       ],
-    });
-    await expect(new UpdateFeedService(service).createFeed("arm64")).rejects.toBeInstanceOf(NotFoundError);
-  });
+    })).build());
+    const service = await env.get<UpdateFeedService>(UpdateFeedService);
+    await expect(service.createFeed("arm64")).rejects.toBeInstanceOf(NotFoundError);
+  }));
 
-  it("falls back to the current time when the archive has no lastModified", async () => {
-    const { service } = stubDownloadService({
+  it("falls back to the current time when the archive has no lastModified", resourceCase(async (scope) => {
+    const env = scope.environment(await testApp(CONFIG).select(SELECT).use(downloads({
       versions: [
         {
           version: "v1.4.2",
@@ -100,29 +120,29 @@ describe("UpdateFeedService", () => {
           ],
         },
       ],
-    });
-    const feed = await new UpdateFeedService(service).createFeed("arm64");
+    })).build());
+    const feed = await (await env.get<UpdateFeedService>(UpdateFeedService)).createFeed("arm64");
 
     const pubDate = feed.releases[0].updateTo.pub_date;
     expect(Number.isNaN(Date.parse(pubDate))).toBe(false);
     expect(Math.abs(Date.now() - Date.parse(pubDate))).toBeLessThan(60_000);
-  });
+  }));
 
-  it("falls back to 3600 when KAZIBEE_UPDATE_FEED_EXPIRES_SECONDS is not a positive integer", async () => {
+  it("falls back to 3600 when KAZIBEE_UPDATE_FEED_EXPIRES_SECONDS is not a positive integer", resourceCase(async (scope) => {
     process.env.KAZIBEE_UPDATE_FEED_EXPIRES_SECONDS = "not-a-number";
-    const { service, createDownload } = stubDownloadService(versionsFixture());
-    await new UpdateFeedService(service).createFeed("arm64");
+    const env = scope.environment(await testApp(CONFIG).select(SELECT).use(downloads(versionsFixture())).build());
+    await (await env.get<UpdateFeedService>(UpdateFeedService)).createFeed("arm64");
 
-    expect(createDownload).toHaveBeenCalledWith("app", "v1.4.2", "Kazibee-mac-arm64.zip", { expiresIn: 3600 });
-  });
+    expect(calls(env, "createDownload")).toContainEqual(["app", "v1.4.2", "Kazibee-mac-arm64.zip", { expiresIn: 3600 }]);
+  }));
 
-  it("honours KAZIBEE_UPDATE_FEED_EXPIRES_SECONDS override", async () => {
+  it("honours KAZIBEE_UPDATE_FEED_EXPIRES_SECONDS override", resourceCase(async (scope) => {
     process.env.KAZIBEE_UPDATE_FEED_EXPIRES_SECONDS = "7200";
-    const { service, createDownload } = stubDownloadService(versionsFixture());
-    await new UpdateFeedService(service).createFeed("arm64");
+    const env = scope.environment(await testApp(CONFIG).select(SELECT).use(downloads(versionsFixture())).build());
+    await (await env.get<UpdateFeedService>(UpdateFeedService)).createFeed("arm64");
 
-    expect(createDownload).toHaveBeenCalledWith("app", "v1.4.2", "Kazibee-mac-arm64.zip", { expiresIn: 7200 });
-  });
+    expect(calls(env, "createDownload")).toContainEqual(["app", "v1.4.2", "Kazibee-mac-arm64.zip", { expiresIn: 7200 }]);
+  }));
 });
 
 describe("normalizeUpdateArch", () => {
@@ -157,42 +177,39 @@ describe("UpdateFeedService (win32)", () => {
     };
   }
 
-  function stubWindowsDownloadService(versions = windowsVersions()) {
-    const createDownload = vi.fn(async () => ({ key: "k", url: "https://signed.example/pkg.nupkg" }));
-    const listVersions = vi.fn(async () => versions);
-    const readItemText = vi.fn(async () => "HASH Kazibee-0.8.7-full.nupkg 100\n");
-    return {
-      service: { createDownload, listVersions, readItemText } as unknown as DownloadService,
-      createDownload,
-      readItemText,
-    };
-  }
+  // Windows DownloadService boundary description (createDownload, listVersions, readItemText).
+  const windowsDownloads = (versions = windowsVersions()) => testStub()
+    .method(DownloadService, "createDownload", control.returns(Promise.resolve({ key: "k", url: "https://signed.example/pkg.nupkg" })))
+    .method(DownloadService, "listVersions", control.returns(Promise.resolve(versions)))
+    .method(DownloadService, "readItemText", control.returns(Promise.resolve("HASH Kazibee-0.8.7-full.nupkg 100\n")));
 
-  it("serves the newest release's RELEASES manifest verbatim", async () => {
-    const { service, readItemText } = stubWindowsDownloadService();
-    const text = await new UpdateFeedService(service).createWindowsReleases("x64");
+  it("serves the newest release's RELEASES manifest verbatim", resourceCase(async (scope) => {
+    const env = scope.environment(await testApp(CONFIG).select(SELECT).use(windowsDownloads()).build());
+    const text = await (await env.get<UpdateFeedService>(UpdateFeedService)).createWindowsReleases("x64");
     expect(text).toBe("HASH Kazibee-0.8.7-full.nupkg 100\n");
-    expect(readItemText).toHaveBeenCalledWith("app", "v0.8.7", "RELEASES");
-  });
+    expect(calls(env, "readItemText")).toContainEqual(["app", "v0.8.7", "RELEASES"]);
+  }));
 
-  it("404s when the newest release has no RELEASES manifest", async () => {
-    const { service } = stubWindowsDownloadService({
+  it("404s when the newest release has no RELEASES manifest", resourceCase(async (scope) => {
+    const env = scope.environment(await testApp(CONFIG).select(SELECT).use(windowsDownloads({
       versions: [{ version: "v0.8.7", downloads: [{ name: "Kazibee-mac-arm64.zip", href: "#", size: 1, lastModified: null }] }],
-    });
-    await expect(new UpdateFeedService(service).createWindowsReleases("x64")).rejects.toBeInstanceOf(NotFoundError);
-  });
+    })).build());
+    const service = await env.get<UpdateFeedService>(UpdateFeedService);
+    await expect(service.createWindowsReleases("x64")).rejects.toBeInstanceOf(NotFoundError);
+  }));
 
-  it("presigns a nupkg from the version that contains it", async () => {
-    const { service, createDownload } = stubWindowsDownloadService();
-    const url = await new UpdateFeedService(service).createWindowsPackageDownload("x64", "Kazibee-0.8.7-full.nupkg");
+  it("presigns a nupkg from the version that contains it", resourceCase(async (scope) => {
+    const env = scope.environment(await testApp(CONFIG).select(SELECT).use(windowsDownloads()).build());
+    const url = await (await env.get<UpdateFeedService>(UpdateFeedService))
+      .createWindowsPackageDownload("x64", "Kazibee-0.8.7-full.nupkg");
     expect(url).toBe("https://signed.example/pkg.nupkg");
-    expect(createDownload).toHaveBeenCalledWith("app", "v0.8.7", "Kazibee-0.8.7-full.nupkg", { expiresIn: 3600 });
-  });
+    expect(calls(env, "createDownload")).toContainEqual(["app", "v0.8.7", "Kazibee-0.8.7-full.nupkg", { expiresIn: 3600 }]);
+  }));
 
-  it("rejects non-nupkg package names and unknown packages", async () => {
-    const { service } = stubWindowsDownloadService();
-    const feed = new UpdateFeedService(service);
+  it("rejects non-nupkg package names and unknown packages", resourceCase(async (scope) => {
+    const env = scope.environment(await testApp(CONFIG).select(SELECT).use(windowsDownloads()).build());
+    const feed = await env.get<UpdateFeedService>(UpdateFeedService);
     await expect(feed.createWindowsPackageDownload("x64", "evil.exe")).rejects.toThrow("Invalid update package name");
     await expect(feed.createWindowsPackageDownload("x64", "missing-full.nupkg")).rejects.toBeInstanceOf(NotFoundError);
-  });
+  }));
 });

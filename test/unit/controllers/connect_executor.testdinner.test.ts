@@ -1,30 +1,26 @@
 /**
- * Connect executor routes through testDinner (no server, no database).
+ * Connect executor routes through root testApp over the original
+ * configuration (no server, no database). Historical case names remain stable.
  *
- * Real production source (src/server/openapi/connect/executors.yaml), the
+ * Real production executors.yaml module selection (connectExecutors), the
  * real controller → parser/resolver → logic → service graph, executed
- * in-process. Only the SQL repo boundary is stubbed. Endpoints whose success
- * path runs inside a sqlstack @transaction (createClaim, decideClaim,
- * rename, revoke) are exercised elsewhere against a migrated database and
- * are intentionally not driven to their transactional branch here.
+ * in-process. Only the SQL repo boundary is replaced through singular method
+ * controls. Endpoints whose success path runs inside a sqlstack @transaction
+ * (createClaim, decideClaim, rename, revoke) are exercised elsewhere against a
+ * migrated database and are intentionally not driven to their transactional
+ * branch here. resourceCase owns environment cleanup.
  */
 import { describe, it, expect } from 'vitest';
-import { readFileSync } from 'node:fs';
 import { createHash } from 'node:crypto';
 import path from 'node:path';
-import { load as parseYaml } from 'js-yaml';
-import { testDinner } from '@noego/dinner/testing';
-import { test as control } from '@noego/testing';
-import ConnectExecutorController from '../../../src/server/controller/connect_executor.controller';
-import ConnectChannelController from '../../../src/server/controller/connect_channel.controller';
+import { testApp } from '@noego/app';
+import { test as control, testStub, resourceCase } from '@noego/testing';
 import ConnectExecutorClaimRepo from '../../../src/server/repo/connect_executor_claim_repo';
 import ConnectExecutorRepo from '../../../src/server/repo/connect_executor_repo';
 import ConnectBrowserSessionRepo from '../../../src/server/repo/connect_browser_session_repo';
 import ConnectAccountRepo from '../../../src/server/repo/connect_account_repo';
 
-const executorsSource = parseYaml(
-  readFileSync(path.resolve(__dirname, '../../../src/server/openapi/connect/executors.yaml'), 'utf8')
-) as Record<string, unknown>;
+const CONFIG = path.resolve(__dirname, '../../../noego.config.yml');
 
 const sha256 = (value: string) => createHash('sha256').update(value, 'utf8').digest('hex');
 
@@ -96,37 +92,19 @@ const accountRow = () => ({
 });
 
 // Session-authenticated repos: cookie hash → session row → account row.
-const browserSessionMethods = () => ([
-  [ConnectBrowserSessionRepo, {
-    findByTokenHash: control.returns(Promise.resolve(sessionRow())),
-    touchSession: control.returns(Promise.resolve(undefined)),
-  }],
-  [ConnectAccountRepo, {
-    findByUserId: control.returns(Promise.resolve(accountRow())),
-  }],
-] as const);
-
-const base = () =>
-  testDinner(executorsSource)
-    .select({ module: 'connectExecutors' })
-    .controllers({
-      'connect_executor.controller': ConnectExecutorController,
-      'connect_channel.controller': ConnectChannelController,
-    })
-    // Legacy {req,res} controllers: compat hooks with default real-IoC
-    // construction (per-request child scope, disposed after the request).
-    .hooks({});
+// A reusable replacement description (same tokens/slots/descriptors/order as
+// before), not an application constructor.
+const browserSession = () => testStub()
+  .method(ConnectBrowserSessionRepo, 'findByTokenHash', control.returns(Promise.resolve(sessionRow())))
+  .method(ConnectBrowserSessionRepo, 'touchSession', control.returns(Promise.resolve(undefined)))
+  .method(ConnectAccountRepo, 'findByUserId', control.returns(Promise.resolve(accountRow())));
 
 describe('connect executor routes through testDinner (no server, no database)', () => {
-  it('GET claim status reports pending when the bootstrap token matches the claim', async () => {
-    const env = await base()
-      .methods([
-        [ConnectExecutorClaimRepo, {
-          findByClaimId: control.once(control.returns(Promise.resolve(pendingClaim()))),
-        }],
-      ])
+  it('GET claim status reports pending when the bootstrap token matches the claim', resourceCase(async () => {
+    const env = await testApp(CONFIG).select({ server: { module: ['connectExecutors'] } })
+      .method(ConnectExecutorClaimRepo, 'findByClaimId', control.once(control.returns(Promise.resolve(pendingClaim()))))
       .build();
-    const response = await env.dinner.request({
+    const response = await env.request({
       method: 'GET',
       path: `/v1/connect/executors/claims/${CLAIM_ID}/status`,
       headers: { 'x-kazi-bootstrap-token': BOOTSTRAP_TOKEN },
@@ -141,18 +119,13 @@ describe('connect executor routes through testDinner (no server, no database)', 
       correlationId: CORRELATION_ID,
     });
     await env.verify();
-    await env.dispose();
-  });
+  }));
 
-  it('GET claim status answers 401 revoked when the bootstrap token does not match', async () => {
-    const env = await base()
-      .methods([
-        [ConnectExecutorClaimRepo, {
-          findByClaimId: control.once(control.returns(Promise.resolve(pendingClaim()))),
-        }],
-      ])
+  it('GET claim status answers 401 revoked when the bootstrap token does not match', resourceCase(async () => {
+    const env = await testApp(CONFIG).select({ server: { module: ['connectExecutors'] } })
+      .method(ConnectExecutorClaimRepo, 'findByClaimId', control.once(control.returns(Promise.resolve(pendingClaim()))))
       .build();
-    const response = await env.dinner.request({
+    const response = await env.request({
       method: 'GET',
       path: `/v1/connect/executors/claims/${CLAIM_ID}/status`,
       headers: { 'x-kazi-bootstrap-token': 'X'.repeat(43) },
@@ -161,18 +134,13 @@ describe('connect executor routes through testDinner (no server, no database)', 
     expect(response.status).toBe(401);
     expect(await response.json()).toMatchObject({ kind: 'error', code: 'revoked' });
     await env.verify();
-    await env.dispose();
-  });
+  }));
 
-  it('GET claim status answers 404 for an unknown claim', async () => {
-    const env = await base()
-      .methods([
-        [ConnectExecutorClaimRepo, {
-          findByClaimId: control.once(control.returns(Promise.resolve(null))),
-        }],
-      ])
+  it('GET claim status answers 404 for an unknown claim', resourceCase(async () => {
+    const env = await testApp(CONFIG).select({ server: { module: ['connectExecutors'] } })
+      .method(ConnectExecutorClaimRepo, 'findByClaimId', control.once(control.returns(Promise.resolve(null))))
       .build();
-    const response = await env.dinner.request({
+    const response = await env.request({
       method: 'GET',
       path: `/v1/connect/executors/claims/${CLAIM_ID}/status`,
       headers: { 'x-kazi-bootstrap-token': BOOTSTRAP_TOKEN },
@@ -181,22 +149,15 @@ describe('connect executor routes through testDinner (no server, no database)', 
     expect(response.status).toBe(404);
     expect(await response.json()).toMatchObject({ kind: 'error', code: 'invalid-envelope' });
     await env.verify();
-    await env.dispose();
-  });
+  }));
 
-  it('GET claim review returns the safe review payload for a signed-in owner', async () => {
-    const env = await base()
-      .methods([
-        ...browserSessionMethods(),
-        [ConnectExecutorClaimRepo, {
-          findByClaimId: control.once(control.returns(Promise.resolve(pendingClaim()))),
-        }],
-        [ConnectExecutorRepo, {
-          findByExecutorId: control.once(control.returns(Promise.resolve(executorRow()))),
-        }],
-      ])
+  it('GET claim review returns the safe review payload for a signed-in owner', resourceCase(async () => {
+    const env = await testApp(CONFIG).select({ server: { module: ['connectExecutors'] } })
+      .use(browserSession())
+      .method(ConnectExecutorClaimRepo, 'findByClaimId', control.once(control.returns(Promise.resolve(pendingClaim()))))
+      .method(ConnectExecutorRepo, 'findByExecutorId', control.once(control.returns(Promise.resolve(executorRow()))))
       .build();
-    const response = await env.dinner.request({
+    const response = await env.request({
       method: 'GET',
       path: `/v1/connect/executors/claims/review/${CLAIM_ID}`,
       headers: { cookie: `kazi_connect_session=${SESSION_TOKEN}` },
@@ -217,19 +178,14 @@ describe('connect executor routes through testDinner (no server, no database)', 
       correlationId: CORRELATION_ID,
     });
     await env.verify();
-    await env.dispose();
-  });
+  }));
 
-  it('GET executor list returns owner executors with live (offline) presence', async () => {
-    const env = await base()
-      .methods([
-        ...browserSessionMethods(),
-        [ConnectExecutorRepo, {
-          listByOwner: control.once(control.returns(Promise.resolve([executorRow()]))),
-        }],
-      ])
+  it('GET executor list returns owner executors with live (offline) presence', resourceCase(async () => {
+    const env = await testApp(CONFIG).select({ server: { module: ['connectExecutors'] } })
+      .use(browserSession())
+      .method(ConnectExecutorRepo, 'listByOwner', control.once(control.returns(Promise.resolve([executorRow()]))))
       .build();
-    const response = await env.dinner.request({
+    const response = await env.request({
       method: 'GET',
       path: '/v1/connect/executors/',
       headers: { cookie: `kazi_connect_session=${SESSION_TOKEN}` },
@@ -250,21 +206,14 @@ describe('connect executor routes through testDinner (no server, no database)', 
       correlationId: CORRELATION_ID,
     });
     await env.verify();
-    await env.dispose();
-  });
+  }));
 
-  it('GET executor list answers 401 revoked when the session cookie resolves to nothing', async () => {
-    const env = await base()
-      .methods([
-        [ConnectBrowserSessionRepo, {
-          findByTokenHash: control.once(control.returns(Promise.resolve(null))),
-        }],
-        [ConnectExecutorRepo, {
-          listByOwner: control.never(),
-        }],
-      ])
+  it('GET executor list answers 401 revoked when the session cookie resolves to nothing', resourceCase(async () => {
+    const env = await testApp(CONFIG).select({ server: { module: ['connectExecutors'] } })
+      .method(ConnectBrowserSessionRepo, 'findByTokenHash', control.once(control.returns(Promise.resolve(null))))
+      .method(ConnectExecutorRepo, 'listByOwner', control.never())
       .build();
-    const response = await env.dinner.request({
+    const response = await env.request({
       method: 'GET',
       path: '/v1/connect/executors/',
       headers: { cookie: `kazi_connect_session=${SESSION_TOKEN}` },
@@ -273,24 +222,21 @@ describe('connect executor routes through testDinner (no server, no database)', 
     expect(response.status).toBe(401);
     expect(await response.json()).toMatchObject({ kind: 'error', code: 'revoked' });
     await env.verify();
-    await env.dispose();
-  });
+  }));
 
-  it('GET executor list rejects a malformed sessionId as an invalid envelope (400)', async () => {
-    const env = await base()
-      .methods([
-        [ConnectBrowserSessionRepo, { findByTokenHash: control.never() }],
-        [ConnectExecutorRepo, { listByOwner: control.never() }],
-      ])
+  it('GET executor list rejects a malformed sessionId as an invalid envelope (400)', resourceCase(async () => {
+    const env = await testApp(CONFIG).select({ server: { module: ['connectExecutors'] } })
+      .method(ConnectBrowserSessionRepo, 'findByTokenHash', control.never())
+      .method(ConnectExecutorRepo, 'listByOwner', control.never())
       .build();
-    const response = await env.dinner.request({
+    const response = await env.request({
       method: 'GET',
       path: '/v1/connect/executors/',
       headers: { cookie: `kazi_connect_session=${SESSION_TOKEN}` },
       query: { sessionId: 'not-a-session', correlationId: CORRELATION_ID },
     });
     expect(response.status).toBe(400);
+    await response.body?.cancel(); // Status-only assertion still owns its HTTP body lease.
     await env.verify();
-    await env.dispose();
-  });
+  }));
 });

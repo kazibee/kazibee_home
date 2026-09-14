@@ -1,3 +1,7 @@
+import path from 'node:path';
+import { testApp } from '@noego/app';
+import { APP_CLIENT_RUNTIME, type AppClientRuntime } from '@noego/app/client';
+import { testStub, resourceCase } from '@noego/testing';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import ConnectDashboardController, {
   presentExecutor,
@@ -33,7 +37,7 @@ function dependencies(fetchMock = vi.fn(), sessionId: string | null = 'ses_12345
 afterEach(() => vi.restoreAllMocks());
 
 describe('ConnectDashboardController', () => {
-  it('uses registry-supplied presence and prioritizes revoked state', () => {
+  it('uses registry-supplied presence and prioritizes revoked state', resourceCase(async (_scope) => {
     expect(presentExecutor(online).statusLabel).toBe('Online');
     expect(presentExecutor({ ...online, online: false, presence: 'offline' }).statusLabel).toBe('Offline');
     expect(presentExecutor({ ...online, online: false, presence: 'stale' }).statusLabel).toBe('Stale');
@@ -41,9 +45,9 @@ describe('ConnectDashboardController', () => {
       statusLabel: 'Revoked',
       canManage: false,
     });
-  });
+  }));
 
-  it('covers loading to empty and populated list states', async () => {
+  it('covers loading to empty and populated list states', resourceCase(async (_scope) => {
     // refresh() loads executors then connections; route by URL, with the
     // executors payload changing between the first and second refresh.
     let executorCalls = 0;
@@ -62,7 +66,7 @@ describe('ConnectDashboardController', () => {
             ],
           });
     });
-    const controller = new ConnectDashboardController(dependencies(fetchMock));
+    const controller = await (await testApp(CONFIG).select({ client: { path: ["/connect"] } }).use(runtimeBoundary(dependencies(fetchMock))).build()).client!.get<ConnectDashboardController>(ConnectDashboardController);
     controller.initialize({ skipInitialLoad: true });
     const first = controller.input.refresh();
     expect(controller.data.status).toBe('loading');
@@ -71,37 +75,37 @@ describe('ConnectDashboardController', () => {
     expect(controller.data.executors).toEqual([]);
     await controller.input.refresh();
     expect(controller.data.executors.map((item) => item.statusLabel)).toEqual(['Online', 'Offline', 'Stale']);
-  });
+  }));
 
-  it('redirects signed-out and expired sessions through login', async () => {
+  it('redirects signed-out and expired sessions through login', resourceCase(async (_scope) => {
     const missingDeps = dependencies(vi.fn(), null);
-    const missing = new ConnectDashboardController(missingDeps);
+    const missing = await (await testApp(CONFIG).select({ client: { path: ["/connect"] } }).use(runtimeBoundary(missingDeps)).build()).client!.get<ConnectDashboardController>(ConnectDashboardController);
     missing.initialize({ skipInitialLoad: true });
     await missing.input.refresh();
     expect(missing.data.status).toBe('signed-out');
     expect(missingDeps.navigate).toHaveBeenCalledWith('/connect/login?returnTo=%2Fconnect');
 
     const expiredDeps = dependencies(vi.fn().mockResolvedValue(jsonResponse(401, { message: 'Unauthorized' })));
-    const expired = new ConnectDashboardController(expiredDeps);
+    const expired = await (await testApp(CONFIG).select({ client: { path: ["/connect"] } }).use(runtimeBoundary(expiredDeps)).build()).client!.get<ConnectDashboardController>(ConnectDashboardController);
     expired.initialize({ skipInitialLoad: true });
     await expired.input.refresh();
     expect(expiredDeps.clearSessionId).toHaveBeenCalled();
     expect(expiredDeps.navigate).toHaveBeenCalled();
-  });
+  }));
 
-  it('shows bounded list API errors and can retry', async () => {
+  it('shows bounded list API errors and can retry', resourceCase(async (_scope) => {
     const fetchMock = vi.fn().mockResolvedValue(jsonResponse(500, { message: 'Registry unavailable.' }));
-    const controller = new ConnectDashboardController(dependencies(fetchMock));
+    const controller = await (await testApp(CONFIG).select({ client: { path: ["/connect"] } }).use(runtimeBoundary(dependencies(fetchMock))).build()).client!.get<ConnectDashboardController>(ConnectDashboardController);
     controller.initialize({ skipInitialLoad: true });
     await controller.input.refresh();
     expect(controller.data.status).toBe('error');
     expect(controller.data.error).toBe('Registry unavailable.');
-  });
+  }));
 
-  it('renames with CSRF and updates its presentation model', async () => {
+  it('renames with CSRF and updates its presentation model', resourceCase(async (_scope) => {
     const renamed = { ...online, displayName: 'Studio Mac' };
     const fetchMock = vi.fn().mockResolvedValue(jsonResponse(200, { executor: renamed }));
-    const controller = new ConnectDashboardController(dependencies(fetchMock));
+    const controller = await (await testApp(CONFIG).select({ client: { path: ["/connect"] } }).use(runtimeBoundary(dependencies(fetchMock))).build()).client!.get<ConnectDashboardController>(ConnectDashboardController);
     controller.initialize({ executors: [online] });
     controller.input.openRename(online.executorId);
     controller.input.setRenameValue('Studio Mac');
@@ -113,13 +117,13 @@ describe('ConnectDashboardController', () => {
     expect(init.headers['x-csrf-token']).toBe('c'.repeat(43));
     const queryCorrelation = new URL(url, 'https://kazibee.test').searchParams.get('correlationId');
     expect(JSON.parse(init.body).correlationId).toBe(queryCorrelation);
-  });
+  }));
 
-  it('validates rename, handles action errors, and revokes without inferring presence', async () => {
+  it('validates rename, handles action errors, and revokes without inferring presence', resourceCase(async (_scope) => {
     const fetchMock = vi.fn()
       .mockResolvedValueOnce(jsonResponse(500, { message: 'Rename failed.' }))
       .mockResolvedValueOnce(jsonResponse(200, { state: 'revoked' }));
-    const controller = new ConnectDashboardController(dependencies(fetchMock));
+    const controller = await (await testApp(CONFIG).select({ client: { path: ["/connect"] } }).use(runtimeBoundary(dependencies(fetchMock))).build()).client!.get<ConnectDashboardController>(ConnectDashboardController);
     controller.initialize({ executors: [online] });
     controller.input.openRename(online.executorId);
     controller.input.setRenameValue('!invalid');
@@ -138,14 +142,29 @@ describe('ConnectDashboardController', () => {
       presence: 'offline',
       statusLabel: 'Revoked',
     });
-  });
+  }));
 
-  it('clears local session even when logout request fails', async () => {
+  it('clears local session even when logout request fails', resourceCase(async (_scope) => {
     const deps = dependencies(vi.fn().mockRejectedValue(new Error('network')));
-    const controller = new ConnectDashboardController(deps);
+    const controller = await (await testApp(CONFIG).select({ client: { path: ["/connect"] } }).use(runtimeBoundary(deps)).build()).client!.get<ConnectDashboardController>(ConnectDashboardController);
     controller.initialize({ skipInitialLoad: true });
     await controller.input.logout();
     expect(deps.clearSessionId).toHaveBeenCalled();
     expect(deps.navigate).toHaveBeenCalledWith('/connect/login?returnTo=%2Fconnect');
-  });
+  }));
 });
+
+// Fresh browser boundary data only; application construction remains visible per case.
+const CONFIG = path.resolve(__dirname, '../../../noego.config.yml');
+function runtimeBoundary(deps: ConnectControllerDependencies) {
+  const runtime: AppClientRuntime = {
+    fetch: deps.fetch, navigate: deps.navigate, origin: deps.origin,
+    cookie: () => deps.getCsrfToken(),
+    storage: {
+      getItem: () => deps.getSessionId(),
+      setItem: (_key, value) => deps.setSessionId(value),
+      removeItem: () => deps.clearSessionId(),
+    },
+  };
+  return testStub().value(APP_CLIENT_RUNTIME, runtime, { owner: 'client' });
+}

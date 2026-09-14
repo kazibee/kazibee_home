@@ -1,26 +1,27 @@
 /**
- * Executor channel routes (connect_channel.controller) through testDinner.
+ * Executor channel routes (connect_channel.controller) through root testApp
+ * over the original configuration (no server, no database). Historical case
+ * names remain stable.
  *
- * Real production executors.yaml source; the channel controller owns
- * POST /channel-auth (shared credential verification) and
- * GET /{executorId}/channel (WebSocket upgrade admission). Only the @Query
- * repos and the per-request RawRequest holder are replaced.
+ * Real production executors.yaml module selection (connectExecutors); the
+ * channel controller owns POST /channel-auth (shared credential verification)
+ * and GET /{executorId}/channel (WebSocket upgrade admission). Only the SQL
+ * repo boundary and the per-request RawRequest holder's `get` are replaced
+ * through singular method controls. resourceCase owns environment cleanup.
  */
 import { describe, it, expect } from 'vitest';
-import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { createHash } from 'node:crypto';
-import { load as parseYaml } from 'js-yaml';
-import { testDinner } from '@noego/dinner/testing';
-import { test as control } from '@noego/testing';
-import ConnectChannelController from '../../../src/server/controller/connect_channel.controller';
+import { testApp } from '@noego/app';
+import { test as control, testStub, resourceCase } from '@noego/testing';
 import ConnectExecutorCredentialRepo from '../../../src/server/repo/connect_executor_credential_repo';
 import ConnectExecutorRepo from '../../../src/server/repo/connect_executor_repo';
 import RawRequest from '../../../src/server/services/raw_request';
 
-const executorsSource = parseYaml(
-  readFileSync(path.resolve(__dirname, '../../../src/server/openapi/connect/executors.yaml'), 'utf8')
-) as Record<string, unknown>;
+// Original-config testApp supplies an empty Env unless this case replaces it.
+
+const CONFIG = path.resolve(__dirname, '../../../noego.config.yml');
+const SELECT = { server: { module: ['connectExecutors'] } } as const;
 
 const sha256 = (value: string) => createHash('sha256').update(value, 'utf8').digest('hex');
 
@@ -45,127 +46,97 @@ const validBody = {
   generation: '1', audience: 'executor-relay', protocolVersion: '1.1',
 };
 
-// Selecting the whole module would require binding every executor controller;
-// the channel controller owns exactly these two route identities.
-const routeBase = (method: 'get' | 'post', routePath: string) =>
-  testDinner(executorsSource)
-    .select({ route: { method, path: routePath } })
-    .controllers({ 'connect_channel.controller': ConnectChannelController })
-    .hooks({});
-const base = () => routeBase('post', '/v1/connect/executors/channel-auth');
-const channelBase = () => routeBase('get', '/v1/connect/executors/{executorId}/channel');
+const returns = (value: unknown) => control.returns(Promise.resolve(value));
+
+// A live credential row matched by an active executor row: exactly one lookup
+// each. A reusable replacement description, not an application constructor.
+const liveCredential = (executorRow: Record<string, unknown> = executor) => testStub()
+  .method(ConnectExecutorCredentialRepo, 'findByTokenHash', control.once(returns(credential)))
+  .method(ConnectExecutorRepo, 'findByExecutorId', control.once(returns(executorRow)));
+
+// Neither repo may be consulted.
+const noLookups = () => testStub()
+  .method(ConnectExecutorCredentialRepo, 'findByTokenHash', control.never())
+  .method(ConnectExecutorRepo, 'findByExecutorId', control.never());
+
+const channelPath = `/v1/connect/executors/${EXECUTOR_ID}/channel`;
+const rawChannel = (init?: RequestInit) => new Request(`https://kazibee.test${channelPath}`, init);
 
 describe('executor channel routes through testDinner (no server, no database)', () => {
-  it('POST /channel-auth verifies a live credential end to end', async () => {
-    const env = await base()
-      .methods([
-        [ConnectExecutorCredentialRepo, {
-          findByTokenHash: control.once(control.returns(Promise.resolve(credential))),
-        }],
-        [ConnectExecutorRepo, {
-          findByExecutorId: control.once(control.returns(Promise.resolve(executor))),
-        }],
-      ])
+  it('POST /channel-auth verifies a live credential end to end', resourceCase(async () => {
+    const env = await testApp(CONFIG).select(SELECT)
+      .use(liveCredential())
       .build();
-    const response = await env.dinner.request({
+    const response = await env.request({
       method: 'POST', path: '/v1/connect/executors/channel-auth', body: validBody,
     });
     expect(response.status).toBe(200);
     expect(await response.json()).toEqual({ ok: true, executorId: EXECUTOR_ID, generation: 1 });
     await env.verify();
-    await env.dispose();
-  });
+  }));
 
-  it('POST /channel-auth fails closed on a malformed envelope before any repo lookup', async () => {
-    const env = await base()
-      .methods([
-        [ConnectExecutorCredentialRepo, { findByTokenHash: control.never() }],
-        [ConnectExecutorRepo, { findByExecutorId: control.never() }],
-      ])
+  it('POST /channel-auth fails closed on a malformed envelope before any repo lookup', resourceCase(async () => {
+    const env = await testApp(CONFIG).select(SELECT)
+      .use(noLookups())
       .build();
-    const response = await env.dinner.request({
+    const response = await env.request({
       method: 'POST', path: '/v1/connect/executors/channel-auth',
       body: { ...validBody, audience: 'desktop-relay' },
     });
     expect(response.status).toBe(401);
     expect(await response.json()).toEqual({ ok: false });
     await env.verify();
-    await env.dispose();
-  });
+  }));
 
-  it('POST /channel-auth with an unknown token is 401 and never touches the executor row', async () => {
-    const env = await base()
-      .methods([
-        [ConnectExecutorCredentialRepo, {
-          findByTokenHash: control.once(control.returns(Promise.resolve(null))),
-        }],
-        [ConnectExecutorRepo, { findByExecutorId: control.never() }],
-      ])
+  it('POST /channel-auth with an unknown token is 401 and never touches the executor row', resourceCase(async () => {
+    const env = await testApp(CONFIG).select(SELECT)
+      .method(ConnectExecutorCredentialRepo, 'findByTokenHash', control.once(returns(null)))
+      .method(ConnectExecutorRepo, 'findByExecutorId', control.never())
       .build();
-    const response = await env.dinner.request({
+    const response = await env.request({
       method: 'POST', path: '/v1/connect/executors/channel-auth', body: validBody,
     });
     expect(response.status).toBe(401);
     expect(await response.json()).toEqual({ ok: false });
     await env.verify();
-    await env.dispose();
-  });
+  }));
 
-  it('POST /channel-auth rejects a stale credential generation on the executor row', async () => {
-    const env = await base()
-      .methods([
-        [ConnectExecutorCredentialRepo, {
-          findByTokenHash: control.once(control.returns(Promise.resolve(credential))),
-        }],
-        [ConnectExecutorRepo, {
-          findByExecutorId: control.once(control.returns(Promise.resolve({
-            ...executor, credential_generation: 2,
-          }))),
-        }],
-      ])
+  it('POST /channel-auth rejects a stale credential generation on the executor row', resourceCase(async () => {
+    const env = await testApp(CONFIG).select(SELECT)
+      .use(liveCredential({ ...executor, credential_generation: 2 }))
       .build();
-    const response = await env.dinner.request({
+    const response = await env.request({
       method: 'POST', path: '/v1/connect/executors/channel-auth', body: validBody,
     });
     expect(response.status).toBe(401);
+    await response.body?.cancel(); // Status-only assertion still owns its HTTP body lease.
     await env.verify();
-    await env.dispose();
-  });
+  }));
 
-  it('GET /{executorId}/channel without a WebSocket upgrade is 426', async () => {
-    const raw = new Request(`https://kazibee.test/v1/connect/executors/${EXECUTOR_ID}/channel`);
-    const env = await channelBase()
-      .methods([ [RawRequest, { get: control.returns(raw) }] ])
+  it('GET /{executorId}/channel without a WebSocket upgrade is 426', resourceCase(async () => {
+    const raw = rawChannel();
+    const env = await testApp(CONFIG).select(SELECT)
+      .method(RawRequest, 'get', control.returns(raw))
       .build();
-    const response = await env.dinner.request({
-      method: 'GET', path: `/v1/connect/executors/${EXECUTOR_ID}/channel`,
-    });
+    const response = await env.request({ method: 'GET', path: channelPath });
     expect(response.status).toBe(426);
     expect(await response.json()).toEqual({ error: true, code: 'UPGRADE_REQUIRED' });
-    await env.dispose();
-  });
+  }));
 
-  it('GET /{executorId}/channel upgrade without credential headers is 401 before any coordinator', async () => {
-    const raw = new Request(`https://kazibee.test/v1/connect/executors/${EXECUTOR_ID}/channel`, {
-      headers: { Upgrade: 'websocket' },
-    });
-    const env = await channelBase()
-      .methods([
-        [RawRequest, { get: control.returns(raw) }],
-        [ConnectExecutorCredentialRepo, { findByTokenHash: control.never() }],
-      ])
+  it('GET /{executorId}/channel upgrade without credential headers is 401 before any coordinator', resourceCase(async () => {
+    const raw = rawChannel({ headers: { Upgrade: 'websocket' } });
+    const env = await testApp(CONFIG).select(SELECT)
+      .method(RawRequest, 'get', control.returns(raw))
+      .method(ConnectExecutorCredentialRepo, 'findByTokenHash', control.never())
       .build();
-    const response = await env.dinner.request({
-      method: 'GET', path: `/v1/connect/executors/${EXECUTOR_ID}/channel`,
-    });
+    const response = await env.request({ method: 'GET', path: channelPath });
     expect(response.status).toBe(401);
     expect(await response.json()).toEqual({ error: true, code: 'CHANNEL_AUTH_FAILED' });
     await env.verify();
-    await env.dispose();
-  });
+  }));
 
-  it('GET /{executorId}/channel with valid credentials but no coordinator binding is 503', async () => {
-    const raw = new Request(`https://kazibee.test/v1/connect/executors/${EXECUTOR_ID}/channel`, {
+  it('GET /{executorId}/channel with valid credentials but no coordinator binding is 503', resourceCase(async () => {
+    const raw = rawChannel({
       headers: {
         Upgrade: 'websocket',
         authorization: `Bearer ${TOKEN}`,
@@ -176,23 +147,13 @@ describe('executor channel routes through testDinner (no server, no database)', 
         'x-kazi-protocol-version': '1.1',
       },
     });
-    const env = await channelBase()
-      .methods([
-        [RawRequest, { get: control.returns(raw) }],
-        [ConnectExecutorCredentialRepo, {
-          findByTokenHash: control.once(control.returns(Promise.resolve(credential))),
-        }],
-        [ConnectExecutorRepo, {
-          findByExecutorId: control.once(control.returns(Promise.resolve(executor))),
-        }],
-      ])
+    const env = await testApp(CONFIG).select(SELECT)
+      .method(RawRequest, 'get', control.returns(raw))
+      .use(liveCredential())
       .build();
-    const response = await env.dinner.request({
-      method: 'GET', path: `/v1/connect/executors/${EXECUTOR_ID}/channel`,
-    });
+    const response = await env.request({ method: 'GET', path: channelPath });
     expect(response.status).toBe(503);
     expect(await response.json()).toEqual({ error: true, code: 'COORDINATOR_UNAVAILABLE' });
     await env.verify();
-    await env.dispose();
-  });
+  }));
 });

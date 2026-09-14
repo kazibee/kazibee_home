@@ -1,14 +1,52 @@
-import http, { type IncomingHttpHeaders, type IncomingMessage } from "node:http";
+/**
+ * Connect relay over the REAL native Serve host — deliberately retained, not
+ * a testApp migration. These claims are adapter-level: a genuine SSE stream
+ * read through `http.request` on the listening port, raw duplicate/invalid
+ * header arrays that must reach the application's envelope handling (not
+ * Node's Host guard), socket-level stream teardown that the presence
+ * projection must survive, and a served-generation restart after which the
+ * reopened product reports the executor offline.
+ *
+ * Migration from the legacy getPersistentTestApp/restartPersistentTestApp
+ * helpers: each case owns a FRESH SQLStack fixture built from independently authored
+ * schema (no migrated template, no process-global SqlStackDB
+ * registration, no DATABASE_URL mutation, no resetContainer). The fixture URL
+ * reaches the product only through serve's authoritative `env`; a restart is
+ * `server.close()` (retiring that generation's root) followed by a new
+ * `serve()` over the same fixture URL. Open SSE streams are owned by the
+ * resourceCase scope and closed before the server.
+ */
+import http, { type IncomingHttpHeaders, type IncomingMessage, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
+import path from "node:path";
 import request from "supertest";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import {
-  cleanupTestApp,
-  getPersistentTestApp,
-  restartPersistentTestApp,
-  type TestAppResult,
-} from "../../helpers/test-app";
+import { describe, expect, it } from "vitest";
+import { serve } from "@noego/app";
+import { resourceCase } from "@noego/testing";
+import { testPostgres, type TestPostgresDatabase } from "sqlstack/testing";
 import { TraceProbe } from "../../helpers/trace-probe";
+import { PRODUCT_ROOT, productFullSchema } from "../../schemas/product-full";
+import { nativeArtifactDirectory } from "../../helpers/native-artifacts";
+
+const CONFIG = path.join(PRODUCT_ROOT, "noego.config.yml");
+
+type Agent = ReturnType<typeof request.agent>;
+
+/** Serve options for one native boot over one fixture URL (plain data). */
+const serveOptions = (databaseUrl: string, artifactDirectory: string) => ({
+  artifactDirectory,
+  cwd: PRODUCT_ROOT,
+  configPath: CONFIG,
+  port: 0,
+  env: { NODE_ENV: "test", DATABASE_URL: databaseUrl },
+});
+
+function closeServer(server: Server): Promise<void> {
+  if (!server.listening) return Promise.resolve();
+  return new Promise<void>((resolve, reject) => {
+    server.close((error) => (error ? reject(error) : resolve()));
+  });
+}
 
 const token = Buffer.alloc(32, 61).toString("base64url");
 const executorId = "exe_relayhttp01";
@@ -33,7 +71,7 @@ function relayHeaders(overrides: Record<string, string> = {}): Record<string, st
   };
 }
 
-async function enroll(testApp: TestAppResult) {
+async function enroll(agent: Agent) {
   const claim = {
     kind: "executor.claim.create.request",
     protocolVersion: "1.0",
@@ -49,10 +87,10 @@ async function enroll(testApp: TestAppResult) {
     idempotencyKey: "idem_relay_http_claim_0001",
     correlationId: "cor_relayclaim01",
   };
-  const created = await testApp.agent.post("/v1/connect/executors/claims")
+  const created = await agent.post("/v1/connect/executors/claims")
     .set("x-kazi-bootstrap-token", token).send(claim);
   expect(created.status, JSON.stringify(created.body)).toBe(201);
-  expect((await testApp.agent.post("/v1/connect/auth/signup").send({
+  expect((await agent.post("/v1/connect/auth/signup").send({
     kind: "auth.signup.request",
     email: "shavyg2@gmail.com",
     protocolVersion: "1.0",
@@ -61,7 +99,7 @@ async function enroll(testApp: TestAppResult) {
     idempotencyKey: "idem_relay_owner_signup_01",
     correlationId: "cor_relaysignup01",
   })).status).toBe(201);
-  const login = await testApp.agent.post("/v1/connect/auth/login").send({
+  const login = await agent.post("/v1/connect/auth/login").send({
     kind: "auth.login.request",
     protocolVersion: "1.0",
     username: "relay.owner",
@@ -73,7 +111,7 @@ async function enroll(testApp: TestAppResult) {
   const cookies = login.headers["set-cookie"] as unknown as string[];
   const csrf = cookieValue(cookies, "kazi_connect_csrf");
   const sessionToken = cookieValue(cookies, "kazi_connect_session");
-  const accepted = await testApp.agent
+  const accepted = await agent
     .post(`/v1/connect/executors/claims/${claim.claimId}/decision`)
     .set("x-csrf-token", csrf)
     .send({
@@ -102,8 +140,8 @@ interface SseClient {
   close(): Promise<void>;
 }
 
-function openSse(testApp: TestAppResult): Promise<SseClient> {
-  const address = testApp.server.address() as AddressInfo;
+function openSse(server: Server): Promise<SseClient> {
+  const address = server.address() as AddressInfo;
   return new Promise((resolve, reject) => {
     const req = http.request({
       host: "127.0.0.1",
@@ -172,7 +210,7 @@ function openSse(testApp: TestAppResult): Promise<SseClient> {
 }
 
 function rawRequest(
-  testApp: TestAppResult,
+  server: Server,
   input: {
     name: string;
     method?: "GET" | "POST";
@@ -185,7 +223,7 @@ function rawRequest(
   headers: IncomingHttpHeaders;
   body: Record<string, unknown>;
 }> {
-  const address = testApp.server.address() as AddressInfo;
+  const address = server.address() as AddressInfo;
   return new Promise((resolve, reject) => {
     let settled = false;
     const fail = (message: string, cause?: unknown) => {
@@ -284,36 +322,34 @@ function expectCanonicalRelayError(
     .toBeLessThanOrEqual(512);
 }
 
-async function databaseDump(testApp: TestAppResult): Promise<string> {
-  const rows = await testApp.database.query(
+async function databaseDump(fixture: TestPostgresDatabase): Promise<string> {
+  const rows = await fixture.query(
     `SELECT table_name AS name FROM information_schema.tables
      WHERE table_schema = 'public' AND table_type = 'BASE TABLE'
-     ORDER BY table_name`,
+     ORDER BY table_name`, [],
   ) as Array<{ name: string }>;
   const dump: Record<string, unknown> = {};
   for (const { name } of rows) {
     if (!/^[A-Za-z0-9_]+$/.test(name)) throw new Error("Unsafe table name");
-    dump[name] = await testApp.database.query(`SELECT * FROM ${name}`);
+    dump[name] = await fixture.query(`SELECT * FROM ${name}`, []);
   }
   return JSON.stringify(dump);
 }
 
 describe("Connect relay real stitched HTTP/SSE", () => {
-  let testApp: TestAppResult;
-  let streams: SseClient[];
+  it("acks the exact SSE channel, projects heartbeat presence, fences takeover, and stays transient", resourceCase(async (scope) => {
+    const fixture = await testPostgres(productFullSchema(), { sourceDir: PRODUCT_ROOT }).build();
+    const artifactDirectory = await nativeArtifactDirectory(scope);
+    let server = await serve(serveOptions(fixture.url, artifactDirectory)) as Server;
+    server.unref();
+    scope.own({ dispose: () => closeServer(server) }, "served-product");
+    const streams: SseClient[] = [];
+    scope.own({
+      dispose: async () => { for (const stream of streams) await stream.close(); },
+    }, "sse-streams");
+    const agent = request.agent(server);
 
-  beforeEach(async () => {
-    streams = [];
-    testApp = await getPersistentTestApp();
-  });
-
-  afterEach(async () => {
-    for (const stream of streams) await stream.close();
-    await cleanupTestApp(testApp);
-  });
-
-  it("acks the exact SSE channel, projects heartbeat presence, fences takeover, and stays transient", async () => {
-    const owner = await enroll(testApp);
+    const owner = await enroll(agent);
     const hello = {
       kind: "channel.hello",
       protocolVersion: "1.0",
@@ -322,11 +358,11 @@ describe("Connect relay real stitched HTTP/SSE", () => {
       actorRole: "executor_device",
       correlationId: "cor_relayhello01",
     };
-    const helloResponse = await testApp.agent.post("/v1/connect/relay")
+    const helloResponse = await agent.post("/v1/connect/relay")
       .set(relayHeaders()).send(hello);
     expect(helloResponse.status, JSON.stringify(helloResponse.body)).toBe(200);
 
-    const first = await openSse(testApp);
+    const first = await openSse(server);
     streams.push(first);
     expect(first.status).toBe(200);
     expect(first.headers["content-type"]).toBe("text/event-stream");
@@ -339,7 +375,7 @@ describe("Connect relay real stitched HTTP/SSE", () => {
       correlationId: "cor_relayhello01",
     });
 
-    const heartbeat = await testApp.agent.post("/v1/connect/relay")
+    const heartbeat = await agent.post("/v1/connect/relay")
       .set(relayHeaders()).send({
         kind: "channel.heartbeat",
         protocolVersion: "1.0",
@@ -353,13 +389,13 @@ describe("Connect relay real stitched HTTP/SSE", () => {
     expect(heartbeat.status).toBe(200);
     expect(heartbeat.body.acknowledgedKind).toBe("channel.heartbeat");
 
-    const list = await testApp.agent.get("/v1/connect/executors")
+    const list = await agent.get("/v1/connect/executors")
       .query({ sessionId: owner.sessionId, correlationId: "cor_relaylist001" });
     expect(list.status, JSON.stringify(list.body)).toBe(200);
     expect(list.body.executors).toEqual([
       expect.objectContaining({ executorId, online: true, presence: "online" }),
     ]);
-    const detail = await testApp.agent.get(`/v1/connect/executors/${executorId}`)
+    const detail = await agent.get(`/v1/connect/executors/${executorId}`)
       .query({ sessionId: owner.sessionId, correlationId: "cor_relaydetail01" });
     expect(detail.status, JSON.stringify(detail.body)).toBe(200);
     expect(detail.body.executor).toEqual(
@@ -367,7 +403,7 @@ describe("Connect relay real stitched HTTP/SSE", () => {
     );
 
     const revokedFrame = first.next();
-    const second = await openSse(testApp);
+    const second = await openSse(server);
     streams.push(second);
     expect((await revokedFrame)).toEqual({
       kind: "channel.revoked",
@@ -377,7 +413,7 @@ describe("Connect relay real stitched HTTP/SSE", () => {
       correlationId: "cor_channeltakeover",
     });
     await first.close();
-    const afterStaleClose = await testApp.agent.get("/v1/connect/executors")
+    const afterStaleClose = await agent.get("/v1/connect/executors")
       .query({ sessionId: owner.sessionId, correlationId: "cor_relaylist002" });
     expect(afterStaleClose.body.executors[0]).toEqual(
       expect.objectContaining({ online: true, presence: "online" }),
@@ -385,9 +421,9 @@ describe("Connect relay real stitched HTTP/SSE", () => {
 
     const trace = new TraceProbe();
     trace.start();
-    const beforeCanary = await databaseDump(testApp);
+    const beforeCanary = await databaseDump(fixture);
     const canary = "CANARY_RELAY_PAYLOAD_MUST_NOT_PERSIST_7d16";
-    const transient = await testApp.agent.post("/v1/connect/relay")
+    const transient = await agent.post("/v1/connect/relay")
       .set(relayHeaders()).send({
         kind: "executor.event",
         protocolVersion: "1.0",
@@ -401,31 +437,42 @@ describe("Connect relay real stitched HTTP/SSE", () => {
       });
     expect(transient.status).toBe(204);
     await trace.flush();
-    const afterCanary = await databaseDump(testApp);
+    const afterCanary = await databaseDump(fixture);
     expect(afterCanary).toBe(beforeCanary);
     expect(afterCanary).not.toContain(canary);
     expect(JSON.stringify(trace.query())).not.toContain(canary);
     trace.stop();
 
     await second.close();
-    const disconnected = await testApp.agent.get("/v1/connect/executors")
+    const disconnected = await agent.get("/v1/connect/executors")
       .query({ sessionId: owner.sessionId, correlationId: "cor_relaylist003" });
     expect(disconnected.body.executors[0]).toEqual(
       expect.objectContaining({ online: true, presence: "online" }),
     );
 
-    testApp = await restartPersistentTestApp(testApp);
-    const afterRestart = await request(testApp.server).get("/v1/connect/executors")
+    // Restart: the served generation closes (retiring its root and owned
+    // connection), then a fresh generation reopens the same database.
+    await closeServer(server);
+    server = await serve(serveOptions(fixture.url, artifactDirectory)) as Server;
+    server.unref();
+    const afterRestart = await request(server).get("/v1/connect/executors")
       .set("Cookie", owner.cookie)
       .query({ sessionId: owner.sessionId, correlationId: "cor_relaylist004" });
     expect(afterRestart.status, JSON.stringify(afterRestart.body)).toBe(200);
     expect(afterRestart.body.executors[0]).toEqual(
       expect.objectContaining({ online: false, presence: "offline" }),
     );
-  });
+  }));
 
-  it("rejects bad auth context and frames with safe envelopes and fences last_seen", async () => {
-    const owner = await enroll(testApp);
+  it("rejects bad auth context and frames with safe envelopes and fences last_seen", resourceCase(async (scope) => {
+    const fixture = await testPostgres(productFullSchema(), { sourceDir: PRODUCT_ROOT }).build();
+    const artifactDirectory = await nativeArtifactDirectory(scope);
+    const server = await serve(serveOptions(fixture.url, artifactDirectory)) as Server;
+    server.unref();
+    scope.own({ dispose: () => closeServer(server) }, "served-product");
+    const agent = request.agent(server);
+
+    const owner = await enroll(agent);
     const validFrame = {
       kind: "channel.heartbeat",
       protocolVersion: "1.0",
@@ -436,12 +483,12 @@ describe("Connect relay real stitched HTTP/SSE", () => {
       sentAt: "2026-07-25T14:02:00.000Z",
       correlationId: "cor_relayvalid001",
     };
-    const initialRows = await testApp.database.query(
+    const initialRows = await fixture.query(
       "SELECT last_seen_at FROM connect_executors WHERE executor_id = $1",
       [executorId],
     );
 
-    const badHeaders = [
+    const badHeaders: Array<Record<string, string>> = [
       { authorization: `Bearer ${Buffer.alloc(32, 62).toString("base64url")}` },
       { "x-kazi-executor-id": "exe_wrongrelay01" },
       { "x-kazi-device-id": "dev_wrongrelay01" },
@@ -450,20 +497,20 @@ describe("Connect relay real stitched HTTP/SSE", () => {
     ];
     for (const overrides of badHeaders) {
       const name = `wrong relay auth header ${Object.keys(overrides)[0]}`;
-      const rejected = await testApp.agent.post("/v1/connect/relay")
+      const rejected = await agent.post("/v1/connect/relay")
         .set(relayHeaders(overrides)).send(validFrame);
       expectCanonicalRelayError(name, rejected, {
         status: 401, code: "revoked",
       });
       expect(rejected.body.message, name).toBe("Authentication failed");
     }
-    const protocol = await testApp.agent.post("/v1/connect/relay")
+    const protocol = await agent.post("/v1/connect/relay")
       .set(relayHeaders({ "x-kazi-protocol-version": "9.9" })).send(validFrame);
     expectCanonicalRelayError("wrong protocol header", protocol, {
       status: 409, code: "protocol-version-mismatch",
     });
 
-    const rejectedSse = await rawRequest(testApp, {
+    const rejectedSse = await rawRequest(server, {
       name: "SSE wrong audience header",
       method: "GET",
       path: "/v1/connect/relay/events",
@@ -473,7 +520,7 @@ describe("Connect relay real stitched HTTP/SSE", () => {
       status: 401, code: "revoked",
     });
 
-    const malformed = await rawRequest(testApp, {
+    const malformed = await rawRequest(server, {
       name: "malformed JSON body",
       headers: [
         "content-type", "application/json",
@@ -492,7 +539,7 @@ describe("Connect relay real stitched HTTP/SSE", () => {
     expectCanonicalRelayError("malformed JSON body", malformed, {
       status: 400, code: "invalid-envelope", correlationId: "cor_invalid000",
     });
-    const unknown = await testApp.agent.post("/v1/connect/relay")
+    const unknown = await agent.post("/v1/connect/relay")
       .set(relayHeaders()).send({
         kind: "unknown.operation",
         protocolVersion: "1.0",
@@ -501,7 +548,7 @@ describe("Connect relay real stitched HTTP/SSE", () => {
     expectCanonicalRelayError("unknown relay frame", unknown, {
       status: 400, code: "invalid-envelope", correlationId: "cor_relayunknown1",
     });
-    const oversized = await testApp.agent.post("/v1/connect/relay")
+    const oversized = await agent.post("/v1/connect/relay")
       .set(relayHeaders()).send({
         ...validFrame,
         correlationId: "cor_relayoversize",
@@ -512,13 +559,13 @@ describe("Connect relay real stitched HTTP/SSE", () => {
       status: 413, code: "invalid-envelope", correlationId: "cor_relayoversize",
     });
 
-    const rowsAfterRejections = await testApp.database.query(
+    const rowsAfterRejections = await fixture.query(
       "SELECT last_seen_at FROM connect_executors WHERE executor_id = $1",
       [executorId],
     );
     expect(rowsAfterRejections).toEqual(initialRows);
 
-    const revoked = await testApp.agent
+    const revoked = await agent
       .post(`/v1/connect/executors/${executorId}/revoke`)
       .set("x-csrf-token", owner.csrf)
       .query({ sessionId: owner.sessionId, correlationId: "cor_relayrevoke01" })
@@ -531,10 +578,10 @@ describe("Connect relay real stitched HTTP/SSE", () => {
         correlationId: "cor_relayrevoke01",
       });
     expect(revoked.status).toBe(200);
-    const revokedToken = await testApp.agent.post("/v1/connect/relay")
+    const revokedToken = await agent.post("/v1/connect/relay")
       .set(relayHeaders()).send(validFrame);
     expectCanonicalRelayError("revoked relay token", revokedToken, {
       status: 401, code: "revoked",
     });
-  });
+  }));
 });

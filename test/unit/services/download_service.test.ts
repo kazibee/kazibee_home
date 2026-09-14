@@ -1,35 +1,47 @@
 /**
- * DownloadService against a stubbed AWS SDK boundary.
+ * DownloadService against a stubbed AWS boundary.
  *
- * DownloadService owns a hand-constructed S3Client (not IoC-injected), so the
- * AWS boundary is replaced at the SDK seam: S3Client.prototype.send via
- * vi.spyOn (third-party prototype, not a kazibee IoC class) and the
- * module-level getSignedUrl import via vi.mock. No server, no database, no
- * network; env mutations are restored after every test.
+ * Every subject is the real production instance resolved from the
+ * original-config root testApp (downloads module, no server, no database).
+ * The AWS boundary is the injectable DownloadObjectStore (S3 send + presign),
+ * replaced per case through immutable method controls; the real SDK command
+ * classes are what the service constructs and what the assertions inspect.
+ * Configuration comes from a caller-built Env loaded with exactly the case's
+ * variables (process.env is never mutated). resourceCase owns cleanup.
  */
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { describe, expect, it } from 'vitest';
+import path from 'node:path';
+import { testApp } from '@noego/app';
+import { resourceCase, testStub, test as control } from '@noego/testing';
 import {
   GetObjectCommand,
   HeadObjectCommand,
   ListObjectsV2Command,
-  S3Client,
   S3ServiceException,
 } from '@aws-sdk/client-s3';
-import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
+import Env from '../../../src/server/services/env';
 import DownloadService, { isDownloadKind } from '../../../src/server/services/download_service';
+import DownloadObjectStore from '../../../src/server/services/download_object_store';
 import { NotFoundError, ValidationError } from '../../../src/server/errors/domain_errors';
 
-vi.mock('@aws-sdk/s3-request-presigner', () => ({
-  getSignedUrl: vi.fn(async () => 'https://s3.example/signed-url'),
-}));
+const CONFIG = path.resolve(__dirname, '../../../noego.config.yml');
+const SELECT = { server: { module: ['downloads'] } } as const;
+
+const SIGNED_URL = 'https://s3.example/signed-url';
+
+// Configuration for one case: a caller-built Env loaded with exactly the
+// case's variables (defaults apply for everything else); process.env is never mutated.
+const envWith = (data: Record<string, string>) => () => {
+  const env = new Env();
+  env.load(data);
+  return env;
+};
 
 type SendHandler = (command: unknown) => Promise<unknown>;
 
-function stubSend(handler: SendHandler) {
-  return vi
-    .spyOn(S3Client.prototype, 'send')
-    .mockImplementation(handler as never);
-}
+/** S3 send behavior for one case: a handler over the real SDK command, recorded by the environment. */
+const sendWith = (handler: SendHandler) =>
+  control.watch(() => (command: unknown) => handler(command));
 
 function missingObjectError(): S3ServiceException {
   return new S3ServiceException({
@@ -39,28 +51,9 @@ function missingObjectError(): S3ServiceException {
   });
 }
 
-const savedEnv = { ...process.env };
-
 describe('DownloadService (stubbed AWS SDK boundary)', () => {
-  beforeEach(() => {
-    delete process.env.KAZIBEE_DOWNLOAD_BUCKET;
-    delete process.env.KAZIBEE_DOWNLOAD_EXPIRES_SECONDS;
-    delete process.env.KAZIBEE_CLI_PREFIX;
-  });
-
-  afterEach(() => {
-    vi.restoreAllMocks();
-    vi.unstubAllGlobals();
-    process.env.KAZIBEE_DOWNLOAD_BUCKET = savedEnv.KAZIBEE_DOWNLOAD_BUCKET;
-    process.env.KAZIBEE_DOWNLOAD_EXPIRES_SECONDS = savedEnv.KAZIBEE_DOWNLOAD_EXPIRES_SECONDS;
-    process.env.KAZIBEE_CLI_PREFIX = savedEnv.KAZIBEE_CLI_PREFIX;
-    for (const key of ['KAZIBEE_DOWNLOAD_BUCKET', 'KAZIBEE_DOWNLOAD_EXPIRES_SECONDS', 'KAZIBEE_CLI_PREFIX']) {
-      if (process.env[key] === undefined) delete process.env[key];
-    }
-  });
-
   describe('listVersions', () => {
-    it('paginates, groups by version, sorts latest first and SHA256SUMS last', async () => {
+    it('paginates, groups by version, sorts latest first and SHA256SUMS last', resourceCase(async () => {
       const pageOne = {
         Contents: [
           { Key: 'cli/v1.2.3/kazibee-macos.zip', Size: 42, LastModified: new Date('2026-01-01T00:00:00Z') },
@@ -78,18 +71,21 @@ describe('DownloadService (stubbed AWS SDK boundary)', () => {
           { Key: 'cli/v1.10.0/kazibee-linux.tar.gz', Size: 8 },
         ],
       };
-      const send = stubSend(async (command) => {
-        expect(command).toBeInstanceOf(ListObjectsV2Command);
-        const input = (command as ListObjectsV2Command).input;
-        expect(input.Bucket).toBe('kazibee');
-        expect(input.Prefix).toBe('cli/');
-        return input.ContinuationToken === 'page-2' ? pageTwo : pageOne;
-      });
+      const env = await testApp(CONFIG).select(SELECT).use(testStub())
+        .function(Env, envWith({}))
+        .method(DownloadObjectStore, 'send', sendWith(async (command) => {
+          expect(command).toBeInstanceOf(ListObjectsV2Command);
+          const input = (command as ListObjectsV2Command).input;
+          expect(input.Bucket).toBe('kazibee');
+          expect(input.Prefix).toBe('cli/');
+          return input.ContinuationToken === 'page-2' ? pageTwo : pageOne;
+        }))
+        .build();
 
-      const service = new DownloadService();
+      const service = await env.get<DownloadService>(DownloadService);
       const result = await service.listVersions('cli');
 
-      expect(send).toHaveBeenCalledTimes(2);
+      expect(control.inspect(env, DownloadObjectStore, 'send').count).toBe(2);
       expect(result.versions.map((entry) => entry.version)).toEqual(['latest', 'v1.10.0', 'v1.2.3']);
       const v123 = result.versions.find((entry) => entry.version === 'v1.2.3');
       expect(v123?.downloads.map((item) => item.name)).toEqual(['kazibee-macos.zip', 'SHA256SUMS']);
@@ -100,24 +96,27 @@ describe('DownloadService (stubbed AWS SDK boundary)', () => {
         lastModified: '2026-01-01T00:00:00.000Z',
       });
       expect(v123?.downloads[1].lastModified).toBeNull();
-    });
+    }));
 
-    it('tolerates pages without Contents, objects without a Size, and sorts SHA256SUMS behind names', async () => {
-      stubSend(async (command) => {
-        const input = (command as ListObjectsV2Command).input;
-        if (!input.ContinuationToken) {
-          return { NextContinuationToken: 'page-2' }; // no Contents at all
-        }
-        return {
-          Contents: [
-            { Key: 'cli/v1.2.3/beta.zip' }, // no Size, no LastModified
-            { Key: 'cli/v1.2.3/SHA256SUMS', Size: 1 },
-            { Key: 'cli/v1.2.3/alpha.zip', Size: 2 },
-          ],
-        };
-      });
+    it('tolerates pages without Contents, objects without a Size, and sorts SHA256SUMS behind names', resourceCase(async () => {
+      const env = await testApp(CONFIG).select(SELECT).use(testStub())
+        .function(Env, envWith({}))
+        .method(DownloadObjectStore, 'send', sendWith(async (command) => {
+          const input = (command as ListObjectsV2Command).input;
+          if (!input.ContinuationToken) {
+            return { NextContinuationToken: 'page-2' }; // no Contents at all
+          }
+          return {
+            Contents: [
+              { Key: 'cli/v1.2.3/beta.zip' }, // no Size, no LastModified
+              { Key: 'cli/v1.2.3/SHA256SUMS', Size: 1 },
+              { Key: 'cli/v1.2.3/alpha.zip', Size: 2 },
+            ],
+          };
+        }))
+        .build();
 
-      const service = new DownloadService();
+      const service = await env.get<DownloadService>(DownloadService);
       const result = await service.listVersions('cli');
 
       const [only] = result.versions;
@@ -127,15 +126,17 @@ describe('DownloadService (stubbed AWS SDK boundary)', () => {
         size: 0,
         lastModified: null,
       });
-    });
+    }));
 
-    it('a slash-only prefix normalizes to the empty prefix', async () => {
-      process.env.KAZIBEE_CLI_PREFIX = '/';
-      stubSend(async (command) => {
-        expect((command as ListObjectsV2Command).input.Prefix).toBe('');
-        return { Contents: [{ Key: 'v1.2.3/root.zip', Size: 3 }] };
-      });
-      const service = new DownloadService();
+    it('a slash-only prefix normalizes to the empty prefix', resourceCase(async () => {
+      const env = await testApp(CONFIG).select(SELECT).use(testStub())
+        .function(Env, envWith({ KAZIBEE_CLI_PREFIX: '/' }))
+        .method(DownloadObjectStore, 'send', sendWith(async (command) => {
+          expect((command as ListObjectsV2Command).input.Prefix).toBe('');
+          return { Contents: [{ Key: 'v1.2.3/root.zip', Size: 3 }] };
+        }))
+        .build();
+      const service = await env.get<DownloadService>(DownloadService);
       const result = await service.listVersions('cli');
       expect(result.versions).toEqual([
         {
@@ -150,153 +151,181 @@ describe('DownloadService (stubbed AWS SDK boundary)', () => {
           ],
         },
       ]);
-    });
+    }));
 
-    it('honors a custom prefix without a trailing slash and an empty bucket throws', async () => {
-      process.env.KAZIBEE_CLI_PREFIX = '/custom-cli';
-      stubSend(async (command) => {
-        expect((command as ListObjectsV2Command).input.Prefix).toBe('custom-cli/');
-        return { Contents: [] };
-      });
-      const service = new DownloadService();
+    it('honors a custom prefix without a trailing slash and an empty bucket throws', resourceCase(async () => {
+      const env = await testApp(CONFIG).select(SELECT).use(testStub())
+        .function(Env, envWith({ KAZIBEE_CLI_PREFIX: '/custom-cli' }))
+        .method(DownloadObjectStore, 'send', sendWith(async (command) => {
+          expect((command as ListObjectsV2Command).input.Prefix).toBe('custom-cli/');
+          return { Contents: [] };
+        }))
+        .build();
+      const service = await env.get<DownloadService>(DownloadService);
       await expect(service.listVersions('cli')).resolves.toEqual({ versions: [] });
 
-      process.env.KAZIBEE_DOWNLOAD_BUCKET = '';
-      const unconfigured = new DownloadService();
+      const unconfiguredEnv = await testApp(CONFIG).select(SELECT).use(testStub())
+        .function(Env, envWith({ KAZIBEE_DOWNLOAD_BUCKET: '' }))
+        .method(DownloadObjectStore, 'send', control.never())
+        .build();
+      const unconfigured = await unconfiguredEnv.get<DownloadService>(DownloadService);
       await expect(unconfigured.listVersions('cli')).rejects.toThrow('Download bucket is not configured');
-    });
+    }));
   });
 
   describe('createDownload', () => {
-    it('checks the object head then presigns a GetObject with attachment disposition', async () => {
-      process.env.KAZIBEE_DOWNLOAD_EXPIRES_SECONDS = '120';
-      const send = stubSend(async (command) => {
-        expect(command).toBeInstanceOf(HeadObjectCommand);
-        expect((command as HeadObjectCommand).input.Key).toBe('app/v2.0.0/kazibee.dmg');
-        return {};
-      });
-      const service = new DownloadService();
+    it('checks the object head then presigns a GetObject with attachment disposition', resourceCase(async () => {
+      const env = await testApp(CONFIG).select(SELECT).use(testStub())
+        .function(Env, envWith({ KAZIBEE_DOWNLOAD_EXPIRES_SECONDS: '120' }))
+        .method(DownloadObjectStore, 'send', sendWith(async (command) => {
+          expect(command).toBeInstanceOf(HeadObjectCommand);
+          expect((command as HeadObjectCommand).input.Key).toBe('app/v2.0.0/kazibee.dmg');
+          return {};
+        }))
+        .method(DownloadObjectStore, 'presign', control.returns(Promise.resolve(SIGNED_URL)))
+        .build();
+      const service = await env.get<DownloadService>(DownloadService);
       const result = await service.createDownload('app', 'v2.0.0', 'kazibee.dmg');
 
-      expect(send).toHaveBeenCalledTimes(1);
-      expect(result).toEqual({ key: 'app/v2.0.0/kazibee.dmg', url: 'https://s3.example/signed-url' });
-      const signed = vi.mocked(getSignedUrl);
-      expect(signed).toHaveBeenCalledTimes(1);
-      const [, command, options] = signed.mock.calls[0];
+      expect(control.inspect(env, DownloadObjectStore, 'send').count).toBe(1);
+      expect(result).toEqual({ key: 'app/v2.0.0/kazibee.dmg', url: SIGNED_URL });
+      const signed = control.inspect(env, DownloadObjectStore, 'presign');
+      expect(signed.count).toBe(1);
+      const [command, options] = signed.calls[0].args;
       expect(command).toBeInstanceOf(GetObjectCommand);
       expect((command as GetObjectCommand).input.ResponseContentDisposition)
         .toBe('attachment; filename="kazibee.dmg"');
       expect(options).toEqual({ expiresIn: 120 });
-    });
+    }));
 
-    it('an explicit expiresIn option overrides the env default (and bad env falls back to 600)', async () => {
-      process.env.KAZIBEE_DOWNLOAD_EXPIRES_SECONDS = 'not-a-number';
-      stubSend(async () => ({}));
-      const service = new DownloadService();
+    it('an explicit expiresIn option overrides the env default (and bad env falls back to 600)', resourceCase(async () => {
+      const env = await testApp(CONFIG).select(SELECT).use(testStub())
+        .function(Env, envWith({ KAZIBEE_DOWNLOAD_EXPIRES_SECONDS: 'not-a-number' }))
+        .method(DownloadObjectStore, 'send', sendWith(async () => ({})))
+        .method(DownloadObjectStore, 'presign', control.returns(Promise.resolve(SIGNED_URL)))
+        .build();
+      const service = await env.get<DownloadService>(DownloadService);
       await service.createDownload('cli', 'latest', 'kazibee-macos.zip', { expiresIn: 30 });
-      expect(vi.mocked(getSignedUrl).mock.calls.at(-1)?.[2]).toEqual({ expiresIn: 30 });
+      expect(control.inspect(env, DownloadObjectStore, 'presign').calls.at(-1)?.args[1]).toEqual({ expiresIn: 30 });
 
       await service.createDownload('cli', 'latest', 'kazibee-macos.zip');
-      expect(vi.mocked(getSignedUrl).mock.calls.at(-1)?.[2]).toEqual({ expiresIn: 600 });
-    });
+      expect(control.inspect(env, DownloadObjectStore, 'presign').calls.at(-1)?.args[1]).toEqual({ expiresIn: 600 });
+    }));
 
-    it('maps a missing object to NotFoundError and rethrows other S3 failures', async () => {
-      stubSend(async () => { throw missingObjectError(); });
-      const service = new DownloadService();
+    it('maps a missing object to NotFoundError and rethrows other S3 failures', resourceCase(async () => {
+      const env = await testApp(CONFIG).select(SELECT).use(testStub())
+        .function(Env, envWith({}))
+        .method(DownloadObjectStore, 'send', control.calls([
+          control.throws(missingObjectError()),
+          control.throws(new Error('access denied')),
+        ]))
+        .method(DownloadObjectStore, 'presign', control.never())
+        .build();
+      const service = await env.get<DownloadService>(DownloadService);
       await expect(service.createDownload('cli', 'v1.2.3', 'kazibee-macos.zip'))
         .rejects.toThrow(NotFoundError);
 
-      vi.restoreAllMocks();
-      stubSend(async () => { throw new Error('access denied'); });
       await expect(service.createDownload('cli', 'v1.2.3', 'kazibee-macos.zip'))
         .rejects.toThrow('access denied');
-    });
+    }));
 
-    it('recognizes NoSuchKey by name and rethrows other S3ServiceExceptions', async () => {
-      stubSend(async () => {
-        throw new S3ServiceException({
-          name: 'NoSuchKey',
-          $fault: 'client',
-          $metadata: { httpStatusCode: 500 },
-        });
-      });
-      const service = new DownloadService();
+    it('recognizes NoSuchKey by name and rethrows other S3ServiceExceptions', resourceCase(async () => {
+      const env = await testApp(CONFIG).select(SELECT).use(testStub())
+        .function(Env, envWith({}))
+        .method(DownloadObjectStore, 'send', control.calls([
+          control.throws(new S3ServiceException({
+            name: 'NoSuchKey',
+            $fault: 'client',
+            $metadata: { httpStatusCode: 500 },
+          })),
+          control.throws(new S3ServiceException({
+            name: 'SlowDown',
+            $fault: 'server',
+            $metadata: { httpStatusCode: 503 },
+          })),
+        ]))
+        .method(DownloadObjectStore, 'presign', control.never())
+        .build();
+      const service = await env.get<DownloadService>(DownloadService);
       await expect(service.createDownload('cli', 'v1.2.3', 'kazibee-macos.zip'))
         .rejects.toThrow(NotFoundError);
 
-      vi.restoreAllMocks();
-      stubSend(async () => {
-        throw new S3ServiceException({
-          name: 'SlowDown',
-          $fault: 'server',
-          $metadata: { httpStatusCode: 503 },
-        });
-      });
       await expect(service.createDownload('cli', 'v1.2.3', 'kazibee-macos.zip'))
         .rejects.toBeInstanceOf(S3ServiceException);
-    });
+    }));
 
-    it('rejects invalid versions and items before touching S3', async () => {
-      const send = stubSend(async () => ({}));
-      const service = new DownloadService();
+    it('rejects invalid versions and items before touching S3', resourceCase(async () => {
+      const env = await testApp(CONFIG).select(SELECT).use(testStub())
+        .function(Env, envWith({}))
+        .method(DownloadObjectStore, 'send', sendWith(async () => ({})))
+        .method(DownloadObjectStore, 'presign', control.returns(Promise.resolve(SIGNED_URL)))
+        .build();
+      const service = await env.get<DownloadService>(DownloadService);
       await expect(service.createDownload('cli', '1.2.3', 'ok.zip')).rejects.toThrow(ValidationError);
       await expect(service.createDownload('cli', 'v1.2.3', 'bad/../path')).rejects.toThrow(ValidationError);
       await expect(service.createDownload('cli', 'v1.2.3', 'spaced name.zip')).rejects.toThrow(ValidationError);
       await expect(service.createDownload('cli', 'v1.2.3', 'a'.repeat(201))).rejects.toThrow(ValidationError);
-      expect(send).not.toHaveBeenCalled();
+      expect(control.inspect(env, DownloadObjectStore, 'send').count).toBe(0);
       // Pre-release/build metadata versions are accepted.
       await expect(service.createDownload('cli', 'v1.2.3-beta.1', 'ok.zip')).resolves.toMatchObject({
         key: 'cli/v1.2.3-beta.1/ok.zip',
       });
-    });
+    }));
   });
 
   describe('readItemText / readPolicyText', () => {
-    it('reads the object body verbatim', async () => {
-      stubSend(async (command) => {
-        expect(command).toBeInstanceOf(GetObjectCommand);
-        expect((command as GetObjectCommand).input.Key).toBe('service/v1.0.0/RELEASES');
-        return { Body: { transformToString: async () => 'HASH kazibee-full.nupkg 123' } };
-      });
-      const service = new DownloadService();
+    it('reads the object body verbatim', resourceCase(async () => {
+      const env = await testApp(CONFIG).select(SELECT).use(testStub())
+        .function(Env, envWith({}))
+        .method(DownloadObjectStore, 'send', sendWith(async (command) => {
+          expect(command).toBeInstanceOf(GetObjectCommand);
+          expect((command as GetObjectCommand).input.Key).toBe('service/v1.0.0/RELEASES');
+          return { Body: { transformToString: async () => 'HASH kazibee-full.nupkg 123' } };
+        }))
+        .build();
+      const service = await env.get<DownloadService>(DownloadService);
       await expect(service.readItemText('service', 'v1.0.0', 'RELEASES'))
         .resolves.toBe('HASH kazibee-full.nupkg 123');
-    });
+    }));
 
-    it('an absent body or a missing object is NotFoundError; other errors rethrow', async () => {
-      stubSend(async () => ({ Body: undefined }));
-      const service = new DownloadService();
+    it('an absent body or a missing object is NotFoundError; other errors rethrow', resourceCase(async () => {
+      const env = await testApp(CONFIG).select(SELECT).use(testStub())
+        .function(Env, envWith({}))
+        .method(DownloadObjectStore, 'send', control.calls([
+          control.returns(Promise.resolve({ Body: undefined })),
+          control.throws(missingObjectError()),
+          control.throws(new Error('throttled')),
+        ]))
+        .build();
+      const service = await env.get<DownloadService>(DownloadService);
       await expect(service.readItemText('cli', 'v1.0.0', 'RELEASES')).rejects.toThrow(NotFoundError);
 
-      vi.restoreAllMocks();
-      stubSend(async () => { throw missingObjectError(); });
       await expect(service.readItemText('cli', 'v1.0.0', 'RELEASES')).rejects.toThrow('Download item not found');
 
-      vi.restoreAllMocks();
-      stubSend(async () => { throw new Error('throttled'); });
       await expect(service.readItemText('cli', 'v1.0.0', 'RELEASES')).rejects.toThrow('throttled');
-    });
+    }));
 
-    it('readPolicyText reads under the policy/ prefix and maps the same NotFound shapes', async () => {
-      stubSend(async (command) => {
-        expect((command as GetObjectCommand).input.Key).toBe('app/policy/allowlist.txt');
-        return { Body: { transformToString: async () => 'allow *' } };
-      });
-      const service = new DownloadService();
+    it('readPolicyText reads under the policy/ prefix and maps the same NotFound shapes', resourceCase(async () => {
+      const env = await testApp(CONFIG).select(SELECT).use(testStub())
+        .function(Env, envWith({}))
+        .method(DownloadObjectStore, 'send', control.calls([
+          control.returns(Promise.resolve({ Body: { transformToString: async () => 'allow *' } })),
+          control.returns(Promise.resolve({ Body: undefined })),
+          control.throws(missingObjectError()),
+          control.throws(new Error('boom')),
+        ]))
+        .build();
+      const service = await env.get<DownloadService>(DownloadService);
       await expect(service.readPolicyText('app', 'allowlist.txt')).resolves.toBe('allow *');
+      const [first] = control.inspect(env, DownloadObjectStore, 'send').calls[0].args;
+      expect((first as GetObjectCommand).input.Key).toBe('app/policy/allowlist.txt');
 
-      vi.restoreAllMocks();
-      stubSend(async () => ({ Body: undefined }));
       await expect(service.readPolicyText('app', 'allowlist.txt')).rejects.toThrow('Policy item not found');
 
-      vi.restoreAllMocks();
-      stubSend(async () => { throw missingObjectError(); });
       await expect(service.readPolicyText('app', 'allowlist.txt')).rejects.toThrow(NotFoundError);
 
-      vi.restoreAllMocks();
-      stubSend(async () => { throw new Error('boom'); });
       await expect(service.readPolicyText('app', 'allowlist.txt')).rejects.toThrow('boom');
-    });
+    }));
   });
 
   it('isDownloadKind gates public kinds to cli|app', () => {

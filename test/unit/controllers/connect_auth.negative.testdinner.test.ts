@@ -1,41 +1,33 @@
 /**
- * Connect auth negative paths through testDinner (no server, no database).
+ * Connect auth negative paths through root testApp over the original
+ * configuration (no server, no database). Historical case names remain stable.
  *
  * Complements connect_auth.testdinner.test.ts / connect_auth_flows with the
  * branches the OpenAPI envelope normally shields: controller-level parse
  * rejections (invalid via direct controller invocation, since dinner's schema
  * validation would otherwise answer first), non-Error repo failures, the
  * Google persistence guard, disabled accounts, and logout failure/idempotency
- * branches.
+ * branches. resourceCase owns environment cleanup.
  */
-import { afterEach, describe, it, expect, vi } from 'vitest';
-import { readFileSync } from 'node:fs';
+import { describe, it, expect } from 'vitest';
 import path from 'node:path';
 import { createHash } from 'node:crypto';
-import { load as parseYaml } from 'js-yaml';
-import { testDinner } from '@noego/dinner/testing';
-import { test as control } from '@noego/testing';
+import { testApp } from '@noego/app';
+import { test as control, testStub, resourceCase } from '@noego/testing';
+import Env from '../../../src/server/services/env';
+import ConnectGoogleTokenInfoClient from '../../../src/server/services/connect_google_token_info_client';
 import ConnectAuthController from '../../../src/server/controller/connect_auth.controller';
 import ConnectAccountRepo from '../../../src/server/repo/connect_account_repo';
 import ConnectIdentityRepo from '../../../src/server/repo/connect_identity_repo';
 import ConnectBrowserSessionRepo from '../../../src/server/repo/connect_browser_session_repo';
 import { ConnectClock } from '../../../src/server/services/connect_auth_primitives';
 
-const authSource = parseYaml(
-  readFileSync(path.resolve(__dirname, '../../../src/server/openapi/connect/auth.yaml'), 'utf8')
-) as Record<string, unknown>;
+const CONFIG = path.resolve(__dirname, '../../../noego.config.yml');
 
 const NOW = new Date('2026-01-01T00:00:00.000Z');
 const sha256 = (value: string) => createHash('sha256').update(value, 'utf8').digest('hex');
 
-const base = () =>
-  testDinner(authSource)
-    .select({ module: 'connectAuth' })
-    .controllers({ 'connect_auth.controller': ConnectAuthController })
-    .hooks({});
-
 const GOOGLE_CLIENT_ID = 'test-google-client-id.apps.googleusercontent.com';
-const savedGoogleClientId = process.env.GOOGLE_CLIENT_ID;
 
 const account = {
   user_id: 'usr_existing01', username: 'shavyg2', email: 'shavyg2@gmail.com',
@@ -68,12 +60,11 @@ const validClaims = {
   email_verified: 'true',
 };
 
-function stubTokeninfo(claims: Record<string, unknown>) {
-  vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify(claims), {
-    status: 200,
-    headers: { 'content-type': 'application/json' },
-  })));
-}
+const tokeninfo = (claims: Record<string, unknown>) => testStub()
+  .function(Env, () => {
+    const value = new Env(); value.load({ GOOGLE_CLIENT_ID }); return value;
+  })
+  .method(ConnectGoogleTokenInfoClient, 'request', control.watch(() => async () => Response.json(claims)));
 
 /** Minimal CompatResponse capturing status/json for direct controller calls. */
 function fakeRes() {
@@ -90,16 +81,10 @@ function fakeRes() {
 const fakeReq = (overrides: Record<string, unknown> = {}) =>
   ({ body: {}, query: {}, cookies: {}, headers: {}, ...overrides }) as never;
 
-afterEach(() => {
-  vi.unstubAllGlobals();
-  vi.restoreAllMocks();
-  if (savedGoogleClientId === undefined) delete process.env.GOOGLE_CLIENT_ID;
-  else process.env.GOOGLE_CLIENT_ID = savedGoogleClientId;
-});
 
 describe('connect auth controller parse rejections (direct controller, below the OpenAPI envelope)', () => {
-  it('every route maps an invalid envelope to a logged 400 with the fallback correlationId', async () => {
-    const env = await base().build();
+  it('every route maps an invalid envelope to a logged 400 with the fallback correlationId', resourceCase(async () => {
+    const env = await testApp(CONFIG).select({ server: { module: ['connectAuth'] } }).build();
     const controller = await env.get<ConnectAuthController>(ConnectAuthController);
 
     const { res, captured } = fakeRes();
@@ -126,12 +111,10 @@ describe('connect auth controller parse rejections (direct controller, below the
     const logout = fakeRes();
     await controller.logout({ req: fakeReq({ body: [], query: [] }), res: logout.res });
     expect(logout.captured.status).toBe(400);
+  }));
 
-    await env.dispose();
-  });
-
-  it('a protocol version the parser does not speak is a 409 protocol-version-mismatch', async () => {
-    const env = await base().build();
+  it('a protocol version the parser does not speak is a 409 protocol-version-mismatch', resourceCase(async () => {
+    const env = await testApp(CONFIG).select({ server: { module: ['connectAuth'] } }).build();
     const controller = await env.get<ConnectAuthController>(ConnectAuthController);
 
     const signup = fakeRes();
@@ -155,44 +138,33 @@ describe('connect auth controller parse rejections (direct controller, below the
       res: login.res,
     });
     expect(login.captured.status).toBe(409);
-
-    await env.dispose();
-  });
+  }));
 });
 
 describe('connect auth failure outcomes (routes)', () => {
-  it('a non-Error repo rejection during signup degrades to a structured 500', async () => {
-    const env = await base()
-      .methods([
-        [ConnectAccountRepo, {
-          // Non-Error rejection value: exercises the String(error) diagnostic
-          // path and the isUniqueViolation non-Error guard.
-          findPasswordlessByEmail: control.once(control.throws('db exploded')),
-          createAccount: control.never(),
-        }],
-        [ConnectClock, { now: control.returns(NOW) }],
-      ])
+  it('a non-Error repo rejection during signup degrades to a structured 500', resourceCase(async () => {
+    const env = await testApp(CONFIG).select({ server: { module: ['connectAuth'] } })
+      // Non-Error rejection value: exercises the String(error) diagnostic
+      // path and the isUniqueViolation non-Error guard.
+      .method(ConnectAccountRepo, 'findPasswordlessByEmail', control.once(control.throws('db exploded')))
+      .method(ConnectAccountRepo, 'createAccount', control.never())
+      .method(ConnectClock, 'now', control.returns(NOW))
       .build();
-    const response = await env.dinner.request({
+    const response = await env.request({
       method: 'POST', path: '/v1/connect/auth/signup', body: signupBody,
     });
     expect(response.status).toBe(500);
     expect(await response.json()).toMatchObject({ kind: 'error', message: 'Internal server error' });
     await env.verify();
-    await env.dispose();
-  });
+  }));
 
-  it('a wrapped repo failure (Error with cause) during login is still a uniform 500', async () => {
-    const env = await base()
-      .methods([
-        [ConnectAccountRepo, {
-          findByUsername: control.once(control.throws(
-            Object.assign(new Error('query failed'), { cause: new Error('connection reset') }),
-          )),
-        }],
-      ])
+  it('a wrapped repo failure (Error with cause) during login is still a uniform 500', resourceCase(async () => {
+    const env = await testApp(CONFIG).select({ server: { module: ['connectAuth'] } })
+      .method(ConnectAccountRepo, 'findByUsername', control.once(control.throws(
+        Object.assign(new Error('query failed'), { cause: new Error('connection reset') }),
+      )))
       .build();
-    const response = await env.dinner.request({
+    const response = await env.request({
       method: 'POST', path: '/v1/connect/auth/login',
       body: {
         kind: 'auth.login.request', protocolVersion: '1.0',
@@ -201,59 +173,46 @@ describe('connect auth failure outcomes (routes)', () => {
       },
     });
     expect(response.status).toBe(500);
+    await response.body?.cancel(); // Status-only assertion still owns its HTTP body lease.
     await env.verify();
-    await env.dispose();
-  });
+  }));
 
-  it('a Google account that vanishes after creation is a 500, never a half-session', async () => {
-    process.env.GOOGLE_CLIENT_ID = GOOGLE_CLIENT_ID;
-    stubTokeninfo(validClaims);
-    const env = await base()
-      .methods([
-        [ConnectAccountRepo, {
-          findByEmail: control.calls([
-            control.returns(Promise.resolve(null)),
-            control.returns(Promise.resolve(null)),
-          ]),
-          createAccount: control.once(control.returns(Promise.resolve())),
-        }],
-        [ConnectIdentityRepo, { linkGoogle: control.never() }],
-        [ConnectBrowserSessionRepo, { createSession: control.never() }],
-        [ConnectClock, { now: control.returns(NOW) }],
-      ])
+  it('a Google account that vanishes after creation is a 500, never a half-session', resourceCase(async () => {
+    const env = await testApp(CONFIG).select({ server: { module: ['connectAuth'] } })
+      .use(tokeninfo(validClaims))
+      .method(ConnectAccountRepo, 'findByEmail', control.calls([
+        control.returns(Promise.resolve(null)),
+        control.returns(Promise.resolve(null)),
+      ]))
+      .method(ConnectAccountRepo, 'createAccount', control.once(control.returns(Promise.resolve())))
+      .method(ConnectIdentityRepo, 'linkGoogle', control.never())
+      .method(ConnectBrowserSessionRepo, 'createSession', control.never())
+      .method(ConnectClock, 'now', control.returns(NOW))
       .build();
-    const response = await env.dinner.request({
+    const response = await env.request({
       method: 'POST', path: '/v1/connect/auth/google', body: googleBody,
     });
     expect(response.status).toBe(500);
+    await response.body?.cancel();
     await env.verify();
-    await env.dispose();
-  });
+  }));
 
-  it('a disabled account behind a valid Google token is a uniform 401, no session row', async () => {
-    process.env.GOOGLE_CLIENT_ID = GOOGLE_CLIENT_ID;
-    stubTokeninfo(validClaims);
-    const env = await base()
-      .methods([
-        [ConnectAccountRepo, {
-          findByEmail: control.once(control.returns(Promise.resolve({ ...account, status: 'disabled' }))),
-          createAccount: control.never(),
-        }],
-        [ConnectIdentityRepo, {
-          linkGoogle: control.once(control.returns(Promise.resolve())),
-        }],
-        [ConnectBrowserSessionRepo, { createSession: control.never() }],
-        [ConnectClock, { now: control.returns(NOW) }],
-      ])
+  it('a disabled account behind a valid Google token is a uniform 401, no session row', resourceCase(async () => {
+    const env = await testApp(CONFIG).select({ server: { module: ['connectAuth'] } })
+      .use(tokeninfo(validClaims))
+      .method(ConnectAccountRepo, 'findByEmail', control.once(control.returns(Promise.resolve({ ...account, status: 'disabled' }))))
+      .method(ConnectAccountRepo, 'createAccount', control.never())
+      .method(ConnectIdentityRepo, 'linkGoogle', control.once(control.returns(Promise.resolve())))
+      .method(ConnectBrowserSessionRepo, 'createSession', control.never())
+      .method(ConnectClock, 'now', control.returns(NOW))
       .build();
-    const response = await env.dinner.request({
+    const response = await env.request({
       method: 'POST', path: '/v1/connect/auth/google', body: googleBody,
     });
     expect(response.status).toBe(401);
     expect(await response.json()).toMatchObject({ kind: 'error', message: 'Invalid Google account' });
     await env.verify();
-    await env.dispose();
-  });
+  }));
 });
 
 describe('connect auth logout failure and idempotency branches (routes)', () => {
@@ -277,45 +236,32 @@ describe('connect auth logout failure and idempotency branches (routes)', () => 
     'x-csrf-token': csrfToken,
   };
 
-  it('a revocation write failure during logout is a structured 500', async () => {
-    const env = await base()
-      .methods([
-        [ConnectBrowserSessionRepo, {
-          findByTokenHash: control.once(control.returns(Promise.resolve(sessionRow))),
-          revokeSession: control.once(control.throws(new Error('write failed'))),
-        }],
-        [ConnectAccountRepo, {
-          findByUserId: control.once(control.returns(Promise.resolve({ ...account, password_hash: 'x' }))),
-        }],
-        [ConnectClock, { now: control.returns(NOW) }],
-      ])
+  it('a revocation write failure during logout is a structured 500', resourceCase(async () => {
+    const env = await testApp(CONFIG).select({ server: { module: ['connectAuth'] } })
+      .method(ConnectBrowserSessionRepo, 'findByTokenHash', control.once(control.returns(Promise.resolve(sessionRow))))
+      .method(ConnectBrowserSessionRepo, 'revokeSession', control.once(control.throws(new Error('write failed'))))
+      .method(ConnectAccountRepo, 'findByUserId', control.once(control.returns(Promise.resolve({ ...account, password_hash: 'x' }))))
+      .method(ConnectClock, 'now', control.returns(NOW))
       .build();
-    const response = await env.dinner.request({
+    const response = await env.request({
       method: 'POST', path: '/v1/connect/auth/logout',
       headers: logoutHeaders, body: logoutBody,
     });
     expect(response.status).toBe(500);
     expect(await response.json()).toMatchObject({ kind: 'error', message: 'Internal server error' });
     await env.verify();
-    await env.dispose();
-  });
+  }));
 
-  it('logging out an already-revoked session is idempotent: 200 ended with count 0', async () => {
-    const env = await base()
-      .methods([
-        [ConnectBrowserSessionRepo, {
-          findByTokenHash: control.once(control.returns(Promise.resolve({
-            ...sessionRow, status: 'revoked',
-          }))),
-          revokeSession: control.once(control.returns(Promise.resolve())),
-        }],
-        [ConnectAccountRepo, {
-          findByUserId: control.once(control.returns(Promise.resolve({ ...account, password_hash: 'x' }))),
-        }],
-        [ConnectClock, { now: control.returns(NOW) }],
-      ])
+  it('logging out an already-revoked session is idempotent: 200 ended with count 0', resourceCase(async () => {
+    const env = await testApp(CONFIG).select({ server: { module: ['connectAuth'] } })
+      .method(ConnectBrowserSessionRepo, 'findByTokenHash', control.once(control.returns(Promise.resolve({
+        ...sessionRow, status: 'revoked',
+      }))))
+      .method(ConnectBrowserSessionRepo, 'revokeSession', control.once(control.returns(Promise.resolve())))
+      .method(ConnectAccountRepo, 'findByUserId', control.once(control.returns(Promise.resolve({ ...account, password_hash: 'x' }))))
+      .method(ConnectClock, 'now', control.returns(NOW))
       .build();
-    const response = await env.dinner.request({
+    const response = await env.request({
       method: 'POST', path: '/v1/connect/auth/logout',
       headers: logoutHeaders, body: logoutBody,
     });
@@ -324,6 +270,5 @@ describe('connect auth logout failure and idempotency branches (routes)', () => 
       kind: 'auth.logout.response', sessionId: 'ses_fixed0001', ended: true,
     });
     await env.verify();
-    await env.dispose();
-  });
+  }));
 });

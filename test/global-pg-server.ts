@@ -26,9 +26,6 @@ let startedByThisRun = false;
 
 export async function setup(): Promise<void> {
   process.env.SQLSTACK_TEST_PG_URL = ADMIN_URL;
-  // Keep the legacy migrated-template setup (global-setup.ts) on the
-  // disposable server too — never the developer's Postgres on 5432.
-  process.env.TEST_DATABASE_ADMIN_URL ??= ADMIN_URL;
   const running = compose(["ps", "--status=running", "--services"]).trim();
   if (running.includes("postgres")) return; // developer-managed server; leave it alone
   compose(["up", "-d", "--wait"]);

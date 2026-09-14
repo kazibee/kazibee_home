@@ -1,19 +1,36 @@
 /**
- * Direct unit coverage for the small pure helpers of the OAuth module:
- * scope-string mapping (oauth_scopes), resource-tag checks
- * (oauth_flow_service.tokenMatchesResource), and the body/param coercion
- * helpers of the two OAuth controllers (fields()/recordString()), exercised
- * through plain controller instances with hand-rolled fakes. No server,
- * database, or IoC.
+ * Direct unit coverage for the small helpers of the OAuth module:
+ * scope-string mapping (oauth_scopes) and resource-tag checks
+ * (oauth_flow_service.tokenMatchesResource) are pure exports exercised
+ * directly; the body/param coercion helpers of the two OAuth controllers
+ * (fields()/recordString()) are exercised through the real production
+ * controllers resolved from root testApp — OAuthController over the original
+ * MCP satellite configuration (apps/mcp/noego.config.yml, `oauth` module) and
+ * OAuthAuthorizeController over the original Website configuration
+ * (`oauthAuthorization` module). No server, no database; the flow / client /
+ * authorize / actor-resolver boundaries are controlled through singular
+ * method replacements on their actual tokens. resourceCase owns environment
+ * cleanup.
  */
 import { describe, it, expect } from "vitest";
+import path from "node:path";
+import { testApp } from "@noego/app";
+import { resourceCase, test as control, testStub } from "@noego/testing";
 import {
   connectionScopeToOAuthScope,
   grantScopeAllows,
 } from "../../../src/server/services/oauth_scopes";
-import { tokenMatchesResource } from "../../../src/server/services/oauth_flow_service";
+import OAuthFlowService, { tokenMatchesResource } from "../../../src/server/services/oauth_flow_service";
+import OAuthClientService from "../../../src/server/services/oauth_client_service";
+import OAuthAuthorizeService from "../../../src/server/services/oauth_authorize_service";
+import ConnectExecutorActorResolver from "../../../src/server/services/connect_executor_actor_resolver";
 import OAuthController from "../../../src/server/controller/oauth.controller";
 import OAuthAuthorizeController from "../../../src/server/controller/oauth_authorize.controller";
+
+const CONFIG = path.resolve(__dirname, "../../../noego.config.yml");
+const MCP_CONFIG = path.resolve(__dirname, "../../../apps/mcp/noego.config.yml");
+const TOKEN_SELECT = { server: { module: ["oauth"] } } as const;
+const AUTHORIZE_SELECT = { server: { module: ["oauthAuthorization"] } } as const;
 
 /** Chainable response fake capturing the terminal payload. */
 function fakeRes() {
@@ -59,111 +76,105 @@ describe("oauth_flow_service.tokenMatchesResource", () => {
 });
 
 describe("OAuthController.fields() body coercion arms", () => {
-  const flow = {
-    exchangeCode: async () => ({ ok: false as const, error: "invalid_grant" as const }),
-    refresh: async () => ({ ok: false as const, error: "invalid_grant" as const }),
-  };
-  const clients = {
-    registerClient: async () => ({ ok: false as const, error: "invalid_client_metadata" as const }),
-  };
-  const origins = { resource: "r", issuer: "i", authorizationEndpoint: "a" };
-  const controller = () =>
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    new OAuthController(flow as any, clients as any, origins as any);
+  // Flow / client boundaries: singular method controls on the actual tokens.
+  const boundaries = () => testStub()
+    .method(OAuthFlowService, "exchangeCode",
+      control.returns(Promise.resolve({ ok: false as const, error: "invalid_grant" as const })))
+    .method(OAuthFlowService, "refresh",
+      control.returns(Promise.resolve({ ok: false as const, error: "invalid_grant" as const })))
+    .method(OAuthClientService, "registerClient",
+      control.returns(Promise.resolve({ ok: false as const, error: "invalid_client_metadata" as const })));
 
-  it("parses a URLSearchParams body", async () => {
+  it("parses a URLSearchParams body", resourceCase(async (scope) => {
+    const env = scope.environment(await testApp(MCP_CONFIG).select(TOKEN_SELECT).use(boundaries()).build());
+    const controller = await env.dinner.controller(OAuthController);
     const { res, out } = fakeRes();
-    await controller().token({
+    await controller.token({
       req: { body: new URLSearchParams({ grant_type: "bogus" }) },
       res,
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    } as any);
+    } as never);
     expect(out.status).toBe(400);
     expect(out.json).toEqual({ error: "unsupported_grant_type" });
-  });
+  }));
 
-  it("parses a raw urlencoded string body", async () => {
+  it("parses a raw urlencoded string body", resourceCase(async (scope) => {
+    const env = scope.environment(await testApp(MCP_CONFIG).select(TOKEN_SELECT).use(boundaries()).build());
+    const controller = await env.dinner.controller(OAuthController);
     const { res, out } = fakeRes();
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    await controller().token({ req: { body: "grant_type=bogus" }, res } as any);
+    await controller.token({ req: { body: "grant_type=bogus" }, res } as never);
     expect(out.status).toBe(400);
     expect(out.json).toEqual({ error: "unsupported_grant_type" });
-  });
+  }));
 
-  it("treats an array or missing body as empty fields (invalid_request)", async () => {
+  it("treats an array or missing body as empty fields (invalid_request)", resourceCase(async (scope) => {
+    const env = scope.environment(await testApp(MCP_CONFIG).select(TOKEN_SELECT).use(boundaries()).build());
+    const controller = await env.dinner.controller(OAuthController);
     for (const body of [["grant_type=bogus"], undefined]) {
       const { res, out } = fakeRes();
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      await controller().token({ req: { body }, res } as any);
+      await controller.token({ req: { body }, res } as never);
       expect(out.status).toBe(400);
       expect(out.json).toEqual({ error: "invalid_request" });
     }
-  });
+  }));
 
-  it("register echoes the submitted metadata when the stored record has none", async () => {
-    const stubClients = {
-      registerClient: async () => ({
+  it("register echoes the submitted metadata when the stored record has none", resourceCase(async (scope) => {
+    const env = scope.environment(await testApp(MCP_CONFIG).select(TOKEN_SELECT)
+      .use(boundaries())
+      .method(OAuthClientService, "registerClient", control.returns(Promise.resolve({
         ok: true as const,
         client: { client_id: "oac_x", metadata: null },
-      }),
-    };
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const c = new OAuthController(flow as any, stubClients as any, origins as any);
+      })))
+      .build());
+    const c = await env.dinner.controller(OAuthController);
     const { res, out } = fakeRes();
     await c.register({
       req: { body: { client_name: "N", redirect_uris: ["https://x.example/cb"] } },
       res,
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    } as any);
+    } as never);
     expect(out.status).toBe(201);
     expect(out.json).toEqual({
       client_name: "N",
       redirect_uris: ["https://x.example/cb"],
       client_id: "oac_x",
     });
-  });
+  }));
 });
 
 describe("OAuthAuthorizeController body coercion arms", () => {
-  it("a non-object body yields an empty sessionId and approved scope", async () => {
+  it("a non-object body yields an empty sessionId and approved scope", resourceCase(async (scope) => {
     const seen: { approvedScope?: unknown } = {};
-    const oauth = {
-      approve: async (
+    const env = scope.environment(await testApp(CONFIG).select(AUTHORIZE_SELECT)
+      .method(OAuthAuthorizeService, "approve", control.watch(() => async (
         _userId: string,
         _params: unknown,
         approvedScope: unknown,
       ) => {
         seen.approvedScope = approvedScope;
         return { ok: false as const, error: "invalid_request" as const, message: "nope" };
-      },
-    };
-    const actors = {
-      browser: async (_req: unknown, sessionId: string) => {
+      }))
+      .method(ConnectExecutorActorResolver, "browser", control.watch(() => async (_req: unknown, sessionId: string) => {
         expect(sessionId).toBe("");
         return { ok: true as const, actor: { userId: "usr_1" } };
-      },
-    };
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const controller = new OAuthAuthorizeController(oauth as any, actors as any);
+      }))
+      .build());
+    const controller = await env.dinner.controller(OAuthAuthorizeController);
     const { res, out } = fakeRes();
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    await controller.approve({ req: { body: "raw-string-body" }, res } as any);
+    await controller.approve({ req: { body: "raw-string-body" }, res } as never);
     expect(seen.approvedScope).toBe("");
     expect(out.status).toBe(400);
     expect(out.json).toEqual({ error: "invalid_request", message: "nope" });
-  });
+  }));
 
-  it("an unauthenticated deny with no body is a 401 without touching the service", async () => {
-    const oauth = { deny: async () => { throw new Error("must not be called"); } };
-    const actors = {
-      browser: async () => ({ ok: false as const, reason: "unauthorized" as const }),
-    };
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const controller = new OAuthAuthorizeController(oauth as any, actors as any);
+  it("an unauthenticated deny with no body is a 401 without touching the service", resourceCase(async (scope) => {
+    const env = scope.environment(await testApp(CONFIG).select(AUTHORIZE_SELECT)
+      .method(OAuthAuthorizeService, "deny", control.throws(new Error("must not be called")))
+      .method(ConnectExecutorActorResolver, "browser",
+        control.returns(Promise.resolve({ ok: false as const, reason: "unauthorized" as const })))
+      .build());
+    const controller = await env.dinner.controller(OAuthAuthorizeController);
     const { res, out } = fakeRes();
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    await controller.deny({ req: {}, res } as any);
+    await controller.deny({ req: {}, res } as never);
     expect(out.status).toBe(401);
     expect(out.json).toEqual({ error: true, message: "Not signed in" });
-  });
+  }));
 });

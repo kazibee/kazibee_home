@@ -35,11 +35,12 @@ jobs:
   deploy-mcp-production:
     runs-on: self-hosted
     environment: production
-    env:
-      NPM_INTERNAL_AUTH_FILE: ${{ runner.temp }}/npm-internal-auth.npmrc
-      NPM_NO_AUTH_FILE: ${{ runner.temp }}/npm-no-auth.npmrc
-
     steps:
+      # `runner.temp` is a step-level context only; job-level `env` cannot reference it.
+      - name: Set temporary npm configuration paths
+        run: |
+          echo "NPM_INTERNAL_AUTH_FILE=$RUNNER_TEMP/npm-internal-auth.npmrc" >> "$GITHUB_ENV"
+          echo "NPM_NO_AUTH_FILE=$RUNNER_TEMP/npm-no-auth.npmrc" >> "$GITHUB_ENV"
       - name: Checkout website
         uses: actions/checkout@v4
 

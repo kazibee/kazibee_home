@@ -13,7 +13,8 @@ import manifest from '@kazibee-internal/connect-protocol/canonical/manifest.json
  */
 const CANONICAL_PACKAGE = '@kazibee-internal/connect-protocol';
 const SCHEMA_SUBPATH = 'canonical/schemas/kazi-connect-v1.schema.json';
-const SCHEMA_1_0_8_SHA256 = '79b7a8be1338855681a3b5b5ce66e0c135eddf7c2a07bdaab96ca9552a3112ec';
+// @kazibee-internal/connect-protocol@0.2.0: the 1.0.8 canonical set plus the `workspace.prepare` operation.
+const SCHEMA_1_0_8_SHA256 = '39fbfdc7774a0b0a7370ddd8284b42cff4f14b8026e445d4bef08f87e789f88b';
 const SOURCE_MANIFEST_1_0_8_SHA256 = '480fda83a7b713968a3125cfc6a32c59374fe9ccdc4e4c889218a4bd14cea9c1';
 
 const websiteRoot = resolve(dirname(new URL(import.meta.url).pathname), '../../..');
@@ -85,7 +86,8 @@ describe('canonical protocol authority', () => {
     expect(manifest.canonicalSource.package).toBe('@kazibee/connect-protocol');
     expect(manifest.canonicalSource.packageVersion).toBe('1.0.8');
     expect(manifest.canonicalSource.manifestSha256).toBe(SOURCE_MANIFEST_1_0_8_SHA256);
-    expect((protocolSchema.$defs as Record<string, { enum?: string[] }>).operation.enum).toHaveLength(9);
+    expect((protocolSchema.$defs as Record<string, { enum?: string[] }>).operation.enum).toHaveLength(10);
+    expect((protocolSchema.$defs as Record<string, { enum?: string[] }>).operation.enum).toContain('workspace.prepare');
     expect(manifest.authContracts.desktopRelay.headers.protocolVersion).toEqual({
       name: 'X-Kazi-Protocol-Version',
       literal: '1.0',

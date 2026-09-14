@@ -35,7 +35,7 @@
     "@aws-sdk/client-s3": "^3.1042.0",
     "@aws-sdk/client-ssm": "^3.1042.0",
     "@aws-sdk/s3-request-presigner": "^3.1042.0",
-    "@kazibee-internal/connect-protocol": "0.1.0",
+    "@kazibee-internal/connect-protocol": "0.2.0",
     "@kazibee-internal/swarm-head-protocol": "0.1.0",
     "@neondatabase/serverless": "^1.1.0",
     "@noego/ioc": "^0.8.1",

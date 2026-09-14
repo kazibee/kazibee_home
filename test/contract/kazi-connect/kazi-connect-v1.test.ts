@@ -90,6 +90,7 @@ describe('closed, bounded protocol surface', () => {
       'thread.retry',
       'thread.cancel',
       'events.replay',
+      'workspace.prepare',
     ]);
   });
 
@@ -333,9 +334,10 @@ describe('closed, bounded protocol surface', () => {
       'thread.send',
       'thread.retry',
       'thread.cancel',
+      'workspace.prepare',
     ]);
     expect(defs.commandResultOperation.enum).not.toContain('events.replay');
-    expect(defs.commandResult.allOf).toHaveLength(8);
+    expect(defs.commandResult.allOf).toHaveLength(9);
     expect(defs.commandResultPayload.oneOf).toEqual([
       { $ref: '#/$defs/executorStatusResult' },
       { $ref: '#/$defs/workspacesReadResult' },
@@ -345,6 +347,7 @@ describe('closed, bounded protocol surface', () => {
       { $ref: '#/$defs/threadSendResult' },
       { $ref: '#/$defs/threadRetryResult' },
       { $ref: '#/$defs/threadCancelResult' },
+      { $ref: '#/$defs/workspacePrepareResult' },
     ]);
     expect(
       (defs.commandResult.properties as Record<string, Record<string, Json>>).actorRole.const,

@@ -168,7 +168,7 @@ describe("relay diagnostics", () => {
     expect((await relay.fetch(request("{not json"))).status).toBe(400);
     const queued = events("kaziquery.relay.enqueue", "queued");
     expect(queued).toHaveLength(2);
-    expect(queued[0]).toMatchObject({ phase: "admit", status: 202, reason: "queued", recordId: "record-1", kind: "log", site: "mcp", pending: 1, sequence: 0, limitPending: 32 });
+    expect(queued[0]).toMatchObject({ phase: "admit", status: 202, reason: "queued", recordId: "record-1", kind: "log", site: "mcp", pending: 1, sequence: 0, limitPending: 2000 });
     expect(typeof queued[0].bytes).toBe("number");
     expect(queued[1]).toMatchObject({ reason: "duplicate", status: 202 });
     expect(events("kaziquery.relay.enqueue", "rejected")[0]).toMatchObject({ reason: "malformed", status: 400 });
@@ -179,10 +179,10 @@ describe("relay diagnostics", () => {
   it("reports capacity and blocked admissions", async () => {
     const storage = new MemoryStorage();
     const relay = new KaziQueryExportRelay({ storage }, env);
-    for (let i = 0; i < 33; i++) await relay.fetch(request(admission(`record-${i}`)));
+    for (let i = 0; i < 2001; i++) await relay.fetch(request(admission(`record-${i}`)));
     const capacity = events("kaziquery.relay.enqueue", "rejected");
     expect(capacity).toHaveLength(1);
-    expect(capacity[0]).toMatchObject({ reason: "capacity", status: 429, pending: 32 });
+    expect(capacity[0]).toMatchObject({ reason: "capacity", status: 429, pending: 2000 });
     const queue = await storage.get<Record<string, unknown>>("queue");
     await storage.put("queue", { ...queue, blocked: 401 });
     await relay.fetch(request(admission("record-blocked")));

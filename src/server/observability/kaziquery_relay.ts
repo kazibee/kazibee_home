@@ -14,6 +14,8 @@ export interface RelayStorage extends Store {
   transaction<T>(callback: (transaction: Store) => Promise<T>): Promise<T>;
 }
 interface Pending { id: string; body: string; sequence: number; }
+/** The batch currently being delivered: its composition is frozen until KaziQuery accepts it, so retries are exact replays. */
+interface Inflight { id: string; count: number; }
 interface RelayQueue {
   destination: string;
   next: number;
@@ -22,10 +24,17 @@ interface RelayQueue {
   blocked?: number;
   lastAttemptAtMs?: number;
   lastStatus?: number;
+  inflight?: Inflight;
 }
 interface Receipt { fingerprint: string; expires: number; }
 const DAY = 86400000;
-const MAX_PENDING = 32;
+/** Records held durably while KaziQuery is slow or down; beyond this admission answers 429 capacity. */
+const MAX_PENDING = 2000;
+/** One ingest POST carries many records: flush as soon as this many are pending (else after the 1 s coalescing alarm). */
+const FLUSH_RECORDS = 200;
+/** KaziQuery's per-batch limits (TAIL_LIMITS): 1000 records, 256 KB of JSONL. */
+const BATCH_RECORDS = 1000;
+const BATCH_BYTES = 256 * 1024;
 const ORIGIN = "https://dev.kaziquery.com";
 const ENQUEUE_REASONS: Record<number, string> = { 202: "queued", 409: "conflict", 413: "too_large", 429: "capacity" };
 
@@ -127,7 +136,9 @@ export class KaziQueryExportRelay {
       await storage.put("queue", queue);
       await storage.put(receiptKey, { fingerprint, expires: input.admittedAtMs + DAY });
       await storage.put(`expiry:${String(input.admittedAtMs + DAY).padStart(16, "0")}:${receiptKey}`, receiptKey);
+      // First record arms the 1 s coalescing alarm; a full batch flushes at once.
       if (queue.pending.length === 1) await storage.setAlarm(Date.now() + 1000);
+      else if (queue.pending.length >= FLUSH_RECORDS && !queue.inflight) await storage.setAlarm(Date.now());
       detail.pending = queue.pending.length;
       detail.sequence = sequence;
       detail.reason = "queued";
@@ -149,7 +160,8 @@ export class KaziQueryExportRelay {
     if (record.kind !== "log" && record.kind !== "trace") return false;
     if (typeof record.name !== "string" || record.name.length > 128 || !record.attributes || typeof record.attributes !== "object") return false;
     if (record.message !== undefined && (record.kind !== "log" || typeof record.message !== "string")) return false;
-    return Object.keys(record).every(key => ["id", "occurredAtMs", "kind", "name", "level", "message", "context", "attributes"].includes(key));
+    if (record.requestId !== undefined && (typeof record.requestId !== "string" || !record.requestId || record.requestId.length > 128)) return false;
+    return Object.keys(record).every(key => ["id", "occurredAtMs", "kind", "name", "level", "message", "context", "requestId", "attributes"].includes(key));
   }
 
   async alarm(): Promise<void> {
@@ -170,13 +182,30 @@ export class KaziQueryExportRelay {
       diagnose("warn", "kaziquery.relay.delivery", { phase: "delivery", outcome: "skipped", reason: "destination_mismatch", pending: queue.pending.length, failures: queue.failures });
       return;
     }
-    const batch = queue.pending[0];
-    const base = { phase: "delivery", batchId: batch.id, sequence: batch.sequence, bytes: new TextEncoder().encode(batch.body).byteLength, pending: queue.pending.length, attempt: queue.failures + 1 };
-    diagnose("log", "kaziquery.relay.delivery", { ...base, outcome: "started", failures: queue.failures, lastStatus: queue.lastStatus ?? 0 });
-    await this.state.storage.transaction(async storage => {
+    // Compose (or replay) ONE batch: a prefix of the pending queue bounded by KaziQuery's per-request limits.
+    // The composition and its idempotency key are persisted before the first attempt so every retry is an
+    // exact replay of the same sequence range; a lost 202 can therefore only ever look like a duplicate.
+    const batch = await this.state.storage.transaction(async storage => {
       const current = await storage.get<RelayQueue>("queue");
-      if (current) { current.lastAttemptAtMs = Date.now(); await storage.put("queue", current); }
+      if (!current?.pending.length) return;
+      if (!current.inflight || current.inflight.count > current.pending.length) {
+        let count = 0, bytes = 0;
+        for (const item of current.pending) {
+          const size = new TextEncoder().encode(item.body).byteLength;
+          if (count && (count >= BATCH_RECORDS || bytes + size > BATCH_BYTES)) break;
+          count++; bytes += size;
+        }
+        current.inflight = { id: crypto.randomUUID(), count };
+      }
+      current.lastAttemptAtMs = Date.now();
+      await storage.put("queue", current);
+      const records = current.pending.slice(0, current.inflight.count);
+      return { id: current.inflight.id, records, body: records.map(item => item.body).join(""), pending: current.pending.length, failures: current.failures, lastStatus: current.lastStatus ?? 0 };
     });
+    if (!batch) return;
+    const first = batch.records[0], last = batch.records[batch.records.length - 1];
+    const base = { phase: "delivery", batchId: batch.id, sequence: first.sequence, lastSequence: last.sequence, records: batch.records.length, bytes: new TextEncoder().encode(batch.body).byteLength, pending: batch.pending, attempt: batch.failures + 1 };
+    diagnose("log", "kaziquery.relay.delivery", { ...base, outcome: "started", failures: batch.failures, lastStatus: batch.lastStatus });
     const startedAt = Date.now();
     let status = 503;
     let errorClass: string | undefined;
@@ -187,7 +216,7 @@ export class KaziQueryExportRelay {
           Authorization: `Bearer ${config.key}`, "Content-Type": "application/x-ndjson",
           "Idempotency-Key": batch.id, "X-Connector-Id": config.connector,
           "X-Producer-Id": config.producer, "X-Producer-Epoch": config.epoch,
-          "X-First-Sequence": String(batch.sequence), "X-Last-Sequence": String(batch.sequence),
+          "X-First-Sequence": String(first.sequence), "X-Last-Sequence": String(last.sequence),
           "X-Envelope-Version": "1",
         },
       });
@@ -206,10 +235,11 @@ export class KaziQueryExportRelay {
     let retry: { failures: number; blocked: number; nextRetryMs: number; pending: number } | undefined;
     await this.state.storage.transaction(async storage => {
       const current = await storage.get<RelayQueue>("queue");
-      if (!current || current.pending[0]?.id !== batch.id) return;
+      if (!current || current.inflight?.id !== batch.id) return;
       current.lastStatus = status;
       if (status === 202) {
-        current.pending.shift();
+        current.pending.splice(0, current.inflight.count);
+        delete current.inflight;
         current.failures = 0;
         outcome = "delivered";
       } else {
@@ -218,7 +248,8 @@ export class KaziQueryExportRelay {
         outcome = current.blocked ? "blocked" : "retry";
       }
       await storage.put("queue", current);
-      const nextRetryMs = status === 202 ? 1000 : Math.min(3600000, 1000 * 2 ** current.failures);
+      // More pending after a success: keep draining promptly (a full batch immediately, otherwise the coalescing second).
+      const nextRetryMs = status === 202 ? (current.pending.length >= FLUSH_RECORDS ? 0 : 1000) : Math.min(3600000, 1000 * 2 ** current.failures);
       await storage.setAlarm(Date.now() + nextRetryMs);
       retry = { failures: current.failures, blocked: current.blocked ?? 0, nextRetryMs, pending: current.pending.length };
     });

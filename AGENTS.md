@@ -20,3 +20,16 @@ Migrations are owned by `@noego/proper`. Never author migration files by hand.
    before committing. Read `noego/proper/README.md` and `noego/proper/framework/MigrationRunner.ts`
    before touching migrations if unsure how proper behaves; do not guess framework behavior.
 
+## Logging and KaziQuery export
+
+1. Application code logs only through `@noego/logger` (`getLogger("kazibee:<layer>:<component>")`);
+   rules and anti-patterns are in `instructions/LOGGING.md`. Never `console.log`, never log secrets.
+2. Dev Workers export those logs/traces to `https://dev.kaziquery.com`. The full setup guide —
+   what to provision in KaziQuery, the ingest HTTP contract and envelope, what the exporter
+   admits, the `KAZIQUERY_*` config block, operations and verification — is
+   `../kaziquery/docs/ingest-setup.md`. The Kazibee-specific provisioned identities, rollout
+   history and satellite (MCP/agent) notes are in `instructions/KAZIQUERY_DEV.md`.
+3. `KAZIQUERY_INGEST_KEY` is a Worker secret (SSM → GitHub dev environment). Never print or commit
+   it, never query with it, and never reset or delete the `KaziQueryExportRelay` Durable Object:
+   its sequence is the producer watermark.
+

@@ -51,14 +51,14 @@ describe("development KaziQuery export", () => {
   });
 
   it("names records after their event, promotes requestId and request scalars, and keeps context verbatim", async () => {
-    const context = { requestId: "req_123", site: "mcp", route: "/mcp", method: "POST", status: 502, durationMs: 1234, outcome: "failed", responseReturned: true, cfRay: "abc", nested: { deep: true } };
+    const context = { requestId: "req_123", site: "mcp", host: "mcp-dev.kazibee.com", route: "/mcp", method: "POST", status: 502, durationMs: 1234, outcome: "failed", responseReturned: true, cfRay: "abc", nested: { deep: true } };
     const record = new KaziQueryRecordPolicy().log({
       id: "id", occurredAtMs: 1, producerId: "p", sequence: 9, logger: "kazibee:gateway", level: "ERROR",
       message: "gateway.request.failed", service: "test", environment: "test", context,
     });
     expect(record).toMatchObject({
       name: "gateway.request.failed", message: "gateway.request.failed", level: "error", requestId: "req_123", context,
-      attributes: { exportPolicyVersion: 3, logger: "kazibee:gateway", site: "mcp", route: "/mcp", method: "POST", status: 502, durationMs: 1234, outcome: "failed" },
+      attributes: { exportPolicyVersion: 3, logger: "kazibee:gateway", site: "mcp", host: "mcp-dev.kazibee.com", route: "/mcp", method: "POST", status: 502, durationMs: 1234, outcome: "failed" },
     });
     expect(Object.keys(record!.attributes)).not.toContain("cfRay");
     // Never a server-owned envelope field, and no requestId when the context has none.

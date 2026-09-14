@@ -34,6 +34,15 @@ const rootOf = (options: BootOptions): IContainer => options.container ?? create
  */
 type ScopeLike = { get(token: unknown): unknown };
 
+/** Full request hostname (e.g. `mcp-dev.kazibee.com`) for ambient log context; undefined when the URL is unparseable. */
+const hostOf = (url: string): string | undefined => {
+  try {
+    return new URL(url).host || undefined;
+  } catch {
+    return undefined;
+  }
+};
+
 const requestScope = async (scope: ScopeLike, ctx: { request?: Request; runtime?: unknown }) => {
   KaziQueryExport.attach(scope, ctx.runtime);
   if (ctx.request) {
@@ -41,9 +50,11 @@ const requestScope = async (scope: ScopeLike, ctx: { request?: Request; runtime?
     // inside this scope (controllers, services, sqlstack) carries these
     // fields without threading them through signatures.
     const ray = ctx.request.headers.get("cf-ray");
+    const host = hostOf(ctx.request.url);
     extendLogContext({
       requestId: crypto.randomUUID(),
       method: ctx.request.method,
+      ...(host ? { host } : {}),
       ...(ray ? { cfRay: ray } : {}),
     });
     const requestLog = (await scope.get(GatewayRequestLog)) as GatewayRequestLog;

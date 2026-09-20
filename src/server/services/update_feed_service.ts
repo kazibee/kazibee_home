@@ -2,6 +2,7 @@ import { Component, Inject } from "@noego/ioc";
 import { getLogger } from "@noego/logger";
 import { NotFoundError, ValidationError } from "../errors/domain_errors";
 import DownloadService, { type DownloadItem, type VersionDownloads } from "./download_service";
+import { compareReleaseVersionsDesc, isVersionOnChannel, type UpdateChannel } from "./release_version";
 
 const logger = getLogger("kazibee:update-feed-service");
 
@@ -32,10 +33,10 @@ export default class UpdateFeedService {
   constructor(@Inject(DownloadService) private downloadService: DownloadService) {}
 
   /** Squirrel.Mac JSON feed: newest published macOS release for the arch. */
-  async createFeed(arch: UpdateArch): Promise<UpdateFeed> {
-    logger.info("Building update feed", { arch, expiresIn: this.expiresIn, platform: "darwin" });
+  async createFeed(arch: UpdateArch, channel: UpdateChannel = "stable"): Promise<UpdateFeed> {
+    logger.info("Building update feed", { arch, channel, expiresIn: this.expiresIn, platform: "darwin" });
 
-    const release = await this.newestRelease();
+    const release = await this.newestRelease(channel);
     const archive = this.findMacArchive(release.downloads, arch);
     if (!archive) {
       logger.info("No macOS archive for update feed", {
@@ -79,10 +80,10 @@ export default class UpdateFeedService {
   /** Squirrel.Windows RELEASES manifest of the newest published release,
    *  served verbatim — the client resolves the listed nupkg filenames
    *  relative to the same feed base URL. */
-  async createWindowsReleases(arch: UpdateArch): Promise<string> {
-    logger.info("Building Windows RELEASES manifest", { arch, platform: "win32" });
+  async createWindowsReleases(arch: UpdateArch, channel: UpdateChannel = "stable"): Promise<string> {
+    logger.info("Building Windows RELEASES manifest", { arch, channel, platform: "win32" });
 
-    const release = await this.newestRelease();
+    const release = await this.newestRelease(channel);
     const hasManifest = release.downloads.some(({ name }) => name === "RELEASES");
     if (!hasManifest) {
       logger.info("No Windows RELEASES manifest for release", {
@@ -131,13 +132,29 @@ export default class UpdateFeedService {
     return url;
   }
 
-  private async newestRelease(): Promise<VersionDownloads> {
+  /** Newest release offered on the channel. Ordering is decided here rather
+   *  than inherited from the listing, so a release candidate can never reach
+   *  the stable channel whatever order the listing arrives in. */
+  private async newestRelease(channel: UpdateChannel): Promise<VersionDownloads> {
     const { versions } = await this.downloadService.listVersions("app");
-    const release = versions.find(({ version }) => version !== "latest");
+    const candidates = versions.filter(({ version }) => version !== "latest");
+    const eligible = candidates
+      .filter(({ version }) => isVersionOnChannel(version, channel))
+      .sort((a, b) => compareReleaseVersionsDesc(a.version, b.version));
+    const release = eligible[0];
     if (!release) {
-      logger.info("No app releases available for update feed", {});
+      logger.info("No app releases available for update feed", {
+        candidateCount: candidates.length,
+        channel,
+      });
       throw new NotFoundError("No app releases available");
     }
+    logger.info("Selected update feed release", {
+      candidateCount: candidates.length,
+      channel,
+      eligibleCount: eligible.length,
+      version: release.version,
+    });
     return release;
   }
 

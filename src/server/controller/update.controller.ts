@@ -3,6 +3,7 @@ import { getLogger } from "@noego/logger";
 import type { CompatRequest as Request, CompatResponse as Response } from "@noego/dinner";
 import { NotFoundError, ValidationError } from "../errors/domain_errors";
 import UpdateLogic from "../logic/update.logic";
+import type { UpdateChannel } from "../services/release_version";
 import { normalizeUpdateArch } from "../services/update_feed_service";
 
 const logger = getLogger("kazibee:update-controller");
@@ -12,32 +13,21 @@ export default class UpdateController {
   constructor(@Inject(UpdateLogic) private updateLogic: UpdateLogic) {}
 
   async releasesFeed({ req, res }: { req: Request; res: Response }) {
-    try {
-      const { arch } = req.params as { arch?: string };
-      const normalizedArch = normalizeUpdateArch(arch);
-      if (!normalizedArch) {
-        throw new ValidationError("Invalid update arch");
-      }
-      const feed = await this.updateLogic.createFeed(normalizedArch);
-      return res.json(feed);
-    } catch (error) {
-      return this.handleError(error, res);
-    }
+    return this.sendFeed(req, res, "stable");
+  }
+
+  /** Beta channel: also offers release candidates (pre-release versions). */
+  async betaReleasesFeed({ req, res }: { req: Request; res: Response }) {
+    return this.sendFeed(req, res, "beta");
   }
 
   async windowsReleases({ req, res }: { req: Request; res: Response }) {
-    try {
-      const { arch } = req.params as { arch?: string };
-      const normalizedArch = normalizeUpdateArch(arch);
-      if (!normalizedArch) {
-        throw new ValidationError("Invalid update arch");
-      }
-      const manifest = await this.updateLogic.createWindowsReleases(normalizedArch);
-      res.setHeader("content-type", "text/plain");
-      return res.send(manifest);
-    } catch (error) {
-      return this.handleError(error, res);
-    }
+    return this.sendWindowsReleases(req, res, "stable");
+  }
+
+  /** Beta channel: also offers release candidates (pre-release versions). */
+  async betaWindowsReleases({ req, res }: { req: Request; res: Response }) {
+    return this.sendWindowsReleases(req, res, "beta");
   }
 
   async windowsPackage({ req, res }: { req: Request; res: Response }) {
@@ -49,6 +39,35 @@ export default class UpdateController {
       }
       const url = await this.updateLogic.createWindowsPackageDownload(normalizedArch, file ?? "");
       return res.redirect(302, url);
+    } catch (error) {
+      return this.handleError(error, res);
+    }
+  }
+
+  private async sendFeed(req: Request, res: Response, channel: UpdateChannel) {
+    try {
+      const { arch } = req.params as { arch?: string };
+      const normalizedArch = normalizeUpdateArch(arch);
+      if (!normalizedArch) {
+        throw new ValidationError("Invalid update arch");
+      }
+      const feed = await this.updateLogic.createFeed(normalizedArch, channel);
+      return res.json(feed);
+    } catch (error) {
+      return this.handleError(error, res);
+    }
+  }
+
+  private async sendWindowsReleases(req: Request, res: Response, channel: UpdateChannel) {
+    try {
+      const { arch } = req.params as { arch?: string };
+      const normalizedArch = normalizeUpdateArch(arch);
+      if (!normalizedArch) {
+        throw new ValidationError("Invalid update arch");
+      }
+      const manifest = await this.updateLogic.createWindowsReleases(normalizedArch, channel);
+      res.setHeader("content-type", "text/plain");
+      return res.send(manifest);
     } catch (error) {
       return this.handleError(error, res);
     }

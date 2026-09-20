@@ -22,14 +22,21 @@
     selectedVersion: string;
     isLoading: boolean;
     error: string | null;
+    showBeta: boolean;
   }
 
   interface DownloadsInput {
     refresh(): Promise<void>;
+    setShowBeta(showBeta: boolean): void;
   }
 
+  // Used only when the page renders without its controller.
+  let fallbackShowBeta = $state(false);
   const fallbackInput: DownloadsInput = {
     refresh: async () => {},
+    setShowBeta: (showBeta: boolean) => {
+      fallbackShowBeta = showBeta;
+    },
   };
 
   let {
@@ -54,6 +61,7 @@
     selectedVersion,
     isLoading: false,
     error,
+    showBeta: fallbackShowBeta,
   });
   let seoTitle = $derived(pageData.kind === "app" ? "Download Kazibee App" : "Download Kazibee CLI");
   let seoPath = $derived(pageData.kind === "app" ? "/downloads/app" : "/downloads/cli");
@@ -61,7 +69,17 @@
     ? "Download the Kazibee desktop app for your local AI work and secure Connect access."
     : "Download the Kazibee CLI for scripting, headless workflows, and command-line access to Kazibee plugins.");
   let selectedGroup = $derived(pageData.versions.find((v) => v.version === pageData.selectedVersion) ?? null);
-  let otherVersions = $derived(pageData.versions.filter((v) => v.version !== pageData.selectedVersion));
+  // Release candidates carry a pre-release tag (`v0.9.2-rc20260920-1`). They
+  // stay out of the list until the visitor opts in with the beta checkbox.
+  function isBetaVersion(version: string): boolean {
+    return /^v?\d+\.\d+\.\d+-/.test(version);
+  }
+
+  let unselectedVersions = $derived(pageData.versions.filter((v) => v.version !== pageData.selectedVersion));
+  let hasBetaVersions = $derived(unselectedVersions.some((v) => isBetaVersion(v.version)));
+  let otherVersions = $derived(
+    pageData.showBeta ? unselectedVersions : unselectedVersions.filter((v) => !isBetaVersion(v.version)),
+  );
 
   let basePath = $derived(`/downloads/${pageData.kind}`);
   let kindLabel = $derived(pageData.kind === "app" ? "Kazibee App" : "Kazibee CLI");
@@ -316,9 +334,28 @@
           {/if}
         </section>
 
-        {#if otherVersions.length > 0}
+        {#if otherVersions.length > 0 || hasBetaVersions}
           <section data-test-id="downloads-other-versions">
-            <h2 class="text-2xl font-black tracking-tight text-ink">Other versions</h2>
+            <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <h2 class="text-2xl font-black tracking-tight text-ink">Other versions</h2>
+              {#if hasBetaVersions}
+                <label class="inline-flex cursor-pointer items-center gap-2 text-sm font-semibold text-ink-muted">
+                  <input
+                    type="checkbox"
+                    class="h-4 w-4 rounded border-neutral-300 accent-honey-500"
+                    checked={pageData.showBeta}
+                    onchange={(event) => input.setShowBeta(event.currentTarget.checked)}
+                    data-test-id="downloads-show-beta"
+                  />
+                  <span>Show beta versions</span>
+                </label>
+              {/if}
+            </div>
+            {#if pageData.showBeta}
+              <p class="mt-2 text-sm text-ink-muted" data-test-id="downloads-beta-note">
+                Beta versions are release candidates. They may be unstable.
+              </p>
+            {/if}
             <div class="mt-5 grid gap-3 sm:grid-cols-2">
               {#each otherVersions as versionGroup (versionGroup.version)}
                 <a

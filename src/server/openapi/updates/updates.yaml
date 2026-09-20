@@ -2,6 +2,75 @@ module:
   updates:
     basePath: '/updates'
     paths:
+      # Beta channel: same feeds, but release candidates (pre-release
+      # versions) are eligible. The channel is a path prefix, not a query
+      # parameter, because both Squirrel clients append to the base URL.
+      '/beta/win32/:arch/RELEASES':
+        get:
+          x-controller: update.controller
+          x-action: betaWindowsReleases
+          summary: 'Beta-channel Squirrel.Windows RELEASES manifest'
+          parameters:
+            - name: arch
+              in: path
+              required: true
+              schema:
+                type: string
+                enum: [x64]
+          responses:
+            '200':
+              description: 'RELEASES manifest of the newest release, candidates included'
+              content:
+                text/plain:
+                  schema:
+                    type: string
+            '400':
+              description: 'Invalid update arch'
+            '404':
+              description: 'No release with a RELEASES manifest'
+      '/beta/win32/:arch/:file':
+        get:
+          x-controller: update.controller
+          x-action: windowsPackage
+          summary: 'Beta-channel redirect to a temporary URL for a Squirrel.Windows package'
+          parameters:
+            - name: arch
+              in: path
+              required: true
+              schema:
+                type: string
+                enum: [x64]
+            - name: file
+              in: path
+              required: true
+              schema:
+                type: string
+          responses:
+            '302':
+              description: 'Redirect to temporary S3 package URL'
+            '400':
+              description: 'Invalid arch or package name'
+            '404':
+              description: 'Package not found'
+      '/beta/darwin/:arch/RELEASES.json':
+        get:
+          x-controller: update.controller
+          x-action: betaReleasesFeed
+          summary: 'Beta-channel Squirrel.Mac auto-update feed'
+          parameters:
+            - name: arch
+              in: path
+              required: true
+              schema:
+                type: string
+                enum: [arm64, x64]
+          responses:
+            '200':
+              description: 'Update feed for the newest macOS release, candidates included'
+            '400':
+              description: 'Invalid update arch'
+            '404':
+              description: 'No matching release or macOS archive found'
       '/win32/:arch/RELEASES':
         get:
           x-controller: update.controller

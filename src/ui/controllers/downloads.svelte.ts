@@ -20,10 +20,18 @@ interface DownloadsData {
   selectedVersion: string;
   isLoading: boolean;
   error: string | null;
+  /** Whether release candidates (pre-release versions) are listed. */
+  showBeta: boolean;
 }
 
 interface DownloadsInput {
   refresh(): Promise<void>;
+  setShowBeta(showBeta: boolean): void;
+}
+
+/** A version folder carrying a pre-release tag, e.g. `v0.9.2-rc20260920-1`. */
+export function isBetaVersion(version: string): boolean {
+  return /^v?\d+\.\d+\.\d+-/.test(version);
 }
 
 interface DownloadsResponse {
@@ -39,9 +47,13 @@ export default class DownloadsController {
     selectedVersion: "latest",
     isLoading: false,
     error: null,
+    showBeta: false,
   });
 
   input: DownloadsInput = {
+    setShowBeta: (showBeta: boolean) => {
+      this.data.showBeta = showBeta;
+    },
     refresh: async () => {
       this.data.isLoading = true;
       this.data.error = null;
@@ -70,6 +82,8 @@ export default class DownloadsController {
     this.data.versions = loadData.versions ?? [];
     this.data.selectedVersion = loadData.selectedVersion ?? "latest";
     this.data.error = loadData.error ?? null;
+    // A direct link to a release candidate opens with beta versions listed.
+    this.data.showBeta = isBetaVersion(this.data.selectedVersion);
   }
 
   destroy() {

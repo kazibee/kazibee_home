@@ -63,8 +63,22 @@ describe("UpdateController.releasesFeed", () => {
 
     await controller.releasesFeed({ req: requestFor("arm64"), res });
 
-    expect(control.inspect(env, UpdateLogic, "createFeed").calls.map((call) => call.args)).toEqual([["arm64"]]);
+    expect(control.inspect(env, UpdateLogic, "createFeed").calls.map((call) => call.args)).toEqual([["arm64", "stable"]]);
     expect(res.statusCode).toBe(200);
+    expect(res.body).toBe(feed);
+  }));
+
+  it("requests the beta channel from the beta feed route", resourceCase(async () => {
+    const feed = { currentRelease: "1.5.0-rc20260920-1", releases: [] };
+    const env = await testApp(CONFIG).select({ server: { module: ["updates"] } })
+      .method(UpdateLogic, "createFeed", control.returns(Promise.resolve(feed)))
+      .build();
+    const controller = await env.dinner.controller(UpdateController);
+    const res = fakeResponse();
+
+    await controller.betaReleasesFeed({ req: requestFor("arm64"), res });
+
+    expect(control.inspect(env, UpdateLogic, "createFeed").calls.map((call) => call.args)).toEqual([["arm64", "beta"]]);
     expect(res.body).toBe(feed);
   }));
 
@@ -107,6 +121,19 @@ describe("UpdateController.windowsReleases", () => {
     await env.verify();
     expect(res.statusCode).toBe(400);
     expect(res.body).toMatchObject({ error: true });
+  }));
+
+  it("passes the channel of the route that was hit", resourceCase(async () => {
+    const env = await testApp(CONFIG).select({ server: { module: ["updates"] } })
+      .method(UpdateLogic, "createWindowsReleases", control.returns(Promise.resolve("HASH pkg.nupkg 1\n")))
+      .build();
+    const controller = await env.dinner.controller(UpdateController);
+
+    await controller.windowsReleases({ req: requestFor("x64"), res: fakeResponse() });
+    await controller.betaWindowsReleases({ req: requestFor("x64"), res: fakeResponse() });
+
+    expect(control.inspect(env, UpdateLogic, "createWindowsReleases").calls.map((call) => call.args))
+      .toEqual([["x64", "stable"], ["x64", "beta"]]);
   }));
 });
 

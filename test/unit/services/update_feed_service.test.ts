@@ -88,6 +88,49 @@ describe("UpdateFeedService", () => {
     expect(calls(env, "createDownload")).toContainEqual(["app", "v1.4.2", "Kazibee-mac-x64.zip", { expiresIn: 3600 }]);
   }));
 
+  // A release candidate for the NEXT version sits above the published stable
+  // release; a finished candidate sits below its own final version. The
+  // listing is deliberately in plain string order (candidate first), which is
+  // the order that leaked candidates to every user before channels existed.
+  function candidateVersions(): VersionsResult {
+    const zip = (lastModified: string) => [{ name: "Kazibee-mac-arm64.zip", href: "#", size: 20, lastModified }];
+    return {
+      versions: [
+        { version: "v1.4.2-rc20260801-1", downloads: zip("2026-08-01T00:00:00.000Z") },
+        { version: "v1.5.0-rc20260920-2", downloads: zip("2026-09-20T02:00:00.000Z") },
+        { version: "v1.5.0-rc20260920-10", downloads: zip("2026-09-20T10:00:00.000Z") },
+        { version: "v1.4.2", downloads: zip("2026-08-09T00:00:00.000Z") },
+      ],
+    };
+  }
+
+  it("never offers a release candidate on the stable channel", resourceCase(async (scope) => {
+    const env = scope.environment(await testApp(CONFIG).select(SELECT).use(downloads(candidateVersions())).build());
+    const feed = await (await env.get<UpdateFeedService>(UpdateFeedService)).createFeed("arm64");
+
+    expect(feed.currentRelease).toBe("1.4.2");
+  }));
+
+  it("offers the newest release candidate on the beta channel", resourceCase(async (scope) => {
+    const env = scope.environment(await testApp(CONFIG).select(SELECT).use(downloads(candidateVersions())).build());
+    const feed = await (await env.get<UpdateFeedService>(UpdateFeedService)).createFeed("arm64", "beta");
+
+    expect(feed.currentRelease).toBe("1.5.0-rc20260920-10");
+  }));
+
+  it("moves the beta channel onto the final release once it ships", resourceCase(async (scope) => {
+    const versions = candidateVersions();
+    versions.versions.push({
+      version: "v1.5.0",
+      downloads: [{ name: "Kazibee-mac-arm64.zip", href: "#", size: 20, lastModified: "2026-09-25T00:00:00.000Z" }],
+    });
+    const env = scope.environment(await testApp(CONFIG).select(SELECT).use(downloads(versions)).build());
+    const service = await env.get<UpdateFeedService>(UpdateFeedService);
+
+    expect((await service.createFeed("arm64", "beta")).currentRelease).toBe("1.5.0");
+    expect((await service.createFeed("arm64", "stable")).currentRelease).toBe("1.5.0");
+  }));
+
   it("throws NotFoundError when no versions exist", resourceCase(async (scope) => {
     const env = scope.environment(await testApp(CONFIG).select(SELECT).use(downloads({ versions: [] })).build());
     const service = await env.get<UpdateFeedService>(UpdateFeedService);

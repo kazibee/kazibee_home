@@ -4,6 +4,7 @@ import { getLogger } from "@noego/logger";
 import { NotFoundError, ValidationError } from "../errors/domain_errors";
 import DownloadObjectStore from "./download_object_store";
 import Env from "./env";
+import { compareReleaseVersionsDesc } from "./release_version";
 
 const logger = getLogger("kazibee:download-service");
 
@@ -259,7 +260,7 @@ export default class DownloadService {
     if (b === "latest") {
       return 1;
     }
-    return b.localeCompare(a, undefined, { numeric: true, sensitivity: "base" });
+    return compareReleaseVersionsDesc(a, b);
   }
 
   private compareItems(a: string, b: string): number {

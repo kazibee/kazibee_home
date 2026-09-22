@@ -1,4 +1,4 @@
-import { GetObjectCommand, HeadObjectCommand, ListObjectsV2Command, S3ServiceException } from "@aws-sdk/client-s3";
+import { GetObjectCommand, ListObjectsV2Command, S3ServiceException } from "@aws-sdk/client-s3";
 import { Component, Inject } from "@noego/ioc";
 import { getLogger } from "@noego/logger";
 import { NotFoundError, ValidationError } from "../errors/domain_errors";
@@ -230,27 +230,75 @@ export default class DownloadService {
     }
   }
 
+  /**
+   * Existence probe. A ranged GetObject (first byte) is used instead of
+   * HeadObject on purpose: S3 answers HEAD errors without a body, so a
+   * signature/clock rejection surfaces as an anonymous 403 ("Unknown") that
+   * the SDK can neither name nor retry. With a body the error is typed
+   * (NoSuchKey / RequestTimeTooSkewed) and the SDK's clock-skew correction
+   * can act on it. The first S3 call per Worker isolate has been observed
+   * to fail exactly this way, so a 403 is retried once after the SDK has
+   * learned the clock offset from that response.
+   */
   private async assertObjectExists(key: string): Promise<void> {
     try {
-      await this.store.send(new HeadObjectCommand({
-        Bucket: this.bucket,
-        Key: key,
-      }));
+      await this.probeObject(key);
+      return;
     } catch (error) {
       if (this.isMissingObjectError(error)) {
-        logger.info("Download object not found", {
-          bucket: this.bucket,
-          key,
-        });
+        this.logObjectNotFound(key);
+        throw new NotFoundError("Download item not found");
+      }
+      if (!this.isForbiddenError(error)) {
+        logger.error("Failed to check download object", { bucket: this.bucket, error, key });
+        throw error;
+      }
+      logger.warn("Download object probe rejected with 403; retrying once", {
+        bucket: this.bucket,
+        error,
+        key,
+        systemClockOffset: this.store.systemClockOffset,
+      });
+    }
+
+    try {
+      await this.probeObject(key);
+      logger.info("Download object probe succeeded on retry", {
+        bucket: this.bucket,
+        key,
+        systemClockOffset: this.store.systemClockOffset,
+      });
+    } catch (error) {
+      if (this.isMissingObjectError(error)) {
+        this.logObjectNotFound(key);
         throw new NotFoundError("Download item not found");
       }
       logger.error("Failed to check download object", {
         bucket: this.bucket,
         error,
         key,
+        systemClockOffset: this.store.systemClockOffset,
       });
       throw error;
     }
+  }
+
+  private async probeObject(key: string): Promise<void> {
+    const result = await this.store.send(new GetObjectCommand({
+      Bucket: this.bucket,
+      Key: key,
+      Range: "bytes=0-0",
+    }));
+    // Drain the single byte so the underlying connection/stream is released.
+    await result.Body?.transformToByteArray();
+  }
+
+  private logObjectNotFound(key: string): void {
+    logger.info("Download object not found", { bucket: this.bucket, key });
+  }
+
+  private isForbiddenError(error: unknown): boolean {
+    return error instanceof S3ServiceException && error.$metadata.httpStatusCode === 403;
   }
 
   private compareVersions(a: string, b: string): number {

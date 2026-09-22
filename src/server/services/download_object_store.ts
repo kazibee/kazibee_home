@@ -1,8 +1,6 @@
 import {
   GetObjectCommand,
   type GetObjectCommandOutput,
-  HeadObjectCommand,
-  type HeadObjectCommandOutput,
   ListObjectsV2Command,
   type ListObjectsV2CommandOutput,
   S3Client,
@@ -27,14 +25,19 @@ export default class DownloadObjectStore {
     this.client = new S3Client({ region: this.region });
   }
 
+  /** Signer clock correction (ms) the SDK has learned from S3 `Date` headers;
+   *  0 until the first response. Exposed for diagnostics only. */
+  get systemClockOffset(): number {
+    return this.client.config.systemClockOffset ?? 0;
+  }
+
   dispose(): void {
     this.client.destroy();
   }
 
   send(command: ListObjectsV2Command): Promise<ListObjectsV2CommandOutput>;
-  send(command: HeadObjectCommand): Promise<HeadObjectCommandOutput>;
   send(command: GetObjectCommand): Promise<GetObjectCommandOutput>;
-  send(command: ListObjectsV2Command | HeadObjectCommand | GetObjectCommand): Promise<unknown> {
+  send(command: ListObjectsV2Command | GetObjectCommand): Promise<unknown> {
     return this.client.send(command as never);
   }
 

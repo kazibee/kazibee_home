@@ -15,7 +15,6 @@ import { testApp } from '@noego/app';
 import { resourceCase, testStub, test as control } from '@noego/testing';
 import {
   GetObjectCommand,
-  HeadObjectCommand,
   ListObjectsV2Command,
   S3ServiceException,
 } from '@aws-sdk/client-s3';
@@ -48,6 +47,15 @@ function missingObjectError(): S3ServiceException {
     name: 'NotFound',
     $fault: 'client',
     $metadata: { httpStatusCode: 404 },
+  });
+}
+
+/** What S3 returns for a mis-signed / clock-skewed request (or a real denial). */
+function forbiddenError(name: string): S3ServiceException {
+  return new S3ServiceException({
+    name,
+    $fault: 'client',
+    $metadata: { httpStatusCode: 403, attempts: 1 },
   });
 }
 
@@ -174,13 +182,15 @@ describe('DownloadService (stubbed AWS SDK boundary)', () => {
   });
 
   describe('createDownload', () => {
-    it('checks the object head then presigns a GetObject with attachment disposition', resourceCase(async () => {
+    it('probes the first byte of the object then presigns a GetObject with attachment disposition', resourceCase(async () => {
+      let drained = 0;
       const env = await testApp(CONFIG).select(SELECT).use(testStub())
         .function(Env, envWith({ KAZIBEE_DOWNLOAD_EXPIRES_SECONDS: '120' }))
         .method(DownloadObjectStore, 'send', sendWith(async (command) => {
-          expect(command).toBeInstanceOf(HeadObjectCommand);
-          expect((command as HeadObjectCommand).input.Key).toBe('app/v2.0.0/kazibee.dmg');
-          return {};
+          expect(command).toBeInstanceOf(GetObjectCommand);
+          expect((command as GetObjectCommand).input.Key).toBe('app/v2.0.0/kazibee.dmg');
+          expect((command as GetObjectCommand).input.Range).toBe('bytes=0-0');
+          return { Body: { transformToByteArray: async () => { drained += 1; return new Uint8Array(1); } } };
         }))
         .method(DownloadObjectStore, 'presign', control.returns(Promise.resolve(SIGNED_URL)))
         .build();
@@ -188,6 +198,7 @@ describe('DownloadService (stubbed AWS SDK boundary)', () => {
       const result = await service.createDownload('app', 'v2.0.0', 'kazibee.dmg');
 
       expect(control.inspect(env, DownloadObjectStore, 'send').count).toBe(1);
+      expect(drained).toBe(1);
       expect(result).toEqual({ key: 'app/v2.0.0/kazibee.dmg', url: SIGNED_URL });
       const signed = control.inspect(env, DownloadObjectStore, 'presign');
       expect(signed.count).toBe(1);
@@ -252,6 +263,42 @@ describe('DownloadService (stubbed AWS SDK boundary)', () => {
 
       await expect(service.createDownload('cli', 'v1.2.3', 'kazibee-macos.zip'))
         .rejects.toBeInstanceOf(S3ServiceException);
+    }));
+
+    it('retries the probe once after a 403 (signer clock rejection) and then presigns', resourceCase(async () => {
+      const env = await testApp(CONFIG).select(SELECT).use(testStub())
+        .function(Env, envWith({}))
+        .method(DownloadObjectStore, 'send', control.calls([
+          control.throws(forbiddenError('RequestTimeTooSkewed')),
+          control.returns(Promise.resolve({})),
+        ]))
+        .method(DownloadObjectStore, 'presign', control.returns(Promise.resolve(SIGNED_URL)))
+        .build();
+      const service = await env.get<DownloadService>(DownloadService);
+      await expect(service.createDownload('cli', 'v1.2.3', 'kazibee-macos.zip'))
+        .resolves.toEqual({ key: 'cli/v1.2.3/kazibee-macos.zip', url: SIGNED_URL });
+      expect(control.inspect(env, DownloadObjectStore, 'send').count).toBe(2);
+      expect(control.inspect(env, DownloadObjectStore, 'presign').count).toBe(1);
+    }));
+
+    it('a 403 followed by NoSuchKey is NotFoundError; a second 403 rethrows; no third attempt', resourceCase(async () => {
+      const env = await testApp(CONFIG).select(SELECT).use(testStub())
+        .function(Env, envWith({}))
+        .method(DownloadObjectStore, 'send', control.calls([
+          control.throws(forbiddenError('Unknown')),
+          control.throws(missingObjectError()),
+          control.throws(forbiddenError('AccessDenied')),
+          control.throws(forbiddenError('AccessDenied')),
+        ]))
+        .method(DownloadObjectStore, 'presign', control.never())
+        .build();
+      const service = await env.get<DownloadService>(DownloadService);
+      await expect(service.createDownload('cli', 'v1.2.3', 'kazibee-macos.zip'))
+        .rejects.toThrow(NotFoundError);
+
+      await expect(service.createDownload('cli', 'v1.2.3', 'kazibee-macos.zip'))
+        .rejects.toMatchObject({ name: 'AccessDenied', $metadata: { httpStatusCode: 403 } });
+      expect(control.inspect(env, DownloadObjectStore, 'send').count).toBe(4);
     }));
 
     it('rejects invalid versions and items before touching S3', resourceCase(async () => {

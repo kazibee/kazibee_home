@@ -52,7 +52,7 @@
     "sqlstack": "3.4.0"
   },
   "devDependencies": {
-    "@kazibee-internal/web-agent-renderer": "0.1.3",
+    "@kazibee-internal/web-agent-renderer": "0.1.4",
     "@noego/app": "^3.2.1",
     "@noego/dinner": "^2.3.0",
     "@noego/forge": "^2.6.0",

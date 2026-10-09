@@ -49,7 +49,7 @@
     "pg": "^8.23.0",
     "reflect-metadata": "^0.2.2",
     "sqlite3": "^5.1.7",
-    "sqlstack": "3.4.0"
+    "sqlstack": "3.6.0"
   },
   "devDependencies": {
     "@kazibee-internal/web-agent-renderer": "0.1.4",

@@ -28,11 +28,17 @@ export default class ConnectClientRelayController {
   async commands({ req, res }: Context) {
     res.setHeader("x-kazi-protocol-version", PROTOCOL);
     const resolved = await this.actors.resolve(req);
-    if (!resolved.ok) return this.failure(res, "unauthorized", "cor_invalid000");
+    if (!resolved.ok) {
+      if ("failure" in resolved) return this.internal(res, "resolve-actor", "cor_invalid000", resolved.failure);
+      return this.failure(res, "unauthorized", "cor_invalid000");
+    }
     const parsed = this.parser.command(req.body);
     if (!parsed.ok) return this.failure(res, parsed.reason, parsed.correlationId);
     const result = await this.logic.command(resolved.actor, parsed.value, parsed.byteCount);
     if (result.outcome === "accepted") return res.status(200).json(result.frame);
+    if (result.outcome === "unavailable") {
+      return this.internal(res, "deployment-identity", parsed.value.correlationId, result.failure);
+    }
     if (result.outcome === "unauthorized") {
       return this.failure(res, "unauthorized", parsed.value.correlationId);
     }
@@ -49,15 +55,17 @@ export default class ConnectClientRelayController {
       return this.failure(res, "invalid-envelope", correlationId ?? "cor_invalid000");
     }
     const resolved = await this.actors.resolve(req);
-    if (!resolved.ok) return this.failure(res, "unauthorized", correlationId);
-    this.logger.info("connect.discovery.started", { correlationId, action: "list-executors", outcome: "started" });
-    let executors;
-    try {
-      executors = await this.logic.listExecutors(resolved.actor);
-    } catch (error) {
-      this.logger.error("connect.discovery.failed", { correlationId, action: "list-executors", outcome: "failed", reason: "discovery-unavailable" });
-      throw error;
+    if (!resolved.ok) {
+      if ("failure" in resolved) return this.internal(res, "resolve-actor", correlationId, resolved.failure);
+      return this.failure(res, "unauthorized", correlationId);
     }
+    this.logger.info("connect.discovery.started", { correlationId, action: "list-executors", outcome: "started" });
+    const listed = await this.logic.listExecutors(resolved.actor);
+    if (!listed.ok) {
+      this.logger.error("connect.discovery.failed", { correlationId, action: "list-executors", outcome: "failed", reason: "discovery-unavailable" });
+      return this.internal(res, "list-executors", correlationId, listed.error);
+    }
+    const executors = listed.value;
     this.logger.info("connect.discovery.completed", {
       correlationId, action: "list-executors", outcome: "completed", executorCount: executors.length,
       executors: executors.map(({ executorId, state, online, presence, protocolVersion }) => ({
@@ -76,6 +84,7 @@ export default class ConnectClientRelayController {
     const resolved = await this.actors.resolve(req);
     if (!resolved.ok) {
       res.setHeader("x-kazi-protocol-version", PROTOCOL);
+      if ("failure" in resolved) return this.internal(res, "resolve-actor", "cor_invalid000", resolved.failure);
       return this.failure(res, "unauthorized", "cor_invalid000");
     }
     const { response, sink } = createSseStream();
@@ -106,6 +115,18 @@ export default class ConnectClientRelayController {
     return res.status(status).json({
       kind: "error", protocolVersion: PROTOCOL, code, message,
       retryable: executorOffline || reason === "backpressure", correlationId,
+    });
+  }
+
+  /** A lookup below the relay failed (credential, executors, deployment identity): logged here, answered 500. */
+  private internal(res: Response, action: string, correlationId: string, failure: { kind: string; cause?: unknown }) {
+    this.logger.error("connect.relay.failed", {
+      correlationId, action, outcome: "failed", kind: failure.kind,
+      errorType: failure.cause instanceof Error ? failure.cause.name : "unknown",
+    });
+    return res.status(500).json({
+      kind: "error", protocolVersion: PROTOCOL, code: "invalid-envelope",
+      message: "Internal server error", retryable: false, correlationId,
     });
   }
 }

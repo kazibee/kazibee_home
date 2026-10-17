@@ -1,4 +1,5 @@
 import { Component } from "@noego/ioc";
+import { Trust } from "@noego/trust";
 import { Query, QueryBinder, Single, run } from "sqlstack";
 
 export type ConnectAccountStatus = "active" | "disabled";
@@ -18,7 +19,7 @@ export interface ConnectAccount {
 @Component()
 export default class ConnectAccountRepo {
   @Query()
-  createAccount(_params: {
+  async createAccount(_params: {
     user_id: string;
     username: string;
     email: string;
@@ -27,41 +28,59 @@ export default class ConnectAccountRepo {
     status: ConnectAccountStatus;
     created_at: string;
     updated_at: string;
-  }): Promise<void> {
-    return run();
+  }) {
+    return Trust.tryAsync(
+      () => run<void>(),
+      (cause) => ({ kind: "write_failed", cause }),
+    );
   }
 
   @Single
   @Query()
-  findByUsername(_params: { username: string }): Promise<ConnectAccount | null> {
-    return run();
+  async findByUsername(_params: { username: string }) {
+    return Trust.tryAsync(
+      () => run<ConnectAccount | null>(),
+      (cause) => ({ kind: "query_failed", cause }),
+    );
   }
 
   @Single
   @Query()
-  findByEmail(_params: { email: string }): Promise<ConnectAccount | null> {
-    return run();
+  async findByEmail(_params: { email: string }) {
+    return Trust.tryAsync(
+      () => run<ConnectAccount | null>(),
+      (cause) => ({ kind: "query_failed", cause }),
+    );
   }
 
   @Single
   @Query()
-  findPasswordlessByEmail(_params: { email: string }): Promise<ConnectAccount | null> {
-    return run();
+  async findPasswordlessByEmail(_params: { email: string }) {
+    return Trust.tryAsync(
+      () => run<ConnectAccount | null>(),
+      (cause) => ({ kind: "query_failed", cause }),
+    );
   }
 
   @Query()
-  setPassword(_params: {
+  async setPassword(_params: {
     user_id: string;
     username: string;
     password_hash: string;
     updated_at: string;
-  }): Promise<void> {
-    return run();
+  }) {
+    return Trust.tryAsync(
+      () => run<void>(),
+      (cause) => ({ kind: "write_failed", cause }),
+    );
   }
 
   @Single
   @Query()
-  findByUserId(_params: { user_id: string }): Promise<ConnectAccount | null> {
-    return run();
+  async findByUserId(_params: { user_id: string }) {
+    return Trust.tryAsync(
+      () => run<ConnectAccount | null>(),
+      (cause) => ({ kind: "query_failed", cause }),
+    );
   }
 }

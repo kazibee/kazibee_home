@@ -13,6 +13,7 @@ import { describe, expect, it } from "vitest";
 import path from "node:path";
 import { testApp } from "@noego/app";
 import { resourceCase, test as control, testStub } from "@noego/testing";
+import { Result } from "@noego/trust";
 import ConnectRelayService from "../../../src/server/services/connect_relay_service";
 import ConnectExecutorConnectionRegistry from "../../../src/server/services/connect_executor_connection_registry";
 import ConnectExecutorRepo from "../../../src/server/repo/connect_executor_repo";
@@ -42,7 +43,7 @@ const collaborators = () => testStub()
   .method(ConnectExecutorConnectionRegistry, "open", control.returns("fen_relaysvc01"))
   .method(ConnectExecutorConnectionRegistry, "close", control.returns(undefined))
   .method(ConnectExecutorConnectionRegistry, "dispatch", control.returns({ ok: true as const }))
-  .method(ConnectExecutorRepo, "updatePresence", control.returns(Promise.resolve(undefined)))
+  .method(ConnectExecutorRepo, "updatePresence", control.returns(Promise.resolve(Result.ok(undefined))))
   .method(ConnectClientRelayService, "receive", control.returns(true));
 
 // Recorded argument lists of one watched collaborator method.
@@ -58,10 +59,10 @@ describe("ConnectRelayService", () => {
     const service = await env.get<ConnectRelayService>(ConnectRelayService);
     await expect(service.receive(actor, {
       kind: "channel.hello", protocolVersion: "1.0", correlationId: "cor_relaysvc001",
-    } as never)).resolves.toEqual({
+    } as never)).resolves.toEqual(Result.ok({
       kind: "channel.ack", protocolVersion: "1.0", executorId: "exe_relaysvc001",
       acknowledgedKind: "channel.hello", correlationId: "cor_relaysvc001",
-    });
+    }));
     expect(calls(env, ConnectExecutorRepo, "updatePresence")).toContainEqual([{
       executor_id: "exe_relaysvc001", device_id: "dev_relaysvc001",
       credential_generation: 3, last_seen_at: "2023-11-14T22:13:20.000Z",
@@ -80,7 +81,7 @@ describe("ConnectRelayService", () => {
     const service = await env.get<ConnectRelayService>(ConnectRelayService);
     await expect(service.receive(actor, {
       kind: "channel.heartbeat", protocolVersion: "1.0", correlationId: "cor_relaysvc002",
-    } as never)).resolves.toMatchObject({ acknowledgedKind: "channel.heartbeat" });
+    } as never)).resolves.toMatchObject({ ok: true, value: { acknowledgedKind: "channel.heartbeat" } });
     expect(control.inspect(env, ConnectExecutorRepo, "updatePresence").count).toBe(1);
     expect(control.inspect(env, ConnectExecutorConnectionRegistry, "hello").count).toBe(0);
   }));
@@ -94,7 +95,7 @@ describe("ConnectRelayService", () => {
     const frame = {
       kind: "command.result", protocolVersion: "1.0", correlationId: "cor_relaysvc003",
     } as never;
-    await expect(service.receive(actor, frame)).resolves.toBeNull();
+    await expect(service.receive(actor, frame)).resolves.toEqual(Result.ok(null));
     expect(calls(env, ConnectClientRelayService, "receive")).toContainEqual(["exe_relaysvc001", frame]);
     expect(control.inspect(env, ConnectExecutorRepo, "updatePresence").count).toBe(0);
     expect(control.inspect(env, ConnectExecutorConnectionRegistry, "touch").count).toBe(0);

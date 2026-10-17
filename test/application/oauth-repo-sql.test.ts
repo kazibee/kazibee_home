@@ -20,6 +20,7 @@ import { describe, expect, it } from "vitest";
 import path from "node:path";
 import { testApp } from "@noego/app";
 import { resourceCase } from "@noego/testing";
+import type { Result } from "@noego/trust";
 import { testPostgres, DEFAULT_ADMIN_URL } from "sqlstack/testing";
 import Env from "../../src/server/services/env";
 import OAuthRepo, { toCreateOAuthClientParams } from "../../src/server/repo/oauth_repo";
@@ -61,6 +62,13 @@ const CON_ROTATE = "ocn_" + "2b".repeat(16);
 /** Both owner accounts every case starts from (plain connect_accounts rows). */
 const ACCOUNTS = [accountRow(USER), accountRow(OTHER_USER)];
 
+/** The value of a repository call that must succeed; a failed call fails the case with its kind. */
+async function succeeded<T>(call: Promise<Result<T, { kind: string; cause: unknown }>>): Promise<T> {
+  const result = await call;
+  if (!result.ok) throw new Error(`Repository call failed: ${result.error.kind}`, { cause: result.error.cause });
+  return result.value;
+}
+
 function clientRecord(id: string, name: string | null): OAuthClientRecord {
   return {
     client_id: id,
@@ -81,7 +89,7 @@ function connection(
   client: string,
   overrides: Partial<Parameters<OAuthRepo["createConnection"]>[0]> = {},
 ) {
-  return repo.createConnection({
+  return succeeded(repo.createConnection({
     connection_id: id,
     user_id: USER,
     client_id: client,
@@ -92,7 +100,7 @@ function connection(
     created_at: NOW,
     revoked_at: null,
     ...overrides,
-  });
+  }));
 }
 
 describe("OAuthRepo clients", () => {
@@ -108,10 +116,10 @@ describe("OAuthRepo clients", () => {
       }).build();
     const repo = await env.get<OAuthRepo>(OAuthRepo);
 
-    await repo.createClient(toCreateOAuthClientParams(clientRecord(CLI_MAIN, "Kazibee CLI")));
-    await repo.createClient(toCreateOAuthClientParams(clientRecord(CLI_BARE, null)));
+    await succeeded(repo.createClient(toCreateOAuthClientParams(clientRecord(CLI_MAIN, "Kazibee CLI"))));
+    await succeeded(repo.createClient(toCreateOAuthClientParams(clientRecord(CLI_BARE, null))));
 
-    expect(await repo.findClientById({ client_id: CLI_MAIN })).toMatchObject({
+    expect(await succeeded(repo.findClientById({ client_id: CLI_MAIN }))).toMatchObject({
       client_id: CLI_MAIN,
       kind: "dcr",
       client_name: "Kazibee CLI",
@@ -119,9 +127,9 @@ describe("OAuthRepo clients", () => {
       metadata: { note: "metadata for Kazibee CLI" },
       status: "active",
     });
-    expect(await repo.findClientById({ client_id: CLI_BARE }))
+    expect(await succeeded(repo.findClientById({ client_id: CLI_BARE })))
       .toMatchObject({ client_name: null, metadata: null });
-    expect(await repo.findClientById({ client_id: clientId("9") })).toBeNull();
+    expect(await succeeded(repo.findClientById({ client_id: clientId("9") }))).toBeNull();
   }));
 });
 
@@ -147,38 +155,38 @@ describe("OAuthRepo connections", () => {
     await connection(repo, CON_LIST_2, CLI_MAIN);
     await connection(repo, CON_REVOKED, CLI_MAIN, { status: "revoked", revoked_at: NOW });
 
-    expect(await repo.findActiveConnectionById({ connection_id: CON_LIST_1 }))
+    expect(await succeeded(repo.findActiveConnectionById({ connection_id: CON_LIST_1 })))
       .toMatchObject({ connection_id: CON_LIST_1, approved_scope: "read_write" });
-    expect(await repo.findActiveConnectionById({ connection_id: CON_REVOKED })).toBeNull();
-    expect(await repo.findActiveConnectionById({ connection_id: connectionId("9") })).toBeNull();
+    expect(await succeeded(repo.findActiveConnectionById({ connection_id: CON_REVOKED }))).toBeNull();
+    expect(await succeeded(repo.findActiveConnectionById({ connection_id: connectionId("9") }))).toBeNull();
 
-    const listed = await repo.listConnectionsByUser({ user_id: USER });
+    const listed = await succeeded(repo.listConnectionsByUser({ user_id: USER }));
     expect(listed.map((row) => row.connection_id)).toEqual([CON_LIST_2, CON_LIST_1]);
     expect(listed[1]).toMatchObject({
       client_name: "Kazibee CLI",
       status: "active",
       approved_scope: "read_write",
     });
-    expect(await repo.listConnectionsByUser({ user_id: OTHER_USER })).toEqual([]);
+    expect(await succeeded(repo.listConnectionsByUser({ user_id: OTHER_USER }))).toEqual([]);
 
-    await repo.updateConnectionCapabilities({
+    await succeeded(repo.updateConnectionCapabilities({
       connection_id: CON_LIST_1, approved_scope: "read",
       allow_shell: false, allow_web: true,
-    });
-    expect(await repo.findActiveConnectionById({ connection_id: CON_LIST_1 }))
+    }));
+    expect(await succeeded(repo.findActiveConnectionById({ connection_id: CON_LIST_1 })))
       .toMatchObject({ approved_scope: "read", allow_shell: false, allow_web: true });
 
     // Capability edits never resurrect or touch revoked connections.
-    await repo.updateConnectionCapabilities({
+    await succeeded(repo.updateConnectionCapabilities({
       connection_id: CON_REVOKED, approved_scope: "read",
       allow_shell: false, allow_web: false,
-    });
-    expect(await repo.findActiveConnectionById({ connection_id: CON_REVOKED })).toBeNull();
+    }));
+    expect(await succeeded(repo.findActiveConnectionById({ connection_id: CON_REVOKED }))).toBeNull();
 
-    await repo.revokeConnection({ connection_id: CON_LIST_2, revoked_at: NOW });
-    expect(await repo.findActiveConnectionById({ connection_id: CON_LIST_2 })).toBeNull();
+    await succeeded(repo.revokeConnection({ connection_id: CON_LIST_2, revoked_at: NOW }));
+    expect(await succeeded(repo.findActiveConnectionById({ connection_id: CON_LIST_2 }))).toBeNull();
     expect(
-      (await repo.listConnectionsByUser({ user_id: USER }))
+      (await succeeded(repo.listConnectionsByUser({ user_id: USER })))
         .map((row) => row.connection_id),
     ).toEqual([CON_LIST_1]);
   }));
@@ -195,36 +203,36 @@ describe("OAuthRepo connections", () => {
       }).build();
     const repo = await env.get<OAuthRepo>(OAuthRepo);
 
-    await repo.createClient(toCreateOAuthClientParams(clientRecord(CLI_SUPER_OLD, "Superseded App")));
-    await repo.createClient(toCreateOAuthClientParams(clientRecord(CLI_SUPER_NEW, "Superseded App")));
+    await succeeded(repo.createClient(toCreateOAuthClientParams(clientRecord(CLI_SUPER_OLD, "Superseded App"))));
+    await succeeded(repo.createClient(toCreateOAuthClientParams(clientRecord(CLI_SUPER_NEW, "Superseded App"))));
     await connection(repo, CON_SUPER_OLD, CLI_SUPER_OLD);
     await connection(repo, CON_SUPER_NEW, CLI_SUPER_NEW);
-    await repo.createToken({
+    await succeeded(repo.createToken({
       token_hash: hash64("a1"), connection_id: CON_SUPER_OLD, kind: "access",
       status: "active", created_at: NOW, expires_at: FUTURE,
       revoked_at: null, rotated_from: null,
-    });
-    await repo.createToken({
+    }));
+    await succeeded(repo.createToken({
       token_hash: hash64("a2"), connection_id: CON_SUPER_NEW, kind: "access",
       status: "active", created_at: NOW, expires_at: FUTURE,
       revoked_at: null, rotated_from: null,
-    });
+    }));
 
     // CON_SUPER_NEW supersedes: only the OTHER same-name connection dies.
-    await repo.revokeSupersededConnectionTokens({
+    await succeeded(repo.revokeSupersededConnectionTokens({
       user_id: USER, connection_id: CON_SUPER_NEW,
       client_name: "Superseded App", revoked_at: NOW,
-    });
-    await repo.revokeSupersededConnections({
+    }));
+    await succeeded(repo.revokeSupersededConnections({
       user_id: USER, connection_id: CON_SUPER_NEW,
       client_name: "Superseded App", revoked_at: NOW,
-    });
+    }));
 
-    expect(await repo.findActiveTokenWithConnection({ token_hash: hash64("a1") })).toBeNull();
-    expect(await repo.findActiveTokenWithConnection({ token_hash: hash64("a2") }))
+    expect(await succeeded(repo.findActiveTokenWithConnection({ token_hash: hash64("a1") }))).toBeNull();
+    expect(await succeeded(repo.findActiveTokenWithConnection({ token_hash: hash64("a2") })))
       .toMatchObject({ connection_id: CON_SUPER_NEW, connection_status: "active" });
-    expect(await repo.findActiveConnectionById({ connection_id: CON_SUPER_OLD })).toBeNull();
-    expect(await repo.findActiveConnectionById({ connection_id: CON_SUPER_NEW }))
+    expect(await succeeded(repo.findActiveConnectionById({ connection_id: CON_SUPER_OLD }))).toBeNull();
+    expect(await succeeded(repo.findActiveConnectionById({ connection_id: CON_SUPER_NEW })))
       .toMatchObject({ connection_id: CON_SUPER_NEW });
   }));
 });
@@ -242,7 +250,7 @@ describe("OAuthRepo codes and tokens", () => {
       }).build();
     const repo = await env.get<OAuthRepo>(OAuthRepo);
 
-    await repo.createClient(toCreateOAuthClientParams(clientRecord(CLI_CODE, "Code App")));
+    await succeeded(repo.createClient(toCreateOAuthClientParams(clientRecord(CLI_CODE, "Code App"))));
     await connection(repo, CON_CODE, CLI_CODE);
     const code = {
       code_hash: hash64("b1"),
@@ -256,16 +264,16 @@ describe("OAuthRepo codes and tokens", () => {
       expires_at: FUTURE,
       consumed_at: null,
     };
-    await repo.createCode(code);
-    await repo.createCode({ ...code, code_hash: hash64("b2"), expires_at: PAST, created_at: PAST });
+    await succeeded(repo.createCode(code));
+    await succeeded(repo.createCode({ ...code, code_hash: hash64("b2"), expires_at: PAST, created_at: PAST }));
 
-    expect(await repo.consumeCode({ code_hash: hash64("b1"), consumed_at: NOW }))
+    expect(await succeeded(repo.consumeCode({ code_hash: hash64("b1"), consumed_at: NOW })))
       .toMatchObject({ code_hash: hash64("b1"), connection_id: CON_CODE });
     // Replay: already consumed.
-    expect(await repo.consumeCode({ code_hash: hash64("b1"), consumed_at: NOW })).toBeNull();
+    expect(await succeeded(repo.consumeCode({ code_hash: hash64("b1"), consumed_at: NOW }))).toBeNull();
     // Expired and unknown codes are never consumable.
-    expect(await repo.consumeCode({ code_hash: hash64("b2"), consumed_at: NOW })).toBeNull();
-    expect(await repo.consumeCode({ code_hash: hash64("b9"), consumed_at: NOW })).toBeNull();
+    expect(await succeeded(repo.consumeCode({ code_hash: hash64("b2"), consumed_at: NOW }))).toBeNull();
+    expect(await succeeded(repo.consumeCode({ code_hash: hash64("b9"), consumed_at: NOW }))).toBeNull();
   }));
 
   it("revokes a connection's active tokens and hides them from bearer lookup", resourceCase(async () => {
@@ -280,31 +288,31 @@ describe("OAuthRepo codes and tokens", () => {
       }).build();
     const repo = await env.get<OAuthRepo>(OAuthRepo);
 
-    await repo.createClient(toCreateOAuthClientParams(clientRecord(CLI_TOKEN, "Token App")));
+    await succeeded(repo.createClient(toCreateOAuthClientParams(clientRecord(CLI_TOKEN, "Token App"))));
     await connection(repo, CON_TOKEN, CLI_TOKEN);
-    await repo.createToken({
+    await succeeded(repo.createToken({
       token_hash: hash64("c1"), connection_id: CON_TOKEN, kind: "access",
       status: "active", created_at: NOW, expires_at: FUTURE,
       revoked_at: null, rotated_from: null,
-    });
-    await repo.createToken({
+    }));
+    await succeeded(repo.createToken({
       token_hash: hash64("c2"), connection_id: CON_TOKEN, kind: "access",
       status: "active", created_at: PAST, expires_at: PAST,
       revoked_at: null, rotated_from: null,
-    });
+    }));
 
-    expect(await repo.findActiveTokenWithConnection({ token_hash: hash64("c1") }))
+    expect(await succeeded(repo.findActiveTokenWithConnection({ token_hash: hash64("c1") })))
       .toMatchObject({
         token_hash: hash64("c1"),
         user_id: USER,
         client_id: CLI_TOKEN,
         connection_status: "active",
       });
-    expect(await repo.findActiveTokenWithConnection({ token_hash: hash64("c2") })).toBeNull();
-    expect(await repo.findActiveTokenWithConnection({ token_hash: hash64("c9") })).toBeNull();
+    expect(await succeeded(repo.findActiveTokenWithConnection({ token_hash: hash64("c2") }))).toBeNull();
+    expect(await succeeded(repo.findActiveTokenWithConnection({ token_hash: hash64("c9") }))).toBeNull();
 
-    await repo.revokeTokensByConnection({ connection_id: CON_TOKEN, revoked_at: NOW });
-    expect(await repo.findActiveTokenWithConnection({ token_hash: hash64("c1") })).toBeNull();
+    await succeeded(repo.revokeTokensByConnection({ connection_id: CON_TOKEN, revoked_at: NOW }));
+    expect(await succeeded(repo.findActiveTokenWithConnection({ token_hash: hash64("c1") }))).toBeNull();
   }));
 
   it("rotates refresh tokens once and refuses revoked/expired/unknown ones", resourceCase(async () => {
@@ -319,18 +327,18 @@ describe("OAuthRepo codes and tokens", () => {
       }).build();
     const repo = await env.get<OAuthRepo>(OAuthRepo);
 
-    await repo.createClient(toCreateOAuthClientParams(clientRecord(CLI_ROTATE, "Rotate App")));
+    await succeeded(repo.createClient(toCreateOAuthClientParams(clientRecord(CLI_ROTATE, "Rotate App"))));
     await connection(repo, CON_ROTATE, CLI_ROTATE);
-    await repo.createToken({
+    await succeeded(repo.createToken({
       token_hash: hash64("d1"), connection_id: CON_ROTATE, kind: "refresh",
       status: "active", created_at: NOW, expires_at: FUTURE,
       revoked_at: null, rotated_from: null,
-    });
+    }));
 
-    const rotated = await repo.rotateRefreshToken({
+    const rotated = await succeeded(repo.rotateRefreshToken({
       old_token_hash: hash64("d1"), token_hash: hash64("d2"),
       created_at: NOW, expires_at: FUTURE,
-    });
+    }));
     expect(rotated).toMatchObject({
       token_hash: hash64("d2"),
       connection_id: CON_ROTATE,
@@ -340,13 +348,13 @@ describe("OAuthRepo codes and tokens", () => {
     });
 
     // Replay of the consumed refresh token mints nothing.
-    expect(await repo.rotateRefreshToken({
+    expect(await succeeded(repo.rotateRefreshToken({
       old_token_hash: hash64("d1"), token_hash: hash64("d3"),
       created_at: NOW, expires_at: FUTURE,
-    })).toBeNull();
-    expect(await repo.rotateRefreshToken({
+    }))).toBeNull();
+    expect(await succeeded(repo.rotateRefreshToken({
       old_token_hash: hash64("d9"), token_hash: hash64("d4"),
       created_at: NOW, expires_at: FUTURE,
-    })).toBeNull();
+    }))).toBeNull();
   }));
 });

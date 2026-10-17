@@ -15,6 +15,7 @@ import { createHash } from 'node:crypto';
 import path from 'node:path';
 import { testApp, type AppTestBuilder } from '@noego/app';
 import { test as control, testStub, resourceCase } from '@noego/testing';
+import { Result } from '@noego/trust';
 import RemoteToolDispatchService from '../../../src/server/services/remote_tool_dispatch_service';
 import OAuthTokenAuthService from '../../../src/server/services/oauth_token_auth_service';
 import OAuthRepo from '../../../src/server/repo/oauth_repo';
@@ -51,6 +52,8 @@ const RESOURCE_TAG = createHash('sha256').update(RESOURCE, 'utf8').digest('base6
 const OAUTH_TOKEN = `${'O'.repeat(27)}${RESOURCE_TAG}`;
 
 const returns = (value: unknown) => control.returns(Promise.resolve(value));
+/** A repository call that succeeds with `value`. */
+const ok = (value: unknown) => returns(Result.ok(value));
 
 const grantRow = (overrides: Record<string, unknown> = {}) => ({
   grant_id: GRANT_ID, owner_user_id: USER_ID, executor_id: EXECUTOR_ID,
@@ -111,17 +114,17 @@ const remoteWorkspaceRow = (overrides: Record<string, unknown> = {}) => ({
 // Reusable replacement descriptions (same tokens/slots/descriptors as before),
 // not application constructors.
 const patAuth = () => testStub()
-  .method(RemoteToolGrantRepo, 'findByTokenHash', returns(grantRow()))
-  .method(RemoteToolGrantRepo, 'touchLastUsed', returns(undefined));
+  .method(RemoteToolGrantRepo, 'findByTokenHash', ok(grantRow()))
+  .method(RemoteToolGrantRepo, 'touchLastUsed', ok(undefined));
 
 const oauthAuth = (executors: unknown[] = [executorRow()]) => testStub()
-  .method(OAuthRepo, 'findActiveTokenWithConnection', returns(tokenRecord()))
-  .method(ConnectExecutorRepo, 'listByOwner', returns(executors));
+  .method(OAuthRepo, 'findActiveTokenWithConnection', ok(tokenRecord()))
+  .method(ConnectExecutorRepo, 'listByOwner', ok(executors));
 
 const browserSession = () => testStub()
-  .method(ConnectBrowserSessionRepo, 'findByTokenHash', returns(sessionRow()))
-  .method(ConnectBrowserSessionRepo, 'touchSession', returns(undefined))
-  .method(ConnectAccountRepo, 'findByUserId', returns(accountRow()));
+  .method(ConnectBrowserSessionRepo, 'findByTokenHash', ok(sessionRow()))
+  .method(ConnectBrowserSessionRepo, 'touchSession', ok(undefined))
+  .method(ConnectAccountRepo, 'findByUserId', ok(accountRow()));
 
 const ownerHeaders = () => ({
   cookie: `kazi_connect_session=${SESSION_TOKEN}; kazi_connect_csrf=${CSRF_TOKEN}`,
@@ -164,7 +167,7 @@ describe('MCP bearer resolution edge cases', () => {
 
   it('rejects an expired but otherwise active PAT grant with 401', resourceCase(async () => {
     const env = await testApp(CONFIG).select(SELECT)
-      .method(RemoteToolGrantRepo, 'findByTokenHash', control.once(returns(grantRow({ expires_at: PAST }))))
+      .method(RemoteToolGrantRepo, 'findByTokenHash', control.once(ok(grantRow({ expires_at: PAST }))))
       .method(RemoteToolGrantRepo, 'touchLastUsed', control.never())
       .build();
     const { status, payload } = await mcp(env, rpc('ping'));
@@ -239,7 +242,7 @@ describe('OAuth connection routing edge cases', () => {
   it('routes an rws_ workspace to its active owner machine', resourceCase(async () => {
     const env = await testApp(CONFIG).select(SELECT)
       .use(oauthAuth([executorRow()]))
-      .method(RemoteWorkspaceRepo, 'findRemoteWorkspace', control.once(returns(remoteWorkspaceRow())))
+      .method(RemoteWorkspaceRepo, 'findRemoteWorkspace', control.once(ok(remoteWorkspaceRow())))
       .method(RemoteToolDispatchService, 'callTarget', control.once(returns({
         ok: true, status: 'succeeded',
         payload: { workspaceId: 'wrk_local0001', entries: 1 }, effectState: 'none',
@@ -280,8 +283,8 @@ describe('OAuth connection routing edge cases', () => {
         effectState: 'none',
       })))
       .method(RemoteWorkspaceRepo, 'upsertRemoteWorkspace', control.calls([
-        returns(remoteWorkspaceRow({ display_name: 'wrk_local0001' })),
-        returns(null),
+        ok(remoteWorkspaceRow({ display_name: 'wrk_local0001' })),
+        ok(null),
       ]))
       .build();
     const { payload } = await mcp(env, rpc('tools/call', { name: 'list_workspaces', arguments: { machineId: EXECUTOR_ID } }), OAUTH_TOKEN);
@@ -314,7 +317,7 @@ describe('OAuth connection routing edge cases', () => {
 describe('grant management negative paths', () => {
   it('POST /grants answers 401 without a sessionId query', resourceCase(async () => {
     const env = await testApp(CONFIG).select(SELECT)
-      .method(ConnectBrowserSessionRepo, 'findByTokenHash', returns(null))
+      .method(ConnectBrowserSessionRepo, 'findByTokenHash', ok(null))
       .method(RemoteToolGrantRepo, 'createGrant', control.never())
       .build();
     const { status } = await request(env, {
@@ -328,9 +331,9 @@ describe('grant management negative paths', () => {
   it('POST /grants surfaces a vanished grant row as a server error', resourceCase(async () => {
     const env = await testApp(CONFIG).select(SELECT)
       .use(browserSession())
-      .method(ConnectExecutorRepo, 'findByExecutorId', control.once(returns(executorRow())))
-      .method(RemoteToolGrantRepo, 'createGrant', control.once(returns(undefined)))
-      .method(RemoteToolGrantRepo, 'findByTokenHash', control.once(returns(null)))
+      .method(ConnectExecutorRepo, 'findByExecutorId', control.once(ok(executorRow())))
+      .method(RemoteToolGrantRepo, 'createGrant', control.once(ok(undefined)))
+      .method(RemoteToolGrantRepo, 'findByTokenHash', control.once(ok(null)))
       .build();
     const { status } = await request(env, {
       method: 'POST', path: '/v1/remote-tools/grants',
@@ -342,7 +345,7 @@ describe('grant management negative paths', () => {
 
   it('POST /grants/{grantId}/revoke answers 401 without a sessionId query', resourceCase(async () => {
     const env = await testApp(CONFIG).select(SELECT)
-      .method(ConnectBrowserSessionRepo, 'findByTokenHash', returns(null))
+      .method(ConnectBrowserSessionRepo, 'findByTokenHash', ok(null))
       .method(RemoteToolGrantRepo, 'revokeGrant', control.never())
       .build();
     const { status } = await request(env, {
@@ -354,7 +357,7 @@ describe('grant management negative paths', () => {
 
   it('GET /grants answers 401 without a sessionId query', resourceCase(async () => {
     const env = await testApp(CONFIG).select(SELECT)
-      .method(ConnectBrowserSessionRepo, 'findByTokenHash', returns(null))
+      .method(ConnectBrowserSessionRepo, 'findByTokenHash', ok(null))
       .build();
     const { status } = await request(env, {
       method: 'GET', path: '/v1/remote-tools/grants',
@@ -367,7 +370,7 @@ describe('grant management negative paths', () => {
 describe('OAuth connection management negative paths', () => {
   it('GET /connections answers 401 without a sessionId query', resourceCase(async () => {
     const env = await testApp(CONFIG).select(SELECT)
-      .method(ConnectBrowserSessionRepo, 'findByTokenHash', returns(null))
+      .method(ConnectBrowserSessionRepo, 'findByTokenHash', ok(null))
       .build();
     const { status } = await request(env, {
       method: 'GET', path: '/v1/remote-tools/connections',
@@ -378,7 +381,7 @@ describe('OAuth connection management negative paths', () => {
 
   it('POST update answers 401 without a sessionId query', resourceCase(async () => {
     const env = await testApp(CONFIG).select(SELECT)
-      .method(ConnectBrowserSessionRepo, 'findByTokenHash', returns(null))
+      .method(ConnectBrowserSessionRepo, 'findByTokenHash', ok(null))
       .method(OAuthRepo, 'updateConnectionCapabilities', control.never())
       .build();
     const { status } = await request(env, {
@@ -391,8 +394,8 @@ describe('OAuth connection management negative paths', () => {
   it('POST update accepts an explicit allowWeb flag', resourceCase(async () => {
     const env = await testApp(CONFIG).select(SELECT)
       .use(browserSession())
-      .method(OAuthRepo, 'findActiveConnectionById', control.once(returns(connectionRow())))
-      .method(OAuthRepo, 'updateConnectionCapabilities', control.once(returns(undefined)))
+      .method(OAuthRepo, 'findActiveConnectionById', control.once(ok(connectionRow())))
+      .method(OAuthRepo, 'updateConnectionCapabilities', control.once(ok(undefined)))
       .build();
     const { status, payload } = await request(env, {
       method: 'POST', path: `/v1/remote-tools/connections/${CONNECTION_ID}/update`,
@@ -405,7 +408,7 @@ describe('OAuth connection management negative paths', () => {
 
   it('POST revoke answers 401 without a sessionId query', resourceCase(async () => {
     const env = await testApp(CONFIG).select(SELECT)
-      .method(ConnectBrowserSessionRepo, 'findByTokenHash', returns(null))
+      .method(ConnectBrowserSessionRepo, 'findByTokenHash', ok(null))
       .method(OAuthRepo, 'revokeConnection', control.never())
       .build();
     const { status } = await request(env, {
@@ -417,9 +420,9 @@ describe('OAuth connection management negative paths', () => {
 
   it('GET /connections answers 401 when the account row is gone', resourceCase(async () => {
     const env = await testApp(CONFIG).select(SELECT)
-      .method(ConnectBrowserSessionRepo, 'findByTokenHash', returns(sessionRow()))
-      .method(ConnectBrowserSessionRepo, 'touchSession', returns(undefined))
-      .method(ConnectAccountRepo, 'findByUserId', control.once(returns(null)))
+      .method(ConnectBrowserSessionRepo, 'findByTokenHash', ok(sessionRow()))
+      .method(ConnectBrowserSessionRepo, 'touchSession', ok(undefined))
+      .method(ConnectAccountRepo, 'findByUserId', control.once(ok(null)))
       .method(OAuthRepo, 'listConnectionsByUser', control.never())
       .build();
     const { status } = await request(env, {

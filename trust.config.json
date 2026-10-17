@@ -1,0 +1,34 @@
+{
+  "extend": ["default", "svelte"],
+  "rules": { "redundant-guard": "on", "dropped-result": "on" },
+  "trust": [
+    { "origin": "@noego/ioc", "reason": "Container wiring and decorators; resolution failures are programmer errors at boot." },
+    { "origin": "@noego/logger", "reason": "Logging must never be the reason a call site needs a try/catch." },
+    { "origin": "@noego/dinner.CompatResponse.status", "reason": "Assigns the status code field and returns res (dinner dist chunk createCompatPair); no validation, cannot throw. setHeader/redirect/cookie/clearCookie stay distrusted: they valueOrThrow on invalid headers/cookies." },
+    { "origin": "@noego/dinner.CompatResponse.json", "reason": "Stores the body and sets flags; serialization happens later in dinner's pipeline, which maps failures to a Result. Cannot throw at the call site." },
+    { "origin": "@noego/dinner.CompatResponse.send", "reason": "See @noego/dinner.CompatResponse.json." },
+    { "origin": "@noego/dinner.CompatResponse.end", "reason": "Sets the ended flag and returns res; cannot throw." },
+    { "origin": "sqlstack.Query", "reason": "Method decorator applied at class definition; binds the method to its SQL. The query's own failures surface when the method is called, not at the decorator. Same entry as desktops/demo-assistant." },
+    { "origin": "sqlstack.QueryBinder", "reason": "Class decorator naming the database for every @Query method; applied at class definition. See sqlstack.Query." },
+    { "origin": "sqlstack.TransactionHandle.rollbackOnly", "reason": "Sets the open transaction's rollbackOnly flag and rollbackError on the handle's own state (sqlstack 3.6.0 dist/esm/transactions.js:48); no I/O, cannot throw. Same role as sqlstack.rollback in desktops/demo-assistant." },
+    { "origin": "sqlstack.hasTransactionContext", "reason": "Reads the AsyncLocalStorage store size (sqlstack 3.6.0 dist/esm/transactions.js:243); never resolves a database or connects, cannot throw." },
+    { "origin": "sqlstack.currentTransactionFor", "reason": "Map lookup in the AsyncLocalStorage store plus a TransactionHandle construction (sqlstack 3.6.0 dist/esm/transactions.js:247); cannot throw. SqlStack.getEntry, which can throw on a closed stack or a missing default, stays distrusted." },
+    { "origin": "sqlstack.getActiveResolver", "reason": "Returns the process-wide resolver slot (sqlstack 3.6.0 dist/esm/core/resolver.js:84); cannot throw." },
+    { "origin": "js:Headers.get", "reason": "Throws only for an invalid header name; every call site passes a literal name." },
+    { "origin": "js:Response", "reason": "Every call site passes a literal status (or one copied from an existing Response) and a body we hold. Status 101 + webSocket sites run only in Cloudflare Workers/Durable Objects, which accept it. Static Response.json stays distrusted (serializes)." },
+    { "origin": "js:Crypto.randomUUID", "reason": "Returns a UUID string; defines no failure in Workers or Node." },
+    { "origin": "node:crypto.randomBytes", "reason": "Synchronous form throws only for an invalid size; every call site passes a literal (16/18/32)." },
+    { "origin": "node:crypto.createHash", "reason": "Throws only for an unknown algorithm; every call site passes the literal \"sha256\"." },
+    { "origin": "node:crypto.Hash.update", "reason": "Throws only for a wrong argument type or after digest(), both programmer errors TypeScript or call order prevent." },
+    { "origin": "node:crypto.Hash.digest", "reason": "Throws only when called twice on the same Hash, a programmer error." },
+    { "origin": "node:global.Buffer.byteLength", "reason": "Pure length computation; throws only for a wrong argument type, which TypeScript prevents." },
+    { "origin": "js:AbortSignal.timeout", "reason": "Throws only for a non-integer or negative delay; call sites pass numeric constants." },
+    { "origin": "js:Performance.now", "reason": "Returns a timestamp." },
+    { "origin": "js:Event.preventDefault", "reason": "Sets a flag on the event; cannot fail." },
+    { "origin": "js:URL.toString", "reason": "Serializes an already-parsed URL; cannot fail. The URL constructor stays distrusted." },
+    { "origin": "js:URLSearchParams.entries", "reason": "Returns an iterator over parsed params; cannot fail." }
+  ],
+  "boundaries": [
+    { "files": ["src/server/controller/**/*.controller.ts"] }
+  ]
+}

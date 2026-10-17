@@ -1,6 +1,7 @@
 import path from 'node:path';
 import { testApp } from '@noego/app';
 import { resourceCase, test as control } from '@noego/testing';
+import { Result } from '@noego/trust';
 import { describe, expect, it, vi } from 'vitest';
 import ConnectAgentSessionService from '../../../src/server/services/connect_agent_session_service';
 import Env from '../../../src/server/services/env';
@@ -13,7 +14,7 @@ describe('Web Agent shell delivery', () => {
       headers: { 'cache-control': 'public, max-age=3600', etag: '"build"' },
     }));
     const app = await testApp(CONFIG).select({ server: { module: ['agent'] } })
-      .method(ConnectAgentSessionService, 'authenticate', control.once(control.returns({ user_id: 'test' })))
+      .method(ConnectAgentSessionService, 'authenticate', control.once(control.returns(Result.ok({ user_id: 'test' }))))
       .function(Env, () => {
         const env = new Env(); env.load({ ASSETS: { fetch: fetchAsset } }); return env;
       }).build();
@@ -35,7 +36,7 @@ describe('Web Agent shell delivery', () => {
   it('still requires authentication for the shell and renderer assets', resourceCase(async () => {
     const fetchAsset = vi.fn(async () => new Response('must not be served'));
     const app = await testApp(CONFIG).select({ server: { module: ['agent'] } })
-      .method(ConnectAgentSessionService, 'authenticate', control.times(2, control.returns(null)))
+      .method(ConnectAgentSessionService, 'authenticate', control.times(2, control.returns(Result.ok(null))))
       .function(Env, () => {
         const env = new Env(); env.load({ ASSETS: { fetch: fetchAsset } }); return env;
       }).build();

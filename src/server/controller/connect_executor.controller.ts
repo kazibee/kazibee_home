@@ -1,12 +1,18 @@
 import { Component, Inject } from "@noego/ioc";
 import type { CompatRequest as Request, CompatResponse as Response } from "@noego/dinner";
+import { getLogger } from "@noego/logger";
 import ConnectExecutorLogic from "../logic/connect_executor.logic";
 import ConnectExecutorRequestParser from "../services/connect_executor_request_parser";
-import ConnectExecutorActorResolver, { type ConnectExecutorActor } from "../services/connect_executor_actor_resolver";
+import ConnectExecutorActorResolver, {
+  type ActorDenial, type ConnectExecutorActor,
+} from "../services/connect_executor_actor_resolver";
 import type { ConnectExecutor } from "../repo/connect_executor_repo";
+import type { RepoFailure } from "../repo/repo_failure";
 
 type Context = { req: Request; res: Response };
 const PROTOCOL = "1.0";
+
+const logger = getLogger("kazibee:connect-executor-controller");
 
 @Component()
 export default class ConnectExecutorController {
@@ -83,7 +89,7 @@ export default class ConnectExecutorController {
     const lookup = this.parser.lookup(req.params.lookup);
     if (!lookup) return this.error(res, 400, "invalid-envelope", "Invalid request envelope", query.value.correlationId);
     const actor = await this.actors.browser(req, query.value.sessionId, false);
-    if (!actor.ok) return this.authError(res, actor.reason, query.value.correlationId);
+    if (!actor.ok) return this.authError(res, actor, query.value.correlationId);
     const result = await this.logic.review(actor.actor, lookup);
     if (result.outcome === "not-found") return this.error(res, 404, "invalid-envelope", "Claim not found", query.value.correlationId);
     if (result.outcome === "failed") return this.internal(res, query.value.correlationId);
@@ -101,7 +107,7 @@ export default class ConnectExecutorController {
     const input = this.parser.decision(req.body, req.params.claimId);
     if (!input.ok) return this.parseError(res, input);
     const actor = await this.actors.browser(req, input.value.sessionId, true);
-    if (!actor.ok) return this.authError(res, actor.reason, input.value.correlationId);
+    if (!actor.ok) return this.authError(res, actor, input.value.correlationId);
     let result;
     try {
       result = await this.logic.decide(actor.actor, input.value);
@@ -127,11 +133,12 @@ export default class ConnectExecutorController {
     const query = this.parser.browserQuery(req);
     if (!query.ok) return this.parseError(res, query);
     const actor = await this.actors.browser(req, query.value.sessionId, false);
-    if (!actor.ok) return this.authError(res, actor.reason, query.value.correlationId);
+    if (!actor.ok) return this.authError(res, actor, query.value.correlationId);
     const executors = await this.logic.list(actor.actor);
+    if (!executors.ok) return this.unavailable(res, "list", executors.error, query.value.correlationId);
     return res.json({
       kind: "executor.list.response", protocolVersion: PROTOCOL,
-      executors: await Promise.all(executors.map((executor) => this.summary(executor))),
+      executors: await Promise.all(executors.value.map((executor) => this.summary(executor))),
       correlationId: query.value.correlationId,
     });
   }
@@ -140,7 +147,7 @@ export default class ConnectExecutorController {
     const query = this.parser.browserQuery(req);
     if (!query.ok) return this.parseError(res, query);
     const actor = await this.actors.browser(req, query.value.sessionId, false);
-    if (!actor.ok) return this.authError(res, actor.reason, query.value.correlationId);
+    if (!actor.ok) return this.authError(res, actor, query.value.correlationId);
     const executorId = typeof req.params.executorId === "string" ? req.params.executorId : "";
     const result = await this.logic.detail(actor.actor, executorId);
     if (result.outcome === "not-found") return this.error(res, 404, "invalid-envelope", "Executor not found", query.value.correlationId);
@@ -162,7 +169,7 @@ export default class ConnectExecutorController {
       return this.error(res, 400, "invalid-envelope", "Invalid request envelope", input.value.correlationId);
     }
     const actor = await this.actors.browser(req, query.value.sessionId, true);
-    if (!actor.ok) return this.authError(res, actor.reason, input.value.correlationId);
+    if (!actor.ok) return this.authError(res, actor, input.value.correlationId);
     let result;
     try {
       result = await this.logic.rename(actor.actor, input.value);
@@ -188,7 +195,7 @@ export default class ConnectExecutorController {
       return this.error(res, 400, "invalid-envelope", "Invalid request envelope", input.value.correlationId);
     }
     const actor = await this.actors.browser(req, query.value.sessionId, true);
-    if (!actor.ok) return this.authError(res, actor.reason, input.value.correlationId);
+    if (!actor.ok) return this.authError(res, actor, input.value.correlationId);
     let result;
     try {
       result = await this.logic.revoke(actor.actor, input.value);
@@ -215,10 +222,18 @@ export default class ConnectExecutorController {
       result.reason, result.reason === "protocol-version-mismatch" ? "Protocol version mismatch" : "Invalid request envelope",
       result.correlationId);
   }
-  private authError(res: Response, reason: "unauthorized" | "csrf", correlationId: string) {
-    return this.error(res, reason === "csrf" ? 403 : 401,
-      reason === "csrf" ? "invalid-envelope" : "revoked",
-      reason === "csrf" ? "CSRF validation failed" : "Session is not active", correlationId);
+  private authError(res: Response, denial: ActorDenial, correlationId: string) {
+    if (denial.reason === "unavailable") return this.unavailable(res, "session", denial.failure, correlationId);
+    return this.error(res, denial.reason === "csrf" ? 403 : 401,
+      denial.reason === "csrf" ? "invalid-envelope" : "revoked",
+      denial.reason === "csrf" ? "CSRF validation failed" : "Session is not active", correlationId);
+  }
+  /** A repository lookup failed below this action: logged here, answered 500. */
+  private unavailable(res: Response, action: string, failure: RepoFailure, correlationId: string) {
+    logger.error("Executor request repository failure", {
+      action, correlationId, kind: failure.kind, error: failure.cause,
+    });
+    return this.internal(res, correlationId);
   }
   private internal(res: Response, correlationId: string) {
     return this.error(res, 500, "invalid-envelope", "Internal server error", correlationId);

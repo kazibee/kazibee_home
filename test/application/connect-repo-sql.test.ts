@@ -17,6 +17,7 @@ import { describe, expect, it } from "vitest";
 import path from "node:path";
 import { testApp } from "@noego/app";
 import { resourceCase } from "@noego/testing";
+import type { Result } from "@noego/trust";
 import { testPostgres, DEFAULT_ADMIN_URL, type TestPostgresDatabase } from "sqlstack/testing";
 import ConnectExecutorRepo from "../../src/server/repo/connect_executor_repo";
 import ConnectExecutorClaimRepo from "../../src/server/repo/connect_executor_claim_repo";
@@ -32,6 +33,13 @@ const CONFIG = path.resolve(__dirname, "../../noego.config.yml");
 
 const hash64 = (pair: string) => pair.repeat(32);
 const iso = (value: unknown) => new Date(value as string).toISOString();
+
+/** The value of a repository call that must succeed; a failed call fails the case with its kind. */
+async function succeeded<T>(call: Promise<Result<T, { kind: string; cause: unknown }>>): Promise<T> {
+  const result = await call;
+  if (!result.ok) throw new Error(`Repository call failed: ${result.error.kind}`, { cause: result.error.cause });
+  return result.value;
+}
 
 const T1 = "2026-01-01T00:00:00.000Z";
 const T2 = "2026-02-01T00:00:00.000Z";
@@ -98,16 +106,16 @@ describe("ConnectExecutorRepo", () => {
       .build();
     const executorRepo = await env.get<ConnectExecutorRepo>(ConnectExecutorRepo);
 
-    const listed = await executorRepo.listByOwner({ owner_user_id: OWNER, limit: 10 });
+    const listed = await succeeded(executorRepo.listByOwner({ owner_user_id: OWNER, limit: 10 }));
     expect(listed.map((executor) => executor.executor_id))
       .toEqual(["exe_own000003", "exe_own000002", "exe_own000001"]);
     expect(listed[0]).toMatchObject({ state: "active", owner_user_id: OWNER });
 
     expect(
-      (await executorRepo.listByOwner({ owner_user_id: OWNER, limit: 2 }))
+      (await succeeded(executorRepo.listByOwner({ owner_user_id: OWNER, limit: 2 })))
         .map((executor) => executor.executor_id),
     ).toEqual(["exe_own000003", "exe_own000002"]);
-    expect(await executorRepo.listByOwner({ owner_user_id: "usr_nobody", limit: 10 }))
+    expect(await succeeded(executorRepo.listByOwner({ owner_user_id: "usr_nobody", limit: 10 })))
       .toEqual([]);
   }));
 
@@ -122,30 +130,30 @@ describe("ConnectExecutorRepo", () => {
       .build();
     const executorRepo = await env.get<ConnectExecutorRepo>(ConnectExecutorRepo);
 
-    await executorRepo.updatePresence({
+    await succeeded(executorRepo.updatePresence({
       executor_id: "exe_own000001", device_id: "dev_own000001",
       credential_generation: 1, last_seen_at: FUTURE,
-    });
-    const touched = await executorRepo.findByExecutorId({ executor_id: "exe_own000001" });
+    }));
+    const touched = await succeeded(executorRepo.findByExecutorId({ executor_id: "exe_own000001" }));
     expect(iso(touched?.last_seen_at)).toBe(FUTURE);
 
     // Stale generation: fenced out, row untouched.
-    await executorRepo.updatePresence({
+    await succeeded(executorRepo.updatePresence({
       executor_id: "exe_own000002", device_id: "dev_own000002",
       credential_generation: 0, last_seen_at: FUTURE,
-    });
-    const fenced = await executorRepo.findByExecutorId({ executor_id: "exe_own000002" });
+    }));
+    const fenced = await succeeded(executorRepo.findByExecutorId({ executor_id: "exe_own000002" }));
     expect(iso(fenced?.last_seen_at)).toBe(T2);
 
     // Revoked executors never surface presence again.
-    await executorRepo.revokeOwned({
+    await succeeded(executorRepo.revokeOwned({
       executor_id: "exe_own000003", owner_user_id: OWNER, updated_at: T3,
-    });
-    await executorRepo.updatePresence({
+    }));
+    await succeeded(executorRepo.updatePresence({
       executor_id: "exe_own000003", device_id: "dev_own000003",
       credential_generation: 1, last_seen_at: FUTURE,
-    });
-    const revoked = await executorRepo.findByExecutorId({ executor_id: "exe_own000003" });
+    }));
+    const revoked = await succeeded(executorRepo.findByExecutorId({ executor_id: "exe_own000003" }));
     expect(revoked).toMatchObject({ state: "revoked" });
     expect(iso(revoked?.last_seen_at)).toBe(T3);
   }));
@@ -160,7 +168,7 @@ describe("ConnectExecutorClaimRepo", () => {
       .build();
     const executorClaimRepo = await env.get<ConnectExecutorClaimRepo>(ConnectExecutorClaimRepo);
 
-    await executorClaimRepo.createClaim({
+    await succeeded(executorClaimRepo.createClaim({
       claim_id: "clm_exec00001",
       executor_id: "exe_unclaimed",
       bootstrap_token_hash: hash64("1a"),
@@ -169,11 +177,11 @@ describe("ConnectExecutorClaimRepo", () => {
       envelope_hash: hash64("3c"),
       created_at: T1,
       expires_at: FUTURE,
-    });
+    }));
 
-    expect(await executorClaimRepo.findByCodeHash({ short_code_hash: hash64("2b") }))
+    expect(await succeeded(executorClaimRepo.findByCodeHash({ short_code_hash: hash64("2b") })))
       .toMatchObject({ claim_id: "clm_exec00001", status: "pending", decided_at: null });
-    expect(await executorClaimRepo.findByCodeHash({ short_code_hash: hash64("9f") }))
+    expect(await succeeded(executorClaimRepo.findByCodeHash({ short_code_hash: hash64("9f") })))
       .toBeNull();
   }));
 });
@@ -190,15 +198,15 @@ describe("ConnectDesktopDeviceRepo / ConnectDesktopClaimRepo", () => {
       .build();
     const desktopRepo = await env.get<ConnectDesktopDeviceRepo>(ConnectDesktopDeviceRepo);
 
-    const listed = await desktopRepo.listByOwner({ owner_user_id: OWNER, limit: 10 });
+    const listed = await succeeded(desktopRepo.listByOwner({ owner_user_id: OWNER, limit: 10 }));
     expect(listed.map((device) => device.device_id))
       .toEqual(["dev_desk0002", "dev_desk0001"]);
     expect(listed[0]).toMatchObject({ state: "active", owner_user_id: OWNER });
     expect(
-      (await desktopRepo.listByOwner({ owner_user_id: OWNER, limit: 1 }))
+      (await succeeded(desktopRepo.listByOwner({ owner_user_id: OWNER, limit: 1 })))
         .map((device) => device.device_id),
     ).toEqual(["dev_desk0002"]);
-    expect(await desktopRepo.listByOwner({ owner_user_id: "usr_nobody", limit: 10 }))
+    expect(await succeeded(desktopRepo.listByOwner({ owner_user_id: "usr_nobody", limit: 10 })))
       .toEqual([]);
   }));
 
@@ -210,7 +218,7 @@ describe("ConnectDesktopDeviceRepo / ConnectDesktopClaimRepo", () => {
       .build();
     const desktopClaimRepo = await env.get<ConnectDesktopClaimRepo>(ConnectDesktopClaimRepo);
 
-    await desktopClaimRepo.createClaim({
+    await succeeded(desktopClaimRepo.createClaim({
       claim_id: "clm_desk00001",
       device_id: "dev_deskfree",
       bootstrap_token_hash: hash64("4d"),
@@ -219,11 +227,11 @@ describe("ConnectDesktopDeviceRepo / ConnectDesktopClaimRepo", () => {
       envelope_hash: hash64("6a"),
       created_at: T1,
       expires_at: FUTURE,
-    });
+    }));
 
-    expect(await desktopClaimRepo.findByCodeHash({ short_code_hash: hash64("5e") }))
+    expect(await succeeded(desktopClaimRepo.findByCodeHash({ short_code_hash: hash64("5e") })))
       .toMatchObject({ claim_id: "clm_desk00001", status: "pending", decided_at: null });
-    expect(await desktopClaimRepo.findByCodeHash({ short_code_hash: hash64("8c") }))
+    expect(await succeeded(desktopClaimRepo.findByCodeHash({ short_code_hash: hash64("8c") })))
       .toBeNull();
   }));
 });
@@ -238,14 +246,14 @@ describe("RemoteWorkspaceRepo", () => {
       .build();
     const remoteWorkspaceRepo = await env.get<RemoteWorkspaceRepo>(RemoteWorkspaceRepo);
 
-    const created = await remoteWorkspaceRepo.upsertRemoteWorkspace({
+    const created = await succeeded(remoteWorkspaceRepo.upsertRemoteWorkspace({
       remote_workspace_id: "rws_" + "1a".repeat(16),
       user_id: OWNER,
       executor_id: "exe_own000001",
       local_workspace_id: "wrk_local0001",
       display_name: "First name",
       now: T1,
-    });
+    }));
     expect(created).toMatchObject({
       remote_workspace_id: "rws_" + "1a".repeat(16),
       executor_id: "exe_own000001",
@@ -253,24 +261,24 @@ describe("RemoteWorkspaceRepo", () => {
     });
 
     // Same slot again: the original remote id survives, the name refreshes.
-    const refreshed = await remoteWorkspaceRepo.upsertRemoteWorkspace({
+    const refreshed = await succeeded(remoteWorkspaceRepo.upsertRemoteWorkspace({
       remote_workspace_id: "rws_" + "2b".repeat(16),
       user_id: OWNER,
       executor_id: "exe_own000001",
       local_workspace_id: "wrk_local0001",
       display_name: "Renamed",
       now: T2,
-    });
+    }));
     expect(refreshed).toMatchObject({
       remote_workspace_id: "rws_" + "1a".repeat(16),
       display_name: "Renamed",
     });
 
-    expect(await remoteWorkspaceRepo.findRemoteWorkspace({
+    expect(await succeeded(remoteWorkspaceRepo.findRemoteWorkspace({
       remote_workspace_id: "rws_" + "1a".repeat(16),
-    })).toMatchObject({ display_name: "Renamed", local_workspace_id: "wrk_local0001" });
-    expect(await remoteWorkspaceRepo.findRemoteWorkspace({
+    }))).toMatchObject({ display_name: "Renamed", local_workspace_id: "wrk_local0001" });
+    expect(await succeeded(remoteWorkspaceRepo.findRemoteWorkspace({
       remote_workspace_id: "rws_" + "9f".repeat(16),
-    })).toBeNull();
+    }))).toBeNull();
   }));
 });

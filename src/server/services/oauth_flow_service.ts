@@ -1,9 +1,11 @@
 import { Component, Inject } from "@noego/ioc";
 import { createHash } from "node:crypto";
+import { Result } from "@noego/trust";
 import OAuthRepo, {
   type ActiveTokenWithConnection,
   type OAuthTokenRecord,
 } from "../repo/oauth_repo";
+import { repoUnavailable, type RepoUnavailable } from "../repo/repo_failure";
 import { ConnectClock, ConnectCredentials } from "./connect_auth_primitives";
 import { grantScopeToOAuthScope, type OAuthGrantScope } from "./oauth_scopes";
 
@@ -33,7 +35,8 @@ export interface OAuthTokenFailure {
   error: OAuthTokenError;
 }
 
-export type OAuthTokenResult = OAuthTokenSuccess | OAuthTokenFailure;
+/** A token response, an RFC 6749 error, or `unavailable` when the repository failed. */
+export type OAuthTokenResult = OAuthTokenSuccess | OAuthTokenFailure | RepoUnavailable;
 
 export interface CreateAuthorizationCodeInput {
   connectionId: string;
@@ -66,15 +69,14 @@ export default class OAuthFlowService {
     @Inject(ConnectClock) private readonly clock: ConnectClock,
   ) {}
 
-  async createAuthorizationCode(
-    input: CreateAuthorizationCodeInput,
-  ): Promise<string> {
+  /** Stores a single-use code for the connection; the raw code, or `write_failed`. */
+  async createAuthorizationCode(input: CreateAuthorizationCodeInput) {
     if (input.codeChallengeMethod !== "S256") {
       throw new RangeError("Only the S256 PKCE method is supported");
     }
     const now = this.clock.now();
     const code = this.credentials.randomToken();
-    await this.oauth.createCode({
+    const created = await this.oauth.createCode({
       code_hash: this.credentials.hashToken(code),
       connection_id: input.connectionId,
       client_id: input.clientId,
@@ -86,7 +88,8 @@ export default class OAuthFlowService {
       expires_at: new Date(now.getTime() + CODE_MS).toISOString(),
       consumed_at: null,
     });
-    return code;
+    if (!created.ok) return created;
+    return Result.ok(code);
   }
 
   async exchangeCode(input: ExchangeCodeInput): Promise<OAuthTokenResult> {
@@ -101,10 +104,12 @@ export default class OAuthFlowService {
     }
 
     const now = this.clock.now();
-    const code = await this.oauth.consumeCode({
+    const consumed = await this.oauth.consumeCode({
       code_hash: this.credentials.hashToken(input.code),
       consumed_at: now.toISOString(),
     });
+    if (!consumed.ok) return repoUnavailable(consumed.error);
+    const code = consumed.value;
     if (!code) return failure("invalid_grant");
     if (code.client_id !== input.clientId) return failure("invalid_client");
     if (
@@ -116,9 +121,11 @@ export default class OAuthFlowService {
       return failure("invalid_grant");
     }
 
-    const connection = await this.oauth.findActiveConnectionById({
+    const connectionLookup = await this.oauth.findActiveConnectionById({
       connection_id: code.connection_id,
     });
+    if (!connectionLookup.ok) return repoUnavailable(connectionLookup.error);
+    const connection = connectionLookup.value;
     if (!connection || connection.status !== "active") {
       return failure("invalid_grant");
     }
@@ -153,9 +160,11 @@ export default class OAuthFlowService {
 
     const now = this.clock.now();
     const oldHash = this.credentials.hashToken(input.refreshToken);
-    const token = await this.oauth.findActiveTokenWithConnection({
+    const tokenLookup = await this.oauth.findActiveTokenWithConnection({
       token_hash: oldHash,
     });
+    if (!tokenLookup.ok) return repoUnavailable(tokenLookup.error);
+    const token = tokenLookup.value;
     if (!activeRefreshToken(token, now)) {
       return failure("invalid_grant");
     }
@@ -176,13 +185,14 @@ export default class OAuthFlowService {
       created_at: now.toISOString(),
       expires_at: refreshExpiresAt,
     });
-    if (!rotated) return failure("invalid_grant");
+    if (!rotated.ok) return repoUnavailable(rotated.error);
+    if (!rotated.value) return failure("invalid_grant");
 
     const accessToken = resourceBoundToken(
       this.credentials.randomToken(),
       input.resource,
     );
-    await this.oauth.createToken(tokenRecord(
+    const created = await this.oauth.createToken(tokenRecord(
       accessToken,
       token.connection_id,
       "access",
@@ -190,6 +200,7 @@ export default class OAuthFlowService {
       ACCESS_TOKEN_MS,
       this.credentials,
     ));
+    if (!created.ok) return repoUnavailable(created.error);
 
     return success(accessToken, refreshToken, {
       access: token.approved_scope,
@@ -203,7 +214,7 @@ export default class OAuthFlowService {
     scope: OAuthGrantScope,
     resource: string,
     now: Date,
-  ): Promise<OAuthTokenSuccess> {
+  ): Promise<OAuthTokenSuccess | RepoUnavailable> {
     const accessToken = resourceBoundToken(
       this.credentials.randomToken(),
       resource,
@@ -212,7 +223,7 @@ export default class OAuthFlowService {
       this.credentials.randomToken(),
       resource,
     );
-    await this.oauth.createToken(tokenRecord(
+    const access = await this.oauth.createToken(tokenRecord(
       accessToken,
       connectionId,
       "access",
@@ -220,7 +231,8 @@ export default class OAuthFlowService {
       ACCESS_TOKEN_MS,
       this.credentials,
     ));
-    await this.oauth.createToken(tokenRecord(
+    if (!access.ok) return repoUnavailable(access.error);
+    const refresh = await this.oauth.createToken(tokenRecord(
       refreshToken,
       connectionId,
       "refresh",
@@ -228,6 +240,7 @@ export default class OAuthFlowService {
       REFRESH_TOKEN_MS,
       this.credentials,
     ));
+    if (!refresh.ok) return repoUnavailable(refresh.error);
     return success(accessToken, refreshToken, scope);
   }
 }

@@ -1,5 +1,6 @@
 import { mcpStage } from "../observability/mcp_diagnostics";
 import { Component, Inject } from "@noego/ioc";
+import { Result } from "@noego/trust";
 import OAuthRepo, {
   type ActiveTokenWithConnection,
   type OAuthConnectionScope,
@@ -9,8 +10,6 @@ import OAuthConnectionMachinesService, {
   type OAuthConnectionMember,
 } from "./oauth_connection_machines_service";
 import { tokenMatchesResource } from "./oauth_flow_service";
-
-export class InvalidOAuthTokenError extends Error {}
 
 export type { OAuthConnectionMember };
 
@@ -50,10 +49,15 @@ export default class OAuthTokenAuthService {
     return TOKEN_SHAPE.test(token) && tokenMatchesResource(token, expectedResource);
   }
 
+  /**
+   * The principal behind an OAuth access token. Fails with `invalid_token`
+   * (malformed, wrong resource, unknown, expired, revoked: never says which)
+   * or with the repositories' `query_failed`.
+   */
   async authenticate(
     authorizationHeader: string | null | undefined,
     expectedResource: string,
-  ): Promise<OAuthPrincipal> {
+  ) {
     const token = (authorizationHeader ?? "")
       .replace(BEARER_PREFIX, "")
       .trim();
@@ -61,30 +65,34 @@ export default class OAuthTokenAuthService {
       !TOKEN_SHAPE.test(token)
       || !tokenMatchesResource(token, expectedResource)
     ) {
-      throw new InvalidOAuthTokenError("Invalid OAuth token");
+      return Result.err({ kind: "invalid_token" });
     }
 
-    const record = await mcpStage("oauth_lookup", () => this.oauth.findActiveTokenWithConnection({
+    const lookup = await mcpStage("oauth_lookup", () => this.oauth.findActiveTokenWithConnection({
       token_hash: this.credentials.hashToken(token),
     }));
+    if (!lookup.ok) return lookup;
+    const record = lookup.value;
     if (!activeAccessToken(record, this.clock.now())) {
-      throw new InvalidOAuthTokenError("Invalid OAuth token");
+      return Result.err({ kind: "invalid_token" });
     }
 
     // The connection acts as the user: its machines are the user's executors,
     // resolved live so newly linked machines appear and revoked ones vanish
     // without re-consent or token re-issue.
     const members = await mcpStage("oauth_machines", () => this.machines.listForUser(record.user_id, record.approved_scope));
+    if (!members.ok) return members;
 
-    return {
+    const principal: OAuthPrincipal = {
       user_id: record.user_id,
       client_id: record.client_id,
       connection_id: record.connection_id,
       approved_scope: record.approved_scope,
       allow_shell: record.allow_shell,
       allow_web: record.allow_web,
-      members,
+      members: members.value,
     };
+    return Result.ok(principal);
   }
 }
 

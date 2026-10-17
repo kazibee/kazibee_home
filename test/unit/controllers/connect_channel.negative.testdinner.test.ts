@@ -19,6 +19,7 @@ import path from 'node:path';
 import { createHash } from 'node:crypto';
 import { testApp } from '@noego/app';
 import { test as control, testStub, resourceCase } from '@noego/testing';
+import { Result } from '@noego/trust';
 import ConnectChannelController from '../../../src/server/controller/connect_channel.controller';
 import ConnectExecutorCredentialRepo from '../../../src/server/repo/connect_executor_credential_repo';
 import ConnectExecutorRepo from '../../../src/server/repo/connect_executor_repo';
@@ -61,13 +62,14 @@ const channelPath = `/v1/connect/executors/${EXECUTOR_ID}/channel`;
 const rawUpgrade = () =>
   new Request(`https://kazibee.test${channelPath}`, { headers: upgradeHeaders });
 
-const returns = (value: unknown) => control.returns(Promise.resolve(value));
+/** A repository read that succeeds with `value`. */
+const ok = (value: unknown) => control.returns(Promise.resolve(Result.ok(value)));
 
 // A live credential row matched by an active executor row: exactly one lookup
 // each. A reusable replacement description, not an application constructor.
 const liveCredential = () => testStub()
-  .method(ConnectExecutorCredentialRepo, 'findByTokenHash', control.once(returns(credential)))
-  .method(ConnectExecutorRepo, 'findByExecutorId', control.once(returns(executor)));
+  .method(ConnectExecutorCredentialRepo, 'findByTokenHash', control.once(ok(credential)))
+  .method(ConnectExecutorRepo, 'findByExecutorId', control.once(ok(executor)));
 
 // The real Env service loaded with exactly one coordinator binding value
 // (Worker-style bindings, nothing from process.env).
@@ -115,7 +117,7 @@ describe('executor channel negative paths through testDinner (no server, no data
   it('an upgrade with well-formed headers but an unknown credential is 401', resourceCase(async () => {
     const env = await testApp(CONFIG).select(SELECT)
       .method(RawRequest, 'get', control.returns(rawUpgrade()))
-      .method(ConnectExecutorCredentialRepo, 'findByTokenHash', control.once(returns(null)))
+      .method(ConnectExecutorCredentialRepo, 'findByTokenHash', control.once(ok(null)))
       .method(ConnectExecutorRepo, 'findByExecutorId', control.never())
       .build();
     const response = await env.request({ method: 'GET', path: channelPath });

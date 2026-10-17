@@ -1,12 +1,17 @@
 import { Component, Inject } from "@noego/ioc";
 import type { CompatRequest as Request, CompatResponse as Response } from "@noego/dinner";
+import { getLogger } from "@noego/logger";
 import ConnectDesktopLogic from "../logic/connect_desktop.logic";
 import ConnectDesktopRequestParser from "../services/connect_desktop_request_parser";
 import ConnectDesktopActorResolver, { type ConnectDesktopActor } from "../services/connect_desktop_actor_resolver";
+import type { ActorDenial } from "../services/connect_executor_actor_resolver";
 import type { ConnectDesktopDevice } from "../repo/connect_desktop_device_repo";
+import type { RepoFailure } from "../repo/repo_failure";
 
 type Context = { req: Request; res: Response };
 const PROTOCOL = "1.0";
+
+const logger = getLogger("kazibee:connect-desktop-controller");
 
 @Component()
 export default class ConnectDesktopController {
@@ -79,7 +84,7 @@ export default class ConnectDesktopController {
     const lookup = this.parser.lookup(req.params.lookup);
     if (!lookup) return this.error(res, 400, "invalid-envelope", "Invalid request envelope", query.value.correlationId);
     const actor = await this.actors.browser(req, query.value.sessionId, false);
-    if (!actor.ok) return this.authError(res, actor.reason, query.value.correlationId);
+    if (!actor.ok) return this.authError(res, actor, query.value.correlationId);
     const result = await this.logic.review(actor.actor, lookup);
     if (result.outcome === "not-found") return this.error(res, 404, "invalid-envelope", "Claim not found", query.value.correlationId);
     if (result.outcome === "failed") return this.internal(res, query.value.correlationId);
@@ -97,7 +102,7 @@ export default class ConnectDesktopController {
     const input = this.parser.decision(req.body, req.params.claimId);
     if (!input.ok) return this.parseError(res, input);
     const actor = await this.actors.browser(req, input.value.sessionId, true);
-    if (!actor.ok) return this.authError(res, actor.reason, input.value.correlationId);
+    if (!actor.ok) return this.authError(res, actor, input.value.correlationId);
     let result;
     try {
       result = await this.logic.decide(actor.actor, input.value);
@@ -127,11 +132,12 @@ export default class ConnectDesktopController {
     const query = this.parser.browserQuery(req);
     if (!query.ok) return this.parseError(res, query);
     const actor = await this.actors.browser(req, query.value.sessionId, false);
-    if (!actor.ok) return this.authError(res, actor.reason, query.value.correlationId);
+    if (!actor.ok) return this.authError(res, actor, query.value.correlationId);
     const devices = await this.logic.list(actor.actor);
+    if (!devices.ok) return this.unavailable(res, "list", devices.error, query.value.correlationId);
     return res.json({
       kind: "desktop.list.response", protocolVersion: PROTOCOL,
-      devices: devices.map((device) => this.summary(device)),
+      devices: devices.value.map((device) => this.summary(device)),
       correlationId: query.value.correlationId,
     });
   }
@@ -140,7 +146,7 @@ export default class ConnectDesktopController {
     const query = this.parser.browserQuery(req);
     if (!query.ok) return this.parseError(res, query);
     const actor = await this.actors.browser(req, query.value.sessionId, false);
-    if (!actor.ok) return this.authError(res, actor.reason, query.value.correlationId);
+    if (!actor.ok) return this.authError(res, actor, query.value.correlationId);
     const deviceId = typeof req.params.deviceId === "string" ? req.params.deviceId : "";
     const result = await this.logic.detail(actor.actor, deviceId);
     if (result.outcome === "not-found") return this.error(res, 404, "invalid-envelope", "Desktop not found", query.value.correlationId);
@@ -162,7 +168,7 @@ export default class ConnectDesktopController {
       return this.error(res, 400, "invalid-envelope", "Invalid request envelope", input.value.correlationId);
     }
     const actor = await this.actors.browser(req, query.value.sessionId, true);
-    if (!actor.ok) return this.authError(res, actor.reason, input.value.correlationId);
+    if (!actor.ok) return this.authError(res, actor, input.value.correlationId);
     let result;
     try {
       result = await this.logic.rename(actor.actor, input.value);
@@ -188,7 +194,7 @@ export default class ConnectDesktopController {
       return this.error(res, 400, "invalid-envelope", "Invalid request envelope", input.value.correlationId);
     }
     const actor = await this.actors.browser(req, query.value.sessionId, true);
-    if (!actor.ok) return this.authError(res, actor.reason, input.value.correlationId);
+    if (!actor.ok) return this.authError(res, actor, input.value.correlationId);
     let result;
     try {
       result = await this.logic.revoke(actor.actor, input.value);
@@ -214,10 +220,18 @@ export default class ConnectDesktopController {
       result.reason, result.reason === "protocol-version-mismatch" ? "Protocol version mismatch" : "Invalid request envelope",
       result.correlationId);
   }
-  private authError(res: Response, reason: "unauthorized" | "csrf", correlationId: string) {
-    return this.error(res, reason === "csrf" ? 403 : 401,
-      reason === "csrf" ? "invalid-envelope" : "revoked",
-      reason === "csrf" ? "CSRF validation failed" : "Session is not active", correlationId);
+  private authError(res: Response, denial: ActorDenial, correlationId: string) {
+    if (denial.reason === "unavailable") return this.unavailable(res, "session", denial.failure, correlationId);
+    return this.error(res, denial.reason === "csrf" ? 403 : 401,
+      denial.reason === "csrf" ? "invalid-envelope" : "revoked",
+      denial.reason === "csrf" ? "CSRF validation failed" : "Session is not active", correlationId);
+  }
+  /** A repository lookup failed below this action: logged here, answered 500. */
+  private unavailable(res: Response, action: string, failure: RepoFailure, correlationId: string) {
+    logger.error("Desktop request repository failure", {
+      action, correlationId, kind: failure.kind, error: failure.cause,
+    });
+    return this.internal(res, correlationId);
   }
   private internal(res: Response, correlationId: string) {
     return this.error(res, 500, "invalid-envelope", "Internal server error", correlationId);

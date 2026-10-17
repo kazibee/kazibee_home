@@ -6,7 +6,8 @@ import ConnectDesktopCredentialRepo from "../repo/connect_desktop_credential_rep
 import ConnectDesktopDeviceRepo from "../repo/connect_desktop_device_repo";
 import { ConnectClock, ConnectCredentials } from "./connect_auth_primitives";
 import ConnectDesktopRequestParser from "./connect_desktop_request_parser";
-import ConnectExecutorActorResolver from "./connect_executor_actor_resolver";
+import ConnectExecutorActorResolver, { actorDenial, type ActorDenial } from "./connect_executor_actor_resolver";
+import { repoUnavailable, type RepoUnavailable } from "../repo/repo_failure";
 
 export type ConnectDesktopActor =
   | { role: "browser_session"; userId: string; sessionId: string }
@@ -41,9 +42,7 @@ export function sameAuthority(left: RelayCredentialAuthority, right: RelayCreden
   }
   return left.kind !== "executor" || right.kind !== "executor" || left.executorId === right.executorId;
 }
-export type ActorResolution = { ok: true; actor: ConnectDesktopActor } | {
-  ok: false; reason: "unauthorized" | "csrf";
-};
+export type ActorResolution = { ok: true; actor: ConnectDesktopActor } | ActorDenial;
 
 @Component()
 export default class ConnectDesktopActorResolver {
@@ -66,24 +65,30 @@ export default class ConnectDesktopActorResolver {
         typeof req.headers["x-csrf-token"] === "string" ? req.headers["x-csrf-token"] : null,
       )
       : await this.sessions.authenticate(token);
-    if (!result.ok) return result;
+    if (!result.ok) return actorDenial(result.error);
     if (result.value.session.session_id !== sessionId) return { ok: false, reason: "unauthorized" };
     return { ok: true, actor: { role: "browser_session",
       userId: result.value.account.user_id, sessionId: result.value.session.session_id } };
   }
 
-  async relay(req: Request): Promise<{ ok: true; actor: DesktopRelayActor } | { ok: false }> {
+  async relay(
+    req: Request,
+  ): Promise<{ ok: true; actor: DesktopRelayActor } | { ok: false } | RepoUnavailable> {
     const headers = this.parser.relayHeaders(req);
     if (!headers) return { ok: false };
-    const credential = await this.credentialRepo.findByTokenHash({
+    const credentialLookup = await this.credentialRepo.findByTokenHash({
       token_hash: this.credentials.hashToken(headers.token),
     });
+    if (!credentialLookup.ok) return repoUnavailable(credentialLookup.error);
+    const credential = credentialLookup.value;
     if (!credential || credential.status !== "active"
       || credential.audience !== headers.audience
       || credential.device_id !== headers.deviceId
       || credential.generation !== headers.generation
       || new Date(credential.expires_at).getTime() <= this.clock.now().getTime()) return { ok: false };
-    const device = await this.deviceRepo.findByDeviceId({ device_id: headers.deviceId });
+    const deviceLookup = await this.deviceRepo.findByDeviceId({ device_id: headers.deviceId });
+    if (!deviceLookup.ok) return repoUnavailable(deviceLookup.error);
+    const device = deviceLookup.value;
     if (!device || device.owner_user_id === null || device.state !== "active"
       || device.credential_generation !== headers.generation) return { ok: false };
     return { ok: true, actor: {
@@ -107,7 +112,9 @@ export default class ConnectDesktopActorResolver {
  * are added here. The X-Kazi-Audience header selects the credential store:
  * desktop-relay keeps the legacy expiring Desktop credential path unchanged;
  * executor-relay admits the machine's current executor credential when the
- * presented device/generation match an active, owned executor.
+ * presented device/generation match an active, owned executor. A credential
+ * lookup that fails in the repository resolves to `unavailable`, never to a
+ * refusal.
  */
 @Component()
 export class ConnectDesktopRelayActorResolver {
@@ -117,11 +124,14 @@ export class ConnectDesktopRelayActorResolver {
     @Inject(ConnectDesktopRequestParser) private readonly parser: ConnectDesktopRequestParser,
   ) {}
 
-  async resolve(req: Request): Promise<{ ok: true; actor: ClientRelayActor } | { ok: false }> {
+  async resolve(
+    req: Request,
+  ): Promise<{ ok: true; actor: ClientRelayActor } | { ok: false } | RepoUnavailable> {
     const headers = this.parser.clientRelayHeaders(req);
     if (!headers) return { ok: false };
     if (headers.audience === "desktop-relay") return this.resolver.relay(req);
     const device = await this.executors.device(headers.token);
+    if (!device.ok && device.reason === "unavailable") return device;
     if (!device.ok || device.actor.role !== "executor_device" || !device.actor.userId
       || device.actor.deviceId !== headers.deviceId
       || device.actor.generation !== headers.generation) return { ok: false };

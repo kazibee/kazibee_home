@@ -3,13 +3,17 @@ import type {
   CompatRequest as Request,
   CompatResponse as Response,
 } from "@noego/dinner";
-import ConnectExecutorActorResolver from "../services/connect_executor_actor_resolver";
+import { getLogger } from "@noego/logger";
+import type { RepoUnavailable } from "../repo/repo_failure";
+import ConnectExecutorActorResolver, { type ActorDenial } from "../services/connect_executor_actor_resolver";
 import OAuthAuthorizeService, {
   type OAuthAuthorizationFailure,
   type OAuthAuthorizationParams,
 } from "../services/oauth_authorize_service";
 
 type ActionArgs = { req: Request; res: Response };
+
+const logger = getLogger("kazibee:oauth-authorize-controller");
 
 const OAUTH_PARAM_NAMES = [
   "response_type",
@@ -48,7 +52,18 @@ export default class OAuthAuthorizeController {
     const params = authorizationParams(req.query);
     try {
       const validation = await this.oauth.validate(params);
-      if (!validation.ok) return this.authorizationError(res, validation);
+      if (!validation.ok) {
+        if ("failure" in validation) {
+          this.logUnavailable("authorize", validation);
+          return this.plainError(
+            res,
+            500,
+            "server_error",
+            "The authorization request could not be processed.",
+          );
+        }
+        return this.authorizationError(res, validation);
+      }
 
       return res
         .status(200)
@@ -69,14 +84,23 @@ export default class OAuthAuthorizeController {
   async context({ req, res }: ActionArgs) {
     const sessionId = typeof req.query.sessionId === "string" ? req.query.sessionId : "";
     const actor = await this.actors.browser(req, sessionId, false);
-    if (!actor.ok) return this.authError(res, actor.reason);
+    if (!actor.ok) return this.authError(res, actor);
 
     try {
       const result = await this.oauth.consentContext(
         (actor.actor as { userId: string }).userId,
         authorizationParams(req.query),
       );
-      if (!result.ok) return this.jsonOAuthError(res, result);
+      if (!result.ok) {
+        if ("failure" in result) {
+          this.logUnavailable("context", result);
+          return res.status(500).json({
+            error: "server_error",
+            message: "Could not load authorization context",
+          });
+        }
+        return this.jsonOAuthError(res, result);
+      }
       return res
         .status(200)
         .setHeader("Cache-Control", "no-store")
@@ -93,7 +117,7 @@ export default class OAuthAuthorizeController {
   async approve({ req, res }: ActionArgs) {
     const sessionId = recordString(req.body, "sessionId");
     const actor = await this.actors.browser(req, sessionId, true);
-    if (!actor.ok) return this.authError(res, actor.reason);
+    if (!actor.ok) return this.authError(res, actor);
 
     try {
       const result = await this.oauth.approve(
@@ -101,7 +125,16 @@ export default class OAuthAuthorizeController {
         authorizationParams(req.body),
         recordString(req.body, "approved_scope"),
       );
-      if (!result.ok) return this.jsonOAuthError(res, result);
+      if (!result.ok) {
+        if ("failure" in result) {
+          this.logUnavailable("approve", result);
+          return res.status(500).json({
+            error: "server_error",
+            message: "Could not approve authorization",
+          });
+        }
+        return this.jsonOAuthError(res, result);
+      }
       return res.status(200).setHeader("Cache-Control", "no-store").json({
         redirect_to: result.redirectTo,
       });
@@ -117,11 +150,20 @@ export default class OAuthAuthorizeController {
   async deny({ req, res }: ActionArgs) {
     const sessionId = recordString(req.body, "sessionId");
     const actor = await this.actors.browser(req, sessionId, true);
-    if (!actor.ok) return this.authError(res, actor.reason);
+    if (!actor.ok) return this.authError(res, actor);
 
     try {
       const result = await this.oauth.deny(authorizationParams(req.body));
-      if (!result.ok) return this.jsonOAuthError(res, result);
+      if (!result.ok) {
+        if ("failure" in result) {
+          this.logUnavailable("deny", result);
+          return res.status(500).json({
+            error: "server_error",
+            message: "Could not deny authorization",
+          });
+        }
+        return this.jsonOAuthError(res, result);
+      }
       return res.status(200).setHeader("Cache-Control", "no-store").json({
         redirect_to: result.redirectTo,
       });
@@ -185,11 +227,25 @@ export default class OAuthAuthorizeController {
     });
   }
 
-  private authError(res: Response, reason: "unauthorized" | "csrf") {
-    const status = reason === "csrf" ? 403 : 401;
+  private authError(res: Response, denial: ActorDenial) {
+    if (denial.reason === "unavailable") {
+      this.logUnavailable("session", denial);
+      return res.status(500).json({
+        error: "server_error",
+        message: "Could not verify the session",
+      });
+    }
+    const status = denial.reason === "csrf" ? 403 : 401;
     return res.status(status).setHeader("Cache-Control", "no-store").json({
       error: true,
-      message: reason === "csrf" ? "CSRF validation failed" : "Not signed in",
+      message: denial.reason === "csrf" ? "CSRF validation failed" : "Not signed in",
+    });
+  }
+
+  /** A repository read or write failed below this action: logged here, answered 500. */
+  private logUnavailable(action: string, unavailable: RepoUnavailable): void {
+    logger.error("OAuth authorization repository failure", {
+      action, kind: unavailable.failure.kind, error: unavailable.failure.cause,
     });
   }
 }

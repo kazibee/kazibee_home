@@ -17,12 +17,15 @@ import { createHash } from 'node:crypto';
 import path from 'node:path';
 import { testApp } from '@noego/app';
 import { test as control, testStub, resourceCase } from '@noego/testing';
+import { Result } from '@noego/trust';
 import ConnectExecutorCredentialRepo from '../../../src/server/repo/connect_executor_credential_repo';
 import ConnectExecutorRepo from '../../../src/server/repo/connect_executor_repo';
 
 const CONFIG = path.resolve(__dirname, '../../../noego.config.yml');
 
 const sha256 = (value: string) => createHash('sha256').update(value, 'utf8').digest('hex');
+/** A repository read/write that succeeds with `value`. */
+const ok = (value: unknown) => control.returns(Promise.resolve(Result.ok(value)));
 
 const TOKEN = 'E'.repeat(43);
 const EXECUTOR_ID = 'exe_machine01';
@@ -70,9 +73,9 @@ const executorRow = () => ({
 // row (+ presence touch). A reusable replacement description (same
 // tokens/slots/descriptors/order as before), not an application constructor.
 const executorAuth = () => testStub()
-  .method(ConnectExecutorCredentialRepo, 'findByTokenHash', control.returns(Promise.resolve(credentialRow())))
-  .method(ConnectExecutorRepo, 'findByExecutorId', control.returns(Promise.resolve(executorRow())))
-  .method(ConnectExecutorRepo, 'updatePresence', control.returns(Promise.resolve(undefined)));
+  .method(ConnectExecutorCredentialRepo, 'findByTokenHash', ok(credentialRow()))
+  .method(ConnectExecutorRepo, 'findByExecutorId', ok(executorRow()))
+  .method(ConnectExecutorRepo, 'updatePresence', ok(undefined));
 
 const heartbeat = (overrides: Record<string, unknown> = {}) => ({
   kind: 'channel.heartbeat',
@@ -235,7 +238,7 @@ describe('connect relay routes through testDinner (no server, no database)', () 
 
   it('GET /events answers 401 revoked instead of opening a stream when authentication fails', resourceCase(async () => {
     const env = await testApp(CONFIG).select({ server: { module: ['connectRelay'] } })
-      .method(ConnectExecutorCredentialRepo, 'findByTokenHash', control.once(control.returns(Promise.resolve(null))))
+      .method(ConnectExecutorCredentialRepo, 'findByTokenHash', control.once(ok(null)))
       .build();
     const response = await env.request({
       method: 'GET',

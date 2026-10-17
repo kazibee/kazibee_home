@@ -1,4 +1,5 @@
 import { Component, LoadAs } from "@noego/ioc";
+import { Trust } from "@noego/trust";
 import { Query, QueryBinder, Single, run } from "sqlstack";
 
 export interface ConnectExecutorCredential {
@@ -15,18 +16,27 @@ export interface ConnectExecutorCredential {
 @Component({ scope: LoadAs.Singleton })
 export default class ConnectExecutorCredentialRepo {
   @Query()
-  createCredential(_params: Omit<ConnectExecutorCredential, "status" | "revoked_at">): Promise<void> {
-    return run();
+  async createCredential(_params: Omit<ConnectExecutorCredential, "status" | "revoked_at">) {
+    return Trust.tryAsync(
+      () => run<void>(),
+      (cause) => ({ kind: "write_failed", cause }),
+    );
   }
 
   @Single
   @Query()
-  findByTokenHash(_params: { token_hash: string }): Promise<ConnectExecutorCredential | null> {
-    return run();
+  async findByTokenHash(_params: { token_hash: string }) {
+    return Trust.tryAsync(
+      () => run<ConnectExecutorCredential | null>(),
+      (cause) => ({ kind: "query_failed", cause }),
+    );
   }
 
   @Query()
-  revokeForExecutor(_params: { executor_id: string; revoked_at: string }): Promise<void> {
-    return run();
+  async revokeForExecutor(_params: { executor_id: string; revoked_at: string }) {
+    return Trust.tryAsync(
+      () => run<void>(),
+      (cause) => ({ kind: "write_failed", cause }),
+    );
   }
 }

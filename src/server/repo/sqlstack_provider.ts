@@ -48,9 +48,11 @@ export function processSqlResolver(): SqlResolver | undefined {
  * fullResults gives pg-shaped { rows, rowCount, fields } for sqlstack.
  */
 export function neonHttpPool(connectionString: string) {
+  //trust:accept runs inside the SqlStack db factory, whose contract is exceptions: a bad connection string fails SqlStack resolution
   const httpQuery = neon(connectionString, { fullResults: true });
   return {
     async query(sql: string, params?: unknown[]) {
+      //trust:accept pg Pool interface: sqlstack's pg adapter turns this rejection into the statement's DatabaseError, which repos map to query_failed/write_failed
       return httpQuery.query(sql, (params ?? []) as unknown[]);
     },
     // sqlstack transactions need a dedicated session (.connect()); the HTTP
@@ -58,11 +60,15 @@ export function neonHttpPool(connectionString: string) {
     // transaction and torn down on release — request-scoped, which is the
     // only lifetime Workers allow for I/O objects.
     async connect() {
+      //trust:accept pg Pool interface sqlstack's adapter calls to open a transaction: a failure rejects that transaction
       const pool = new Pool({ connectionString });
+      //trust:accept pg Pool interface sqlstack's adapter calls to open a transaction: a failure rejects that transaction
       const client = await pool.connect();
       const release = client.release.bind(client);
       client.release = ((...args: unknown[]) => {
+        //trust:accept pg PoolClient interface: release keeps pg's own contract, sqlstack calls it when the transaction ends
         release(...(args as []));
+        //trust:accept best-effort teardown of this transaction's pool after its client was released; nothing awaits it
         void pool.end().catch(() => {});
       }) as typeof client.release;
       return client;
@@ -82,20 +88,27 @@ export function neonHttpPool(connectionString: string) {
 export function createProductionSqlStack(options: SqlStackProviderOptions): SqlStack {
   const { target, resolver, warn } = options;
   if (target === 'node' && options.allowDefaultConnection === false && !options.connectionString) {
+    //trust:accept IoC factory contract is exceptions: resolving SqlStack on a root without a database URL fails with this error
     throw new Error('No DATABASE_URL supplied to this application root; provide a SQLStack fixture URL or replace its SqlStack provider');
   }
   const connectionString = options.connectionString
     ?? (target === "node" ? DEFAULT_NODE_DATABASE_URL : undefined);
   if (!connectionString) {
     warn?.("[kazibee] worker root: no DATABASE_URL bound — DB-backed routes will fail");
+    //trust:accept IoC factory contract is exceptions: a stack that cannot be built fails SqlStack resolution
     return new SqlStack(resolver ? { resolver } : undefined);
   }
+  //trust:accept IoC factory contract is exceptions: a stack that cannot be built fails SqlStack resolution
   return new SqlStack({
     databases: {
       primary: {
-        db: () => target === "cloudflare-worker"
-          ? createPgDb(neonHttpPool(connectionString) as never)
-          : createPgDb(connectionString),
+        // The SqlStack constructor calls this factory, so its failure is the constructor's.
+        db: () => {
+          //trust:accept called by the SqlStack constructor inside the IoC factory: a failure fails SqlStack resolution
+          return target === "cloudflare-worker"
+            ? createPgDb(neonHttpPool(connectionString) as never)
+            : createPgDb(connectionString);
+        },
         owned: true,
       },
     },

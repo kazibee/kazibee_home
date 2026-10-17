@@ -13,6 +13,7 @@ import path from "node:path";
 
 import { testApp } from "@noego/app";
 import { resourceCase, test as control } from "@noego/testing";
+import { Result } from "@noego/trust";
 
 import SwarmRepo from "../../../src/server/repo/swarm_repo";
 import RemoteToolDispatchService from "../../../src/server/services/remote_tool_dispatch_service";
@@ -23,6 +24,9 @@ const SWARM_ID = "swm_12345678";
 const EXECUTOR_ID = "exe_desktop01";
 const TOKEN = "swarm:" + "t".repeat(64);
 const MCP_PATH = "/v1/swarms/" + SWARM_ID + "/mcp";
+
+/** A repository call that succeeds with `value`. */
+const ok = (value: unknown) => control.returns(Promise.resolve(Result.ok(value)));
 
 const swarm = (overrides: Record<string, unknown> = {}) => ({
   swarm_id: SWARM_ID,
@@ -70,7 +74,7 @@ describe("swarm member MCP relay through testDinner", () => {
   }));
 
   it("answers 404 for a stopped swarm and 409 for a swarm without a bound executor", resourceCase(async () => {
-    const stopped = await testApp(CONFIG).select({ server: { module: ["swarms"] } }).method(SwarmRepo, "findById", control.once(control.returns(Promise.resolve(swarm({ state: "stopped" })))))
+    const stopped = await testApp(CONFIG).select({ server: { module: ["swarms"] } }).method(SwarmRepo, "findById", control.once(ok(swarm({ state: "stopped" }))))
       .build();
     const stoppedResponse = await stopped.dinner.request({
       method: "POST",
@@ -82,7 +86,7 @@ describe("swarm member MCP relay through testDinner", () => {
     await stoppedResponse.body?.cancel();
     await stopped.verify();
 
-    const unbound = await testApp(CONFIG).select({ server: { module: ["swarms"] } }).method(SwarmRepo, "findById", control.once(control.returns(Promise.resolve(swarm({ executor_id: null })))))
+    const unbound = await testApp(CONFIG).select({ server: { module: ["swarms"] } }).method(SwarmRepo, "findById", control.once(ok(swarm({ executor_id: null }))))
       .build();
     const unboundResponse = await unbound.dinner.request({
       method: "POST",
@@ -97,7 +101,7 @@ describe("swarm member MCP relay through testDinner", () => {
   }));
 
   it("negotiates initialize and acknowledges notifications without dispatching", resourceCase(async () => {
-    const env = await testApp(CONFIG).select({ server: { module: ["swarms"] } }).method(SwarmRepo, "findById", control.returns(Promise.resolve(swarm())))
+    const env = await testApp(CONFIG).select({ server: { module: ["swarms"] } }).method(SwarmRepo, "findById", ok(swarm()))
       .method(RemoteToolDispatchService, "callTarget", control.never())
       .build();
     const initialize = await env.dinner.request({
@@ -125,7 +129,7 @@ describe("swarm member MCP relay through testDinner", () => {
 
   it("forwards tools/list as tool_help to the swarm's executor with the opaque bearer", resourceCase(async () => {
     const calls: unknown[] = [];
-    const env = await testApp(CONFIG).select({ server: { module: ["swarms"] } }).method(SwarmRepo, "findById", control.once(control.returns(Promise.resolve(swarm()))))
+    const env = await testApp(CONFIG).select({ server: { module: ["swarms"] } }).method(SwarmRepo, "findById", control.once(ok(swarm())))
       .method(RemoteToolDispatchService, "callTarget", control.watch(() => async (target: unknown, toolName: string, args: unknown) => {
             calls.push({ target, toolName, args });
             return {
@@ -165,7 +169,7 @@ describe("swarm member MCP relay through testDinner", () => {
   }));
 
   it("maps executor denials to isError tool results and offline routing to JSON-RPC errors", resourceCase(async () => {
-    const denied = await testApp(CONFIG).select({ server: { module: ["swarms"] } }).method(SwarmRepo, "findById", control.once(control.returns(Promise.resolve(swarm()))))
+    const denied = await testApp(CONFIG).select({ server: { module: ["swarms"] } }).method(SwarmRepo, "findById", control.once(ok(swarm())))
       .method(RemoteToolDispatchService, "callTarget", control.once(control.returns(Promise.resolve({
             ok: false,
             code: "EXECUTION_TICKET_INVALID",
@@ -187,7 +191,7 @@ describe("swarm member MCP relay through testDinner", () => {
     });
     await denied.verify();
 
-    const offline = await testApp(CONFIG).select({ server: { module: ["swarms"] } }).method(SwarmRepo, "findById", control.once(control.returns(Promise.resolve(swarm()))))
+    const offline = await testApp(CONFIG).select({ server: { module: ["swarms"] } }).method(SwarmRepo, "findById", control.once(ok(swarm())))
       .method(RemoteToolDispatchService, "callTarget", control.once(control.returns(Promise.resolve({
             ok: false,
             code: "EXECUTOR_OFFLINE",

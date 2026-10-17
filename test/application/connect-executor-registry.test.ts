@@ -124,7 +124,7 @@ describe("Connect executor registry", () => {
     const active = await credentialRepo.findByTokenHash({
       token_hash: credentials.hashToken(token),
     });
-    expect(active).toMatchObject({ status: "active", generation: 1 });
+    expect(active).toMatchObject({ ok: true, value: { status: "active", generation: 1 } });
     const verifier = await env.get<ConnectExecutorDeviceAuthVerifier>(ConnectExecutorDeviceAuthVerifier);
     expect(await verifier.verify(token)).toMatchObject({
       ok: true,
@@ -141,7 +141,7 @@ describe("Connect executor registry", () => {
     expect(revoked.executor.credential_generation).toBe(2);
     expect(await credentialRepo.findByTokenHash({
       token_hash: credentials.hashToken(token),
-    })).toMatchObject({ status: "revoked", generation: 1 });
+    })).toMatchObject({ ok: true, value: { status: "revoked", generation: 1 } });
     expect(await verifier.verify(token)).toEqual({ ok: false });
 
     const audit = await rows(
@@ -223,7 +223,7 @@ describe("Connect executor registry", () => {
     const executorRepo = await env.get<ConnectExecutorRepo>(ConnectExecutorRepo);
     expect(await executorRepo.findByExecutorId({
       executor_id: createInput.executorId,
-    })).toMatchObject({ state: "pending", owner_user_id: null });
+    })).toMatchObject({ ok: true, value: { state: "pending", owner_user_id: null } });
   }));
 
   it("reports expiry and never lets an expired challenge create ownership or credentials", resourceCase(async () => {
@@ -265,11 +265,13 @@ describe("Connect executor registry", () => {
     const executorRepo = await env.get<ConnectExecutorRepo>(ConnectExecutorRepo);
     expect(await executorRepo.findByExecutorId({
       executor_id: createInput.executorId,
-    })).toMatchObject({ state: "pending", owner_user_id: null, credential_generation: 0 });
+    })).toMatchObject({
+      ok: true, value: { state: "pending", owner_user_id: null, credential_generation: 0 },
+    });
     const credentialRepo = await env.get<ConnectExecutorCredentialRepo>(ConnectExecutorCredentialRepo);
     expect(await credentialRepo.findByTokenHash({
       token_hash: credentials.hashToken(token),
-    })).toBeNull();
+    })).toEqual({ ok: true, value: null });
   }));
 
   it("requires an active browser session as well as matching CSRF for mutations", resourceCase(async () => {

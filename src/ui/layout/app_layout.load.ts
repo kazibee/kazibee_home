@@ -1,6 +1,9 @@
+import { getLogger } from '@noego/logger';
 import { currentContainer } from '../../server/container';
 import { CONNECT_SESSION_COOKIE } from '../../server/services/connect_auth_policy';
 import ConnectSessionAuthService from '../../server/services/connect_session_auth_service';
+
+const logger = getLogger('kazibee:ui:app-layout');
 
 interface FrontendExecutionInputLike {
   request: { headers: { get(name: string): string | null } };
@@ -23,7 +26,21 @@ export default async function load(input: FrontendExecutionInputLike) {
   try {
     const sessions = await currentContainer().get<ConnectSessionAuthService>(ConnectSessionAuthService);
     const result = await sessions.authenticate(token);
-    if (!result.ok) return { user: null };
+    if (!result.ok) {
+      switch (result.error.kind) {
+        case 'unauthorized':
+          return { user: null };
+        // The layout renders signed-out when the session cannot be read.
+        case 'query_failed':
+        case 'write_failed':
+          logger.warn('Session lookup failed; rendering signed-out', { kind: result.error.kind, error: result.error.cause });
+          return { user: null };
+        default: {
+          const unhandled: never = result.error;
+          return unhandled;
+        }
+      }
+    }
     return {
       user: {
         email: result.value.account.email,

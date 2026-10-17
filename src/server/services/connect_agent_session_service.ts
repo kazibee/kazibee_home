@@ -1,8 +1,10 @@
 import { Component, Inject } from "@noego/ioc";
+import { Result } from "@noego/trust";
 import ConnectAgentSessionRepo, {
   type ConnectAgentSession,
 } from "../repo/connect_agent_session_repo";
 import ConnectExecutorRepo from "../repo/connect_executor_repo";
+import { repoUnavailable, type RepoUnavailable } from "../repo/repo_failure";
 import { ConnectClock, ConnectCredentials } from "./connect_auth_primitives";
 import Env from "./env";
 
@@ -25,7 +27,8 @@ function coordinatorNamespace(value: unknown): CoordinatorNamespace | null {
 
 export type AgentSessionResult =
   | { ok: true; token: string; session: ConnectAgentSession }
-  | { ok: false };
+  | { ok: false }
+  | RepoUnavailable;
 
 @Component()
 export default class ConnectAgentSessionService {
@@ -37,8 +40,12 @@ export default class ConnectAgentSessionService {
     @Inject(Env) private readonly env: Env,
   ) {}
 
-  async createHandoff(userId: string, executorId: string): Promise<{ ok: true; token: string } | { ok: false }> {
-    const executor = await this.executors.findByExecutorId({ executor_id: executorId });
+  async createHandoff(
+    userId: string, executorId: string,
+  ): Promise<{ ok: true; token: string } | { ok: false } | RepoUnavailable> {
+    const executorLookup = await this.executors.findByExecutorId({ executor_id: executorId });
+    if (!executorLookup.ok) return repoUnavailable(executorLookup.error);
+    const executor = executorLookup.value;
     if (!executor || executor.state !== "active" || executor.owner_user_id !== userId) return { ok: false };
     const coordinator = coordinatorNamespace(this.env.get("EXECUTOR_COORDINATOR"));
     if (!coordinator) return { ok: false };
@@ -55,23 +62,26 @@ export default class ConnectAgentSessionService {
 
     const token = this.credentials.randomToken();
     const createdAt = this.clock.now();
-    await this.repo.createHandoff({
+    const created = await this.repo.createHandoff({
       token_hash: this.credentials.hashToken(token),
       user_id: userId,
       executor_id: executorId,
       created_at: createdAt.toISOString(),
       expires_at: new Date(createdAt.getTime() + HANDOFF_TTL_MS).toISOString(),
     });
+    if (!created.ok) return repoUnavailable(created.error);
     return { ok: true, token };
   }
 
   async consumeHandoff(token: string): Promise<AgentSessionResult> {
     if (!/^[A-Za-z0-9_-]{43}$/.test(token)) return { ok: false };
     const now = this.clock.now();
-    const handoff = await this.repo.consumeHandoff({
+    const consumed = await this.repo.consumeHandoff({
       token_hash: this.credentials.hashToken(token),
       consumed_at: now.toISOString(),
     });
+    if (!consumed.ok) return repoUnavailable(consumed.error);
+    const handoff = consumed.value;
     if (!handoff) return { ok: false };
 
     const sessionToken = this.credentials.randomToken();
@@ -87,28 +97,33 @@ export default class ConnectAgentSessionService {
       expires_at: absolute.toISOString(),
       revoked_at: null,
     };
-    await this.repo.createSession(session);
+    const created = await this.repo.createSession(session);
+    if (!created.ok) return repoUnavailable(created.error);
     return { ok: true, token: sessionToken, session };
   }
 
-  async authenticate(token: string | null): Promise<ConnectAgentSession | null> {
-    if (!token) return null;
-    const session = await this.repo.findByTokenHash({
+  /** The live agent session for this cookie token, or null when there is none. */
+  async authenticate(token: string | null) {
+    if (!token) return Result.ok(null);
+    const found = await this.repo.findByTokenHash({
       session_token_hash: this.credentials.hashToken(token),
     });
-    if (!session || session.revoked_at) return null;
+    if (!found.ok) return found;
+    const session = found.value;
+    if (!session || session.revoked_at) return Result.ok(null);
     const now = this.clock.now();
     if (new Date(session.idle_expires_at).getTime() <= now.getTime()
-      || new Date(session.expires_at).getTime() <= now.getTime()) return null;
+      || new Date(session.expires_at).getTime() <= now.getTime()) return Result.ok(null);
     const idle = new Date(Math.min(
       now.getTime() + SESSION_IDLE_MS,
       new Date(session.expires_at).getTime(),
     )).toISOString();
-    await this.repo.touchSession({
+    const touched = await this.repo.touchSession({
       session_id: session.session_id,
       last_seen_at: now.toISOString(),
       idle_expires_at: idle,
     });
-    return { ...session, last_seen_at: now.toISOString(), idle_expires_at: idle };
+    if (!touched.ok) return touched;
+    return Result.ok({ ...session, last_seen_at: now.toISOString(), idle_expires_at: idle });
   }
 }

@@ -1,5 +1,7 @@
 import { Component, Inject } from "@noego/ioc";
 import type { CompatRequest as Request, CompatResponse as Response } from "@noego/dinner";
+import { getLogger } from "@noego/logger";
+import type { RepoFailure } from "../repo/repo_failure";
 import ConnectAgentSessionService from "../services/connect_agent_session_service";
 import ConnectSessionAuthService from "../services/connect_session_auth_service";
 import ConnectAuthPolicy from "../services/connect_auth_policy";
@@ -9,6 +11,8 @@ import RawRequest from "../services/raw_request";
 
 const AGENT_SESSION_COOKIE = "__Host-kazi_agent_session";
 const EXECUTOR_ID = /^exe_[A-Za-z0-9]{8,64}$/;
+
+const logger = getLogger("kazibee:connect-agent-controller");
 
 type Context = { req: Request; res: Response };
 
@@ -58,9 +62,26 @@ export default class ConnectAgentController {
       cookie(req, this.authPolicy.csrfCookieName),
       typeof csrfHeader === "string" ? csrfHeader : null,
     );
-    if (!auth.ok) return res.status(auth.reason === "csrf" ? 403 : 401).json({ error: true });
+    if (!auth.ok) {
+      switch (auth.error.kind) {
+        case "csrf":
+          return res.status(403).json({ error: true });
+        case "unauthorized":
+          return res.status(401).json({ error: true });
+        case "query_failed":
+        case "write_failed":
+          return this.unavailable(res, auth.error);
+        default: {
+          const unhandled: never = auth.error;
+          return unhandled;
+        }
+      }
+    }
     const handoff = await this.sessions.createHandoff(auth.value.account.user_id, executorId);
-    if (!handoff.ok) return res.status(404).json({ error: true, code: "EXECUTOR_OFFLINE" });
+    if (!handoff.ok) {
+      if ("failure" in handoff) return this.unavailable(res, handoff.failure);
+      return res.status(404).json({ error: true, code: "EXECUTOR_OFFLINE" });
+    }
     return res.status(201).json({
       url: `${this.origins.agentOrigin}/handoff/${handoff.token}`,
     });
@@ -70,6 +91,7 @@ export default class ConnectAgentController {
     const token = typeof req.params?.token === "string" ? req.params.token : "";
     const session = await this.sessions.consumeHandoff(token);
     if (!session.ok) {
+      if ("failure" in session) return this.unavailable(res, session.failure);
       return res.redirect(302, `${this.origins.websiteOrigin}/connect?agent=expired`);
     }
     res.cookie(AGENT_SESSION_COOKIE, session.token, {
@@ -83,8 +105,9 @@ export default class ConnectAgentController {
   }
 
   async home({ req, res }: Context) {
-    const session = await this.sessions.authenticate(cookie(req, AGENT_SESSION_COOKIE));
-    if (!session) return res.redirect(302, `${this.origins.websiteOrigin}/connect`);
+    const authenticated = await this.sessions.authenticate(cookie(req, AGENT_SESSION_COOKIE));
+    if (!authenticated.ok) return this.unavailable(res, authenticated.error);
+    if (!authenticated.value) return res.redirect(302, `${this.origins.websiteOrigin}/connect`);
     const raw = this.rawRequest.get();
     const assets = this.env.get("ASSETS") as Partial<AssetBinding> | undefined;
     if (!raw || !assets || typeof assets.fetch !== "function") {
@@ -108,8 +131,9 @@ export default class ConnectAgentController {
    * like the shell, so nothing about the bundle is served anonymously.
    */
   async staticAsset({ req, res }: Context) {
-    const session = await this.sessions.authenticate(cookie(req, AGENT_SESSION_COOKIE));
-    if (!session) return res.redirect(302, `${this.origins.websiteOrigin}/connect`);
+    const authenticated = await this.sessions.authenticate(cookie(req, AGENT_SESSION_COOKIE));
+    if (!authenticated.ok) return this.unavailable(res, authenticated.error);
+    if (!authenticated.value) return res.redirect(302, `${this.origins.websiteOrigin}/connect`);
     const file = typeof req.params?.file === "string" ? req.params.file : "";
     const raw = this.rawRequest.get();
     const assets = this.env.get("ASSETS") as Partial<AssetBinding> | undefined;
@@ -131,7 +155,9 @@ export default class ConnectAgentController {
     if (raw.headers.get("Origin") !== this.origins.agentOrigin) {
       return res.status(403).json({ error: true, code: "ORIGIN_MISMATCH" });
     }
-    const session = await this.sessions.authenticate(cookie(req, AGENT_SESSION_COOKIE));
+    const authenticated = await this.sessions.authenticate(cookie(req, AGENT_SESSION_COOKIE));
+    if (!authenticated.ok) return this.unavailable(res, authenticated.error);
+    const session = authenticated.value;
     if (!session) return res.status(401).json({ error: true, code: "SESSION_REQUIRED" });
     const coordinator = coordinatorNamespace(this.env.get("EXECUTOR_COORDINATOR"));
     if (!coordinator) return res.status(503).json({ error: true, code: "COORDINATOR_UNAVAILABLE" });
@@ -151,7 +177,9 @@ export default class ConnectAgentController {
   }
 
   async asset({ req, res }: Context) {
-    const session = await this.sessions.authenticate(cookie(req, AGENT_SESSION_COOKIE));
+    const authenticated = await this.sessions.authenticate(cookie(req, AGENT_SESSION_COOKIE));
+    if (!authenticated.ok) return this.unavailable(res, authenticated.error);
+    const session = authenticated.value;
     if (!session) return res.status(401).json({ error: true, code: "SESSION_REQUIRED" });
     const path = typeof req.query?.path === "string" ? req.query.path : "";
     if (!path.startsWith("/") && !/^[A-Za-z]:[\\/]/.test(path)) {
@@ -199,6 +227,12 @@ export default class ConnectAgentController {
         "Cache-Control": "private, max-age=60",
       },
     });
+  }
+
+  /** A session or executor lookup failed in the repository: logged here, answered 500. */
+  private unavailable(res: Response, failure: RepoFailure) {
+    logger.error("Agent session lookup failed", { kind: failure.kind, error: failure.cause });
+    return res.status(500).json({ error: true, code: "SESSION_UNAVAILABLE" });
   }
 
   private csp(): string {

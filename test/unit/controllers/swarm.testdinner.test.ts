@@ -4,6 +4,7 @@ import path from "node:path";
 
 import { testApp } from "@noego/app";
 import { resourceCase, test as control } from "@noego/testing";
+import { Result } from "@noego/trust";
 
 import SwarmMachineRepo from "../../../src/server/repo/swarm_machine_repo";
 import SwarmRepo from "../../../src/server/repo/swarm_repo";
@@ -16,6 +17,9 @@ const CONFIG = path.resolve(__dirname, "../../../noego.config.yml");
 
 const SWARM_ID = "swm_12345678";
 const MACHINE_ID = "mch_12345678";
+
+/** A repository call that succeeds with `value`. */
+const ok = (value: unknown) => control.returns(Promise.resolve(Result.ok(value)));
 
 describe("swarm controller authentication through testDinner", () => {
   it("returns 401 when create has no owner session", resourceCase(async () => {
@@ -63,7 +67,7 @@ describe("swarm controller authentication through testDinner", () => {
             actor: { role: "browser_session", userId: "usr_12345678", sessionId: "ses_12345678" },
           }))))
       .method(Env, "string", control.returns("dev"))
-      .method(SwarmRepo, "createSwarm", control.once(control.returns(Promise.resolve({
+      .method(SwarmRepo, "createSwarm", control.once(ok({
           swarm_id: SWARM_ID,
           owner_user_id: "usr_12345678",
           env: "dev",
@@ -74,7 +78,7 @@ describe("swarm controller authentication through testDinner", () => {
           idempotency_key: null,
           created_at: "2026-09-02T10:00:00.000Z",
           stopped_at: null,
-        }))))
+        })))
       .build();
     const response = await env.dinner.request({
       method: "POST",
@@ -103,7 +107,7 @@ describe("swarm controller authentication through testDinner", () => {
             ok: true,
             actor: { role: "browser_session", userId: "usr_12345678", sessionId: "ses_12345678" },
           }))))
-      .method(SwarmRepo, "findByIdAndOwner", control.once(control.returns(Promise.resolve(swarm))))
+      .method(SwarmRepo, "findByIdAndOwner", control.once(ok(swarm)))
       .method(SwarmAwsService, "launchConfig", control.once(control.returns(Promise.resolve({
             clusterArn: "arn:cluster",
             subnetIds: ["subnet-1"],
@@ -114,8 +118,8 @@ describe("swarm controller authentication through testDinner", () => {
             taskArn: "arn:task",
             taskDefinitionArn: "arn:task-def",
           }))))
-      .method(SwarmMachineRepo, "createMachine", control.once(control.returns(Promise.resolve())))
-      .method(SwarmMachineRepo, "markRunning", control.once(control.returns(Promise.resolve())))
+      .method(SwarmMachineRepo, "createMachine", control.once(ok(undefined)))
+      .method(SwarmMachineRepo, "markRunning", control.once(ok(undefined)))
       .build();
     const response = await env.dinner.request({
       method: "POST",
@@ -159,8 +163,8 @@ describe("swarm executor ownership and idempotency", () => {
     const created = existing({ client_swarm_id: SWARM_ID });
     const env = await testApp(CONFIG).select({ server: { module: ["swarms"] } }).method(ConnectExecutorActorResolver, "device", control.once(control.returns(Promise.resolve(executorActor))))
       .method(Env, "string", control.returns("dev"))
-      .method(SwarmRepo, "findByOwnerAndIdempotencyKey", control.once(control.returns(Promise.resolve(null))))
-      .method(SwarmRepo, "createSwarm", control.once(control.returns(Promise.resolve(created))))
+      .method(SwarmRepo, "findByOwnerAndIdempotencyKey", control.once(ok(null)))
+      .method(SwarmRepo, "createSwarm", control.once(ok(created)))
       .build();
     const response = await env.dinner.request({
       method: "POST",
@@ -183,7 +187,7 @@ describe("swarm executor ownership and idempotency", () => {
   it("replays an idempotent create without inserting", resourceCase(async () => {
     const env = await testApp(CONFIG).select({ server: { module: ["swarms"] } }).method(ConnectExecutorActorResolver, "device", control.once(control.returns(Promise.resolve(executorActor))))
       .method(Env, "string", control.returns("dev"))
-      .method(SwarmRepo, "findByOwnerAndIdempotencyKey", control.once(control.returns(Promise.resolve(existing()))))
+      .method(SwarmRepo, "findByOwnerAndIdempotencyKey", control.once(ok(existing())))
       .method(SwarmRepo, "createSwarm", control.never())
       .build();
     const response = await env.dinner.request({
@@ -204,7 +208,7 @@ describe("swarm executor ownership and idempotency", () => {
   it("rejects a different create body under the same idempotency key", resourceCase(async () => {
     const env = await testApp(CONFIG).select({ server: { module: ["swarms"] } }).method(ConnectExecutorActorResolver, "device", control.once(control.returns(Promise.resolve(executorActor))))
       .method(Env, "string", control.returns("dev"))
-      .method(SwarmRepo, "findByOwnerAndIdempotencyKey", control.once(control.returns(Promise.resolve(existing()))))
+      .method(SwarmRepo, "findByOwnerAndIdempotencyKey", control.once(ok(existing())))
       .method(SwarmRepo, "createSwarm", control.never())
       .build();
     const response = await env.dinner.request({
@@ -225,7 +229,7 @@ describe("swarm executor ownership and idempotency", () => {
   it("rejects a duplicate client swarm id", resourceCase(async () => {
     const env = await testApp(CONFIG).select({ server: { module: ["swarms"] } }).method(ConnectExecutorActorResolver, "device", control.once(control.returns(Promise.resolve(executorActor))))
       .method(Env, "string", control.returns("dev"))
-      .method(SwarmRepo, "createSwarm", control.once(control.returns(Promise.resolve(null))))
+      .method(SwarmRepo, "createSwarm", control.once(ok(null)))
       .build();
     const response = await env.dinner.request({
       method: "POST",
@@ -243,7 +247,7 @@ describe("swarm executor ownership and idempotency", () => {
 
   it("hides another user's swarm from an executor", resourceCase(async () => {
     const env = await testApp(CONFIG).select({ server: { module: ["swarms"] } }).method(ConnectExecutorActorResolver, "device", control.once(control.returns(Promise.resolve(executorActor))))
-      .method(SwarmRepo, "findByIdAndOwner", control.once(control.returns(Promise.resolve(null))))
+      .method(SwarmRepo, "findByIdAndOwner", control.once(ok(null)))
       .build();
     const response = await env.dinner.request({
       method: "GET",
@@ -262,8 +266,8 @@ describe("swarm executor ownership and idempotency", () => {
       get: (_id: unknown) => ({ fetch: async () => Response.json({}) }),
     };
     const env = await testApp(CONFIG).select({ server: { module: ["swarms"] } }).method(ConnectExecutorActorResolver, "device", control.once(control.returns(Promise.resolve(executorActor))))
-      .method(SwarmRepo, "findByIdAndOwner", control.once(control.returns(Promise.resolve(existing()))))
-      .method(SwarmMachineRepo, "listNonStoppedBySwarm", control.once(control.returns(Promise.resolve([]))))
+      .method(SwarmRepo, "findByIdAndOwner", control.once(ok(existing())))
+      .method(SwarmMachineRepo, "listNonStoppedBySwarm", control.once(ok([])))
       .method(Env, "get", control.once(control.returns(coordinator)))
       .build();
     const response = await env.dinner.request({
@@ -280,7 +284,7 @@ describe("swarm executor ownership and idempotency", () => {
 
   it("lets an executor launch a machine in its own swarm", resourceCase(async () => {
     const env = await testApp(CONFIG).select({ server: { module: ["swarms"] } }).method(ConnectExecutorActorResolver, "device", control.once(control.returns(Promise.resolve(executorActor))))
-      .method(SwarmRepo, "findByIdAndOwner", control.once(control.returns(Promise.resolve(existing()))))
+      .method(SwarmRepo, "findByIdAndOwner", control.once(ok(existing())))
       .method(SwarmAwsService, "launchConfig", control.once(control.returns(Promise.resolve({
             clusterArn: "arn:cluster",
             subnetIds: ["subnet-1"],
@@ -291,8 +295,8 @@ describe("swarm executor ownership and idempotency", () => {
             taskArn: "arn:task",
             taskDefinitionArn: "arn:task-def",
           }))))
-      .method(SwarmMachineRepo, "createMachine", control.once(control.returns(Promise.resolve())))
-      .method(SwarmMachineRepo, "markRunning", control.once(control.returns(Promise.resolve())))
+      .method(SwarmMachineRepo, "createMachine", control.once(ok(undefined)))
+      .method(SwarmMachineRepo, "markRunning", control.once(ok(undefined)))
       .build();
     const response = await env.dinner.request({
       method: "POST",
@@ -311,8 +315,8 @@ describe("swarm executor ownership and idempotency", () => {
       get: (_id: unknown) => ({ fetch: async () => Response.json({}) }),
     };
     const env = await testApp(CONFIG).select({ server: { module: ["swarms"] } }).method(ConnectExecutorActorResolver, "device", control.once(control.returns(Promise.resolve(executorActor))))
-      .method(SwarmRepo, "findByIdAndOwner", control.once(control.returns(Promise.resolve(existing()))))
-      .method(SwarmMachineRepo, "listBySwarm", control.once(control.returns(Promise.resolve([]))))
+      .method(SwarmRepo, "findByIdAndOwner", control.once(ok(existing())))
+      .method(SwarmMachineRepo, "listBySwarm", control.once(ok([])))
       .method(Env, "get", control.returns(coordinator))
       .build();
     const response = await env.dinner.request({
@@ -332,10 +336,10 @@ describe("swarm executor ownership and idempotency", () => {
       get: (_id: unknown) => ({ fetch: async () => Response.json({}) }),
     };
     const env = await testApp(CONFIG).select({ server: { module: ["swarms"] } }).method(ConnectExecutorActorResolver, "device", control.once(control.returns(Promise.resolve(executorActor))))
-      .method(SwarmRepo, "findByIdAndOwner", control.once(control.returns(Promise.resolve(existing()))))
-      .method(SwarmRepo, "markStopping", control.once(control.returns(Promise.resolve())))
-      .method(SwarmRepo, "markStopped", control.once(control.returns(Promise.resolve())))
-      .method(SwarmMachineRepo, "listNonStoppedBySwarm", control.once(control.returns(Promise.resolve([]))))
+      .method(SwarmRepo, "findByIdAndOwner", control.once(ok(existing())))
+      .method(SwarmRepo, "markStopping", control.once(ok(undefined)))
+      .method(SwarmRepo, "markStopped", control.once(ok(undefined)))
+      .method(SwarmMachineRepo, "listNonStoppedBySwarm", control.once(ok([])))
       .method(Env, "get", control.returns(coordinator))
       .build();
     const response = await env.dinner.request({

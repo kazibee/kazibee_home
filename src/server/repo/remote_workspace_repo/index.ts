@@ -1,4 +1,5 @@
 import { Component } from "@noego/ioc";
+import { Trust } from "@noego/trust";
 import { Query, QueryBinder, Single, run } from "sqlstack";
 
 export interface RemoteWorkspaceRow {
@@ -16,22 +17,28 @@ export interface RemoteWorkspaceRow {
 export default class RemoteWorkspaceRepo {
   @Single
   @Query()
-  upsertRemoteWorkspace(_params: {
+  async upsertRemoteWorkspace(_params: {
     remote_workspace_id: string;
     user_id: string;
     executor_id: string;
     local_workspace_id: string;
     display_name: string;
     now: string;
-  }): Promise<RemoteWorkspaceRow | null> {
-    return run();
+  }) {
+    return Trust.tryAsync(
+      () => run<RemoteWorkspaceRow | null>(),
+      (cause) => ({ kind: "write_failed", cause }),
+    );
   }
 
   @Single
   @Query()
-  findRemoteWorkspace(_params: {
+  async findRemoteWorkspace(_params: {
     remote_workspace_id: string;
-  }): Promise<RemoteWorkspaceRow | null> {
-    return run();
+  }) {
+    return Trust.tryAsync(
+      () => run<RemoteWorkspaceRow | null>(),
+      (cause) => ({ kind: "query_failed", cause }),
+    );
   }
 }

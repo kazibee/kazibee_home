@@ -1,7 +1,9 @@
 import { randomBytes } from "node:crypto";
 import { Component, Inject, LoadAs } from "@noego/ioc";
+import { Result } from "@noego/trust";
 import RemoteToolGrantRepo, { type RemoteToolGrant } from "../repo/remote_tool_grant_repo";
 import ConnectExecutorRepo from "../repo/connect_executor_repo";
+import { repoUnavailable, type RepoUnavailable } from "../repo/repo_failure";
 import { ConnectCredentials } from "./connect_auth_primitives";
 
 const SCOPE_NAMES = new Set([
@@ -23,7 +25,8 @@ const SCOPE_DEPENDENCIES: Record<string, string> = {
 
 export type CreateGrantResult =
   | { ok: true; grant: RemoteToolGrant; token: string }
-  | { ok: false; reason: "invalid_scopes" | "executor_not_owned" | "invalid_workspace" };
+  | { ok: false; reason: "invalid_scopes" | "executor_not_owned" | "invalid_workspace" }
+  | RepoUnavailable;
 
 /**
  * PAT-style remote tool grants for the demo path: the signed-in owner mints a
@@ -60,14 +63,16 @@ export default class RemoteToolGrantService {
       return { ok: false, reason: "invalid_workspace" };
     }
 
-    const executor = await this.executors.findByExecutorId({ executor_id: input.executorId });
+    const executorLookup = await this.executors.findByExecutorId({ executor_id: input.executorId });
+    if (!executorLookup.ok) return repoUnavailable(executorLookup.error);
+    const executor = executorLookup.value;
     if (!executor || executor.state !== "active" || executor.owner_user_id !== input.ownerUserId) {
       return { ok: false, reason: "executor_not_owned" };
     }
 
     const token = this.credentials.randomToken();
     const grantId = `rtg_${randomBytes(16).toString("hex")}`;
-    await this.grants.createGrant({
+    const created = await this.grants.createGrant({
       grant_id: grantId,
       owner_user_id: input.ownerUserId,
       executor_id: input.executorId,
@@ -77,34 +82,43 @@ export default class RemoteToolGrantService {
       created_at: new Date().toISOString(),
       expires_at: null,
     });
-    const grant = await this.grants.findByTokenHash({
+    if (!created.ok) return repoUnavailable(created.error);
+    const grantLookup = await this.grants.findByTokenHash({
       token_hash: this.credentials.hashToken(token),
     });
+    if (!grantLookup.ok) return repoUnavailable(grantLookup.error);
+    const grant = grantLookup.value;
     if (!grant) throw new Error("Grant row was not persisted.");
     return { ok: true, grant, token };
   }
 
-  /** Bearer -> active grant, or null. Never says why it failed. */
-  async authenticate(bearer: string | null): Promise<RemoteToolGrant | null> {
-    if (!bearer || !/^[A-Za-z0-9_-]{43}$/.test(bearer)) return null;
-    const grant = await this.grants.findByTokenHash({
+  /**
+   * Bearer -> the active grant, or null when the bearer is refused (never says
+   * why). A failed grant lookup or last-used touch is the repository failure.
+   */
+  async authenticate(bearer: string | null) {
+    if (!bearer || !/^[A-Za-z0-9_-]{43}$/.test(bearer)) return Result.ok(null);
+    const found = await this.grants.findByTokenHash({
       token_hash: this.credentials.hashToken(bearer),
     });
-    if (!grant || grant.state !== "active") return null;
-    if (grant.expires_at && Date.parse(grant.expires_at) <= Date.now()) return null;
-    await this.grants.touchLastUsed({
+    if (!found.ok) return found;
+    const grant = found.value;
+    if (!grant || grant.state !== "active") return Result.ok(null);
+    if (grant.expires_at && Date.parse(grant.expires_at) <= Date.now()) return Result.ok(null);
+    const touched = await this.grants.touchLastUsed({
       grant_id: grant.grant_id,
       last_used_at: new Date().toISOString(),
     });
-    return grant;
+    if (!touched.ok) return touched;
+    return Result.ok(grant);
   }
 
-  list(ownerUserId: string): Promise<RemoteToolGrant[]> {
+  list(ownerUserId: string) {
     return this.grants.listByOwner({ owner_user_id: ownerUserId });
   }
 
-  async revoke(ownerUserId: string, grantId: string): Promise<void> {
-    await this.grants.revokeGrant({
+  revoke(ownerUserId: string, grantId: string) {
+    return this.grants.revokeGrant({
       grant_id: grantId,
       owner_user_id: ownerUserId,
       revoked_at: new Date().toISOString(),

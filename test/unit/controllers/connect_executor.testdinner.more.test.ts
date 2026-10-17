@@ -16,6 +16,7 @@ import { createHash } from 'node:crypto';
 import path from 'node:path';
 import { testApp } from '@noego/app';
 import { test as control, testStub, resourceCase } from '@noego/testing';
+import { Result } from '@noego/trust';
 import ConnectExecutorLogic from '../../../src/server/logic/connect_executor.logic';
 import ConnectExecutorClaimRepo from '../../../src/server/repo/connect_executor_claim_repo';
 import ConnectExecutorRepo from '../../../src/server/repo/connect_executor_repo';
@@ -46,6 +47,8 @@ const FUTURE = '2999-01-01T00:00:00.000Z';
 const DEPLOYMENT_ID = `wdp_${'a'.repeat(32)}`;
 
 const returns = (value: unknown) => control.returns(Promise.resolve(value));
+/** A repository read/write that succeeds with `value`. */
+const ok = (value: unknown) => control.returns(Promise.resolve(Result.ok(value)));
 
 const executorRow = (overrides: Record<string, unknown> = {}) => ({
   executor_id: EXECUTOR_ID, device_id: DEVICE_ID, owner_user_id: USER_ID,
@@ -84,9 +87,9 @@ const accountRow = () => ({
 // Session-authenticated repos: a reusable replacement description (same
 // tokens/slots/descriptors/order as before), not an application constructor.
 const browserSession = () => testStub()
-  .method(ConnectBrowserSessionRepo, 'findByTokenHash', returns(sessionRow()))
-  .method(ConnectBrowserSessionRepo, 'touchSession', returns(undefined))
-  .method(ConnectAccountRepo, 'findByUserId', returns(accountRow()));
+  .method(ConnectBrowserSessionRepo, 'findByTokenHash', ok(sessionRow()))
+  .method(ConnectBrowserSessionRepo, 'touchSession', ok(undefined))
+  .method(ConnectAccountRepo, 'findByUserId', ok(accountRow()));
 
 const ownerHeaders = () => ({
   cookie: `kazi_connect_session=${SESSION_TOKEN}; kazi_connect_csrf=${CSRF_TOKEN}`,
@@ -462,14 +465,14 @@ describe('read paths over the real graph (repo stubs only)', () => {
   it('GET claim status reports the full acceptance identity', resourceCase(async () => {
     const { status, payload } = await request(
       await testApp(CONFIG).select({ server: { module: ['connectExecutors'] } })
-        .method(ConnectExecutorClaimRepo, 'findByClaimId', returns(claimRow({ status: 'accepted' })))
-        .method(ConnectExecutorRepo, 'findByExecutorId', returns(executorRow()))
-        .method(ConnectExecutorCredentialRepo, 'findByTokenHash', returns({
+        .method(ConnectExecutorClaimRepo, 'findByClaimId', ok(claimRow({ status: 'accepted' })))
+        .method(ConnectExecutorRepo, 'findByExecutorId', ok(executorRow()))
+        .method(ConnectExecutorCredentialRepo, 'findByTokenHash', ok({
           credential_id: 'crd_abcdefgh', executor_id: EXECUTOR_ID, generation: 1,
           token_hash: sha256(BOOTSTRAP_TOKEN), status: 'active',
           created_at: '2026-01-01T00:00:00.000Z', revoked_at: null,
         }))
-        .method(ConnectWebsiteDeploymentIdentityRepo, 'findSingleton', returns({ website_deployment_id: DEPLOYMENT_ID }))
+        .method(ConnectWebsiteDeploymentIdentityRepo, 'findSingleton', ok({ website_deployment_id: DEPLOYMENT_ID }))
         .build(),
       {
         method: 'GET',
@@ -507,8 +510,8 @@ describe('read paths over the real graph (repo stubs only)', () => {
     const { status, payload } = await request(
       await testApp(CONFIG).select({ server: { module: ['connectExecutors'] } })
         .use(browserSession())
-        .method(ConnectExecutorClaimRepo, 'findByCodeHash', control.once(returns(claimRow())))
-        .method(ConnectExecutorRepo, 'findByExecutorId', returns(executorRow()))
+        .method(ConnectExecutorClaimRepo, 'findByCodeHash', control.once(ok(claimRow())))
+        .method(ConnectExecutorRepo, 'findByExecutorId', ok(executorRow()))
         .build(),
       {
         method: 'GET',
@@ -542,7 +545,7 @@ describe('read paths over the real graph (repo stubs only)', () => {
     const { status, payload } = await request(
       await testApp(CONFIG).select({ server: { module: ['connectExecutors'] } })
         .use(browserSession())
-        .method(ConnectExecutorRepo, 'findByExecutorId', returns(executorRow()))
+        .method(ConnectExecutorRepo, 'findByExecutorId', ok(executorRow()))
         .build(),
       {
         method: 'GET',
@@ -567,7 +570,7 @@ describe('read paths over the real graph (repo stubs only)', () => {
     const { status, payload } = await request(
       await testApp(CONFIG).select({ server: { module: ['connectExecutors'] } })
         .use(browserSession())
-        .method(ConnectExecutorRepo, 'findByExecutorId', returns(executorRow({ owner_user_id: 'usr_other0001' })))
+        .method(ConnectExecutorRepo, 'findByExecutorId', ok(executorRow({ owner_user_id: 'usr_other0001' })))
         .build(),
       {
         method: 'GET',

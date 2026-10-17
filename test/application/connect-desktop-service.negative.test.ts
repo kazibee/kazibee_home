@@ -19,6 +19,7 @@ import path from "node:path";
 import { ExecutionContext } from "@noego/ioc";
 import { testApp, type AppTestBuilder } from "@noego/app";
 import { resourceCase, testStub, test as control } from "@noego/testing";
+import { Result } from "@noego/trust";
 import { SqlStack, TransactionHandle, getActiveTransaction, withTransaction } from "sqlstack";
 import { testPostgres, DEFAULT_ADMIN_URL, type TestPostgresDatabase } from "sqlstack/testing";
 import Env from "../../src/server/services/env";
@@ -101,33 +102,37 @@ const revokeBody = {
 };
 
 const returns = (value: unknown) => control.returns(Promise.resolve(value));
+/** A repository call that succeeds with `value`. */
+const ok = (value: unknown) => returns(Result.ok(value));
+/** A repository call that fails the way the repos report it: a named kind carrying the cause. */
+const fails = (kind: "query_failed" | "write_failed", cause: unknown) => returns(Result.err({ kind, cause }));
 
-/** Sequential control: call N resolves to value N; a call past the script fails. */
-const seq = (...values: unknown[]) => control.calls(values.map(returns));
+/** Sequential repository control: call N succeeds with value N; a call past the script fails. */
+const seq = (...values: unknown[]) => control.calls(values.map(ok));
 
 // The original plain-fake defaults, now as singular method controls on the
 // real repository/clock/relay/deployment-identity tokens. Later writes to the
 // same token+method win, so cases override only what they need.
 const defaults = testStub()
-  .method(ConnectDesktopDeviceRepo, "findByDeviceId", returns(null))
-  .method(ConnectDesktopDeviceRepo, "createDevice", returns(undefined))
-  .method(ConnectDesktopDeviceRepo, "acceptOwner", returns(undefined))
-  .method(ConnectDesktopDeviceRepo, "renameOwned", returns(undefined))
-  .method(ConnectDesktopDeviceRepo, "revokeOwned", returns(undefined))
-  .method(ConnectDesktopDeviceRepo, "listByOwner", returns([]))
-  .method(ConnectDesktopClaimRepo, "findByIdempotencyKey", returns(null))
-  .method(ConnectDesktopClaimRepo, "findByClaimId", returns(null))
-  .method(ConnectDesktopClaimRepo, "findByCodeHash", returns(null))
-  .method(ConnectDesktopClaimRepo, "createClaim", returns(undefined))
-  .method(ConnectDesktopClaimRepo, "acceptPending", returns(undefined))
-  .method(ConnectDesktopClaimRepo, "denyPending", returns(undefined))
-  .method(ConnectDesktopCredentialRepo, "findByTokenHash", returns(null))
-  .method(ConnectDesktopCredentialRepo, "createCredential", returns(undefined))
-  .method(ConnectDesktopCredentialRepo, "revokeForDevice", returns(undefined))
-  .method(ConnectDesktopAuditRepo, "appendEvent", returns(undefined))
+  .method(ConnectDesktopDeviceRepo, "findByDeviceId", ok(null))
+  .method(ConnectDesktopDeviceRepo, "createDevice", ok(undefined))
+  .method(ConnectDesktopDeviceRepo, "acceptOwner", ok(undefined))
+  .method(ConnectDesktopDeviceRepo, "renameOwned", ok(undefined))
+  .method(ConnectDesktopDeviceRepo, "revokeOwned", ok(undefined))
+  .method(ConnectDesktopDeviceRepo, "listByOwner", ok([]))
+  .method(ConnectDesktopClaimRepo, "findByIdempotencyKey", ok(null))
+  .method(ConnectDesktopClaimRepo, "findByClaimId", ok(null))
+  .method(ConnectDesktopClaimRepo, "findByCodeHash", ok(null))
+  .method(ConnectDesktopClaimRepo, "createClaim", ok(undefined))
+  .method(ConnectDesktopClaimRepo, "acceptPending", ok(undefined))
+  .method(ConnectDesktopClaimRepo, "denyPending", ok(undefined))
+  .method(ConnectDesktopCredentialRepo, "findByTokenHash", ok(null))
+  .method(ConnectDesktopCredentialRepo, "createCredential", ok(undefined))
+  .method(ConnectDesktopCredentialRepo, "revokeForDevice", ok(undefined))
+  .method(ConnectDesktopAuditRepo, "appendEvent", ok(undefined))
   .method(ConnectClock, "now", control.returns(NOW))
   .method(ConnectClientRelayService, "revokeDesktop", control.returns(undefined))
-  .method(ConnectWebsiteDeploymentIdentityService, "get", returns(DEPLOYMENT_ID));
+  .method(ConnectWebsiteDeploymentIdentityService, "get", ok(DEPLOYMENT_ID));
 
 // Environment data for one case: a caller-built Env loaded with exactly the
 // fixture's connection string; process.env is never mutated.
@@ -192,7 +197,7 @@ describe("createClaim negative paths (transaction present)", () => {
     const fixture = await testPostgres(PROBE_SCHEMA, PROBE_OPTIONS).build();
     const app = await testApp(CONFIG).select(SELECT).function(Env, envWith(fixture.url)).use(defaults)
       .method(ConnectDesktopClaimRepo, "findByClaimId", seq(null, null))
-      .method(ConnectDesktopDeviceRepo, "findByDeviceId", returns(device))
+      .method(ConnectDesktopDeviceRepo, "findByDeviceId", ok(device))
       .build();
     const subject = await app.get<ConnectDesktopService>(ConnectDesktopService);
     const run = await inProbeTransaction(app, fixture, () => subject.createClaim(createBody as never, TOKEN));
@@ -203,10 +208,10 @@ describe("createClaim negative paths (transaction present)", () => {
     expect(run.probe).toEqual([]);
   }));
 
-  it("wraps a non-Error throw before rolling back and reports failed", resourceCase(async () => {
+  it("wraps a non-Error failure cause before rolling back and reports failed", resourceCase(async () => {
     const fixture = await testPostgres(PROBE_SCHEMA, PROBE_OPTIONS).build();
     const app = await testApp(CONFIG).select(SELECT).function(Env, envWith(fixture.url)).use(defaults)
-      .method(ConnectDesktopClaimRepo, "findByIdempotencyKey", control.throws("disk gone"))
+      .method(ConnectDesktopClaimRepo, "findByIdempotencyKey", fails("query_failed", "disk gone"))
       .build();
     const subject = await app.get<ConnectDesktopService>(ConnectDesktopService);
     const run = await inProbeTransaction(app, fixture, () => subject.createClaim(createBody as never, TOKEN));
@@ -220,7 +225,7 @@ describe("createClaim negative paths (transaction present)", () => {
     const unique = new Error("UNIQUE constraint failed: connect_desktop_claims.claim_id");
     const fixture = await testPostgres(PROBE_SCHEMA, PROBE_OPTIONS).build();
     const app = await testApp(CONFIG).select(SELECT).function(Env, envWith(fixture.url)).use(defaults)
-      .method(ConnectDesktopClaimRepo, "findByIdempotencyKey", control.throws(unique))
+      .method(ConnectDesktopClaimRepo, "findByIdempotencyKey", fails("query_failed", unique))
       .build();
     const subject = await app.get<ConnectDesktopService>(ConnectDesktopService);
     const run = await inProbeTransaction(app, fixture, () => subject.createClaim(createBody as never, TOKEN));
@@ -237,7 +242,7 @@ describe("decide negative paths (transaction present)", () => {
     const boom = new Error("boom");
     const fixture = await testPostgres(PROBE_SCHEMA, PROBE_OPTIONS).build();
     const app = await testApp(CONFIG).select(SELECT).function(Env, envWith(fixture.url)).use(defaults)
-      .method(ConnectDesktopClaimRepo, "findByClaimId", control.throws(boom))
+      .method(ConnectDesktopClaimRepo, "findByClaimId", fails("query_failed", boom))
       .build();
     const subject = await app.get<ConnectDesktopService>(ConnectDesktopService);
     const run = await inProbeTransaction(app, fixture, () => subject.decide(browserActor, decisionBody as never));
@@ -248,10 +253,10 @@ describe("decide negative paths (transaction present)", () => {
     expect(run.probe).toEqual([]);
   }));
 
-  it("wraps a non-Error throw before rolling back", resourceCase(async () => {
+  it("wraps a non-Error failure cause before rolling back", resourceCase(async () => {
     const fixture = await testPostgres(PROBE_SCHEMA, PROBE_OPTIONS).build();
     const app = await testApp(CONFIG).select(SELECT).function(Env, envWith(fixture.url)).use(defaults)
-      .method(ConnectDesktopClaimRepo, "findByClaimId", control.throws("not-an-error"))
+      .method(ConnectDesktopClaimRepo, "findByClaimId", fails("query_failed", "not-an-error"))
       .build();
     const subject = await app.get<ConnectDesktopService>(ConnectDesktopService);
     const run = await inProbeTransaction(app, fixture, () => subject.decide(browserActor, decisionBody as never));
@@ -267,9 +272,9 @@ describe("decide negative paths (transaction present)", () => {
       decision_idempotency_key: IDEM,
     };
     const app = await testApp(CONFIG).select(SELECT).use(defaults)
-      .method(ConnectDesktopClaimRepo, "findByClaimId", returns(settled))
-      .method(ConnectDesktopCredentialRepo, "findByTokenHash", returns(credential))
-      .method(ConnectDesktopDeviceRepo, "findByDeviceId", returns(null))
+      .method(ConnectDesktopClaimRepo, "findByClaimId", ok(settled))
+      .method(ConnectDesktopCredentialRepo, "findByTokenHash", ok(credential))
+      .method(ConnectDesktopDeviceRepo, "findByDeviceId", ok(null))
       .build();
     const subject = await app.get<ConnectDesktopService>(ConnectDesktopService);
     expect(await subject.decide(browserActor, decisionBody as never)).toEqual({ outcome: "failed" });
@@ -281,9 +286,9 @@ describe("decide negative paths (transaction present)", () => {
       decision_idempotency_key: IDEM,
     };
     const app = await testApp(CONFIG).select(SELECT).use(defaults)
-      .method(ConnectDesktopClaimRepo, "findByClaimId", returns(settled))
-      .method(ConnectDesktopCredentialRepo, "findByTokenHash", returns(credential))
-      .method(ConnectDesktopDeviceRepo, "findByDeviceId", returns({ ...device, owner_user_id: "usr_other0001" }))
+      .method(ConnectDesktopClaimRepo, "findByClaimId", ok(settled))
+      .method(ConnectDesktopCredentialRepo, "findByTokenHash", ok(credential))
+      .method(ConnectDesktopDeviceRepo, "findByDeviceId", ok({ ...device, owner_user_id: "usr_other0001" }))
       .build();
     const subject = await app.get<ConnectDesktopService>(ConnectDesktopService);
     expect(await subject.decide(browserActor, decisionBody as never)).toEqual({ outcome: "failed" });
@@ -319,7 +324,7 @@ describe("decide negative paths (transaction present)", () => {
     };
     const app = await testApp(CONFIG).select(SELECT).use(defaults)
       .method(ConnectDesktopClaimRepo, "findByClaimId", seq(claim, decided))
-      .method(ConnectDesktopDeviceRepo, "findByDeviceId", returns({ ...device, credential_generation: 7 }))
+      .method(ConnectDesktopDeviceRepo, "findByDeviceId", ok({ ...device, credential_generation: 7 }))
       .build();
     const subject = await app.get<ConnectDesktopService>(ConnectDesktopService);
     await expect(subject.decide(browserActor, decisionBody as never))
@@ -332,8 +337,8 @@ describe("rename/revoke rollback error wrapping (transaction present)", () => {
     const boom = new Error("boom");
     const erroringFixture = await testPostgres(PROBE_SCHEMA, PROBE_OPTIONS).build();
     const erroringApp = await testApp(CONFIG).select(SELECT).function(Env, envWith(erroringFixture.url)).use(defaults)
-      .method(ConnectDesktopDeviceRepo, "findByDeviceId", returns(device))
-      .method(ConnectDesktopDeviceRepo, "renameOwned", control.throws(boom))
+      .method(ConnectDesktopDeviceRepo, "findByDeviceId", ok(device))
+      .method(ConnectDesktopDeviceRepo, "renameOwned", fails("write_failed", boom))
       .build();
     const erroring = await erroringApp.get<ConnectDesktopService>(ConnectDesktopService);
     const erroringRun = await inProbeTransaction(erroringApp, erroringFixture,
@@ -346,8 +351,8 @@ describe("rename/revoke rollback error wrapping (transaction present)", () => {
 
     const stringyFixture = await testPostgres(PROBE_SCHEMA, PROBE_OPTIONS).build();
     const stringyApp = await testApp(CONFIG).select(SELECT).function(Env, envWith(stringyFixture.url)).use(defaults)
-      .method(ConnectDesktopDeviceRepo, "findByDeviceId", returns(device))
-      .method(ConnectDesktopDeviceRepo, "renameOwned", control.throws("oops"))
+      .method(ConnectDesktopDeviceRepo, "findByDeviceId", ok(device))
+      .method(ConnectDesktopDeviceRepo, "renameOwned", fails("write_failed", "oops"))
       .build();
     const stringy = await stringyApp.get<ConnectDesktopService>(ConnectDesktopService);
     const stringyRun = await inProbeTransaction(stringyApp, stringyFixture,
@@ -362,8 +367,8 @@ describe("rename/revoke rollback error wrapping (transaction present)", () => {
     const boom = new Error("boom");
     const erroringFixture = await testPostgres(PROBE_SCHEMA, PROBE_OPTIONS).build();
     const erroringApp = await testApp(CONFIG).select(SELECT).function(Env, envWith(erroringFixture.url)).use(defaults)
-      .method(ConnectDesktopDeviceRepo, "findByDeviceId", returns(device))
-      .method(ConnectDesktopDeviceRepo, "revokeOwned", control.throws(boom))
+      .method(ConnectDesktopDeviceRepo, "findByDeviceId", ok(device))
+      .method(ConnectDesktopDeviceRepo, "revokeOwned", fails("write_failed", boom))
       .build();
     const erroring = await erroringApp.get<ConnectDesktopService>(ConnectDesktopService);
     const erroringRun = await inProbeTransaction(erroringApp, erroringFixture,
@@ -376,8 +381,8 @@ describe("rename/revoke rollback error wrapping (transaction present)", () => {
 
     const stringyFixture = await testPostgres(PROBE_SCHEMA, PROBE_OPTIONS).build();
     const stringyApp = await testApp(CONFIG).select(SELECT).function(Env, envWith(stringyFixture.url)).use(defaults)
-      .method(ConnectDesktopDeviceRepo, "findByDeviceId", returns(device))
-      .method(ConnectDesktopDeviceRepo, "revokeOwned", control.throws("oops"))
+      .method(ConnectDesktopDeviceRepo, "findByDeviceId", ok(device))
+      .method(ConnectDesktopDeviceRepo, "revokeOwned", fails("write_failed", "oops"))
       .build();
     const stringy = await stringyApp.get<ConnectDesktopService>(ConnectDesktopService);
     const stringyRun = await inProbeTransaction(stringyApp, stringyFixture,
@@ -389,12 +394,27 @@ describe("rename/revoke rollback error wrapping (transaction present)", () => {
   }));
 });
 
+describe("rename/revoke when the device lookup fails", () => {
+  it("answers failed, not not-found, and writes nothing", resourceCase(async () => {
+    const app = await testApp(CONFIG).select(SELECT).use(defaults)
+      .method(ConnectDesktopDeviceRepo, "findByDeviceId", fails("query_failed", new Error("db down")))
+      .method(ConnectDesktopDeviceRepo, "renameOwned", control.never())
+      .method(ConnectDesktopDeviceRepo, "revokeOwned", control.never())
+      .method(ConnectDesktopCredentialRepo, "revokeForDevice", control.never())
+      .build();
+    const subject = await app.get<ConnectDesktopService>(ConnectDesktopService);
+    expect(await subject.rename(browserActor, renameBody as never)).toEqual({ outcome: "failed" });
+    expect(await subject.revoke(browserActor, revokeBody as never)).toEqual({ outcome: "failed" });
+    await app.verify();
+  }));
+});
+
 describe("review of an expired pending claim", () => {
   it("reports the claim status as expired", resourceCase(async () => {
     const expired = { ...claim, expires_at: EARLIER_ISO };
     const app = await testApp(CONFIG).select(SELECT).use(defaults)
-      .method(ConnectDesktopClaimRepo, "findByClaimId", returns(expired))
-      .method(ConnectDesktopDeviceRepo, "findByDeviceId", returns(device))
+      .method(ConnectDesktopClaimRepo, "findByClaimId", ok(expired))
+      .method(ConnectDesktopDeviceRepo, "findByDeviceId", ok(device))
       .build();
     const subject = await app.get<ConnectDesktopService>(ConnectDesktopService);
     expect(await subject.review({ claimId: CLAIM_ID })).toEqual({

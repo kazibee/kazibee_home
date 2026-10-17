@@ -21,6 +21,7 @@ import bcrypt from 'bcryptjs';
 import { testApp } from '@noego/app';
 import { APP_CLIENT_RUNTIME, type AppClientRuntime } from '@noego/app/client';
 import { test as control, testStub, resourceCase } from '@noego/testing';
+import { Result } from '@noego/trust';
 import { CONNECT_SESSION_STORAGE_KEY } from '../../../src/ui/controllers/connect_shared';
 import type ConnectAuthController from '../../../src/ui/controllers/connect_auth.svelte.ts';
 import ConnectAccountRepo from '../../../src/server/repo/connect_account_repo';
@@ -34,6 +35,8 @@ const CONFIG = path.resolve(__dirname, '../../../noego.config.yml');
 const NOW = new Date('2026-01-01T00:00:00.000Z');
 const FUTURE = '2027-01-01T00:00:00.000Z';
 const sha256 = (value: string) => createHash('sha256').update(value, 'utf8').digest('hex');
+/** A repository call that succeeds with `value`. */
+const ok = (value: unknown) => control.returns(Promise.resolve(Result.ok(value)));
 
 const sessionRow = () => ({
   session_id: 'ses_fixed0001',
@@ -61,13 +64,13 @@ const accountRow = (passwordHash: string | null = null) => ({
 
 // The login pipeline's replaced seams (SQL repos + nondeterministic primitives).
 const loginBoundaries = (passwordHash: string) => testStub()
-  .method(ConnectAccountRepo, 'findByUsername', control.once(control.returns(Promise.resolve(accountRow(passwordHash)))))
-  .method(ConnectAccountRepo, 'findByUserId', control.returns(Promise.resolve(accountRow())))
-  .method(ConnectBrowserSessionRepo, 'createSession', control.once(control.returns(Promise.resolve())))
-  .method(ConnectBrowserSessionRepo, 'findByTokenHash', control.returns(Promise.resolve(sessionRow())))
-  .method(ConnectBrowserSessionRepo, 'touchSession', control.returns(Promise.resolve(undefined)))
-  .method(ConnectExecutorRepo, 'listByOwner', control.once(control.returns(Promise.resolve([]))))
-  .method(OAuthRepo, 'listConnectionsByUser', control.returns(Promise.resolve([])))
+  .method(ConnectAccountRepo, 'findByUsername', control.once(ok(accountRow(passwordHash))))
+  .method(ConnectAccountRepo, 'findByUserId', ok(accountRow()))
+  .method(ConnectBrowserSessionRepo, 'createSession', control.once(ok(undefined)))
+  .method(ConnectBrowserSessionRepo, 'findByTokenHash', ok(sessionRow()))
+  .method(ConnectBrowserSessionRepo, 'touchSession', ok(undefined))
+  .method(ConnectExecutorRepo, 'listByOwner', control.once(ok([])))
+  .method(OAuthRepo, 'listConnectionsByUser', ok([]))
   .method(ConnectIdGenerator, 'sessionId', control.returns('ses_fixed0001'))
   .method(ConnectClock, 'now', control.returns(NOW));
 
@@ -116,7 +119,7 @@ describe('connect login — frontend application slice', () => {
     const passwordHash = await bcrypt.hash('the-actual-password', 4);
     const env = scope.environment(await testApp(CONFIG)
       .select({ server: {}, client: { path: ['/connect/login'] } })
-      .method(ConnectAccountRepo, 'findByUsername', control.once(control.returns(Promise.resolve(accountRow(passwordHash)))))
+      .method(ConnectAccountRepo, 'findByUsername', control.once(ok(accountRow(passwordHash))))
       .build());
     const storage = await browserStorage(env);
 

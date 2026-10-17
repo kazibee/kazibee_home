@@ -1,4 +1,6 @@
 import { Component, Inject } from "@noego/ioc";
+import { getLogger } from "@noego/logger";
+import type { RepoUnavailable } from "../repo/repo_failure";
 import OAuthClientService, {
   type OAuthClientMetadata,
 } from "../services/oauth_client_service";
@@ -45,6 +47,16 @@ function oauthError(
   error: OAuthTokenError | "unsupported_grant_type",
 ) {
   return res.status(error === "invalid_client" ? 401 : 400).json({ error });
+}
+
+const logger = getLogger("kazibee:oauth-controller");
+
+/** A repository write or lookup failed below the endpoint: logged here, answered 500. */
+function serverError(res: CompatResponse, action: string, unavailable: RepoUnavailable) {
+  logger.error("OAuth endpoint repository failure", {
+    action, kind: unavailable.failure.kind, error: unavailable.failure.cause,
+  });
+  return res.status(500).json({ error: "server_error" });
 }
 
 @Component()
@@ -108,14 +120,20 @@ export default class OAuthController {
       return oauthError(res, "unsupported_grant_type");
     }
 
-    if (!result.ok) return oauthError(res, result.error);
+    if (!result.ok) {
+      if ("failure" in result) return serverError(res, "token", result);
+      return oauthError(res, result.error);
+    }
     return res.json(result);
   }
 
   async register({ req, res }: ActionArgs) {
     const metadata = fields(req.body) as OAuthClientMetadata;
     const result = await this.clients.registerClient(metadata);
-    if (!result.ok) return res.status(400).json({ error: result.error });
+    if (!result.ok) {
+      if ("failure" in result) return serverError(res, "register", result);
+      return res.status(400).json({ error: result.error });
+    }
 
     const registered = result.client.metadata
       && typeof result.client.metadata === "object"

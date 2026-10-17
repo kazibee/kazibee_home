@@ -14,6 +14,7 @@ import path from 'node:path';
 import { createHash } from 'node:crypto';
 import { testApp } from '@noego/app';
 import { test as control, testStub, resourceCase } from '@noego/testing';
+import { Result } from '@noego/trust';
 import Env from '../../../src/server/services/env';
 import ConnectGoogleTokenInfoClient from '../../../src/server/services/connect_google_token_info_client';
 import ConnectAuthController from '../../../src/server/controller/connect_auth.controller';
@@ -26,6 +27,11 @@ const CONFIG = path.resolve(__dirname, '../../../noego.config.yml');
 
 const NOW = new Date('2026-01-01T00:00:00.000Z');
 const sha256 = (value: string) => createHash('sha256').update(value, 'utf8').digest('hex');
+/** A repository call that succeeds with `value`. */
+const ok = (value: unknown) => control.returns(Promise.resolve(Result.ok(value)));
+/** A repository call that fails the way the repos report it: a named kind carrying the cause. */
+const fails = (kind: 'query_failed' | 'write_failed', cause: unknown) =>
+  control.returns(Promise.resolve(Result.err({ kind, cause })));
 
 const GOOGLE_CLIENT_ID = 'test-google-client-id.apps.googleusercontent.com';
 
@@ -142,11 +148,11 @@ describe('connect auth controller parse rejections (direct controller, below the
 });
 
 describe('connect auth failure outcomes (routes)', () => {
-  it('a non-Error repo rejection during signup degrades to a structured 500', resourceCase(async () => {
+  it('a non-Error repo failure cause during signup degrades to a structured 500', resourceCase(async () => {
     const env = await testApp(CONFIG).select({ server: { module: ['connectAuth'] } })
-      // Non-Error rejection value: exercises the String(error) diagnostic
+      // Non-Error failure cause: exercises the String(error) diagnostic
       // path and the isUniqueViolation non-Error guard.
-      .method(ConnectAccountRepo, 'findPasswordlessByEmail', control.once(control.throws('db exploded')))
+      .method(ConnectAccountRepo, 'findPasswordlessByEmail', control.once(fails('query_failed', 'db exploded')))
       .method(ConnectAccountRepo, 'createAccount', control.never())
       .method(ConnectClock, 'now', control.returns(NOW))
       .build();
@@ -160,7 +166,7 @@ describe('connect auth failure outcomes (routes)', () => {
 
   it('a wrapped repo failure (Error with cause) during login is still a uniform 500', resourceCase(async () => {
     const env = await testApp(CONFIG).select({ server: { module: ['connectAuth'] } })
-      .method(ConnectAccountRepo, 'findByUsername', control.once(control.throws(
+      .method(ConnectAccountRepo, 'findByUsername', control.once(fails('query_failed',
         Object.assign(new Error('query failed'), { cause: new Error('connection reset') }),
       )))
       .build();
@@ -181,10 +187,10 @@ describe('connect auth failure outcomes (routes)', () => {
     const env = await testApp(CONFIG).select({ server: { module: ['connectAuth'] } })
       .use(tokeninfo(validClaims))
       .method(ConnectAccountRepo, 'findByEmail', control.calls([
-        control.returns(Promise.resolve(null)),
-        control.returns(Promise.resolve(null)),
+        ok(null),
+        ok(null),
       ]))
-      .method(ConnectAccountRepo, 'createAccount', control.once(control.returns(Promise.resolve())))
+      .method(ConnectAccountRepo, 'createAccount', control.once(ok(undefined)))
       .method(ConnectIdentityRepo, 'linkGoogle', control.never())
       .method(ConnectBrowserSessionRepo, 'createSession', control.never())
       .method(ConnectClock, 'now', control.returns(NOW))
@@ -200,9 +206,9 @@ describe('connect auth failure outcomes (routes)', () => {
   it('a disabled account behind a valid Google token is a uniform 401, no session row', resourceCase(async () => {
     const env = await testApp(CONFIG).select({ server: { module: ['connectAuth'] } })
       .use(tokeninfo(validClaims))
-      .method(ConnectAccountRepo, 'findByEmail', control.once(control.returns(Promise.resolve({ ...account, status: 'disabled' }))))
+      .method(ConnectAccountRepo, 'findByEmail', control.once(ok({ ...account, status: 'disabled' })))
       .method(ConnectAccountRepo, 'createAccount', control.never())
-      .method(ConnectIdentityRepo, 'linkGoogle', control.once(control.returns(Promise.resolve())))
+      .method(ConnectIdentityRepo, 'linkGoogle', control.once(ok(undefined)))
       .method(ConnectBrowserSessionRepo, 'createSession', control.never())
       .method(ConnectClock, 'now', control.returns(NOW))
       .build();
@@ -238,9 +244,9 @@ describe('connect auth logout failure and idempotency branches (routes)', () => 
 
   it('a revocation write failure during logout is a structured 500', resourceCase(async () => {
     const env = await testApp(CONFIG).select({ server: { module: ['connectAuth'] } })
-      .method(ConnectBrowserSessionRepo, 'findByTokenHash', control.once(control.returns(Promise.resolve(sessionRow))))
-      .method(ConnectBrowserSessionRepo, 'revokeSession', control.once(control.throws(new Error('write failed'))))
-      .method(ConnectAccountRepo, 'findByUserId', control.once(control.returns(Promise.resolve({ ...account, password_hash: 'x' }))))
+      .method(ConnectBrowserSessionRepo, 'findByTokenHash', control.once(ok(sessionRow)))
+      .method(ConnectBrowserSessionRepo, 'revokeSession', control.once(fails('write_failed', new Error('write failed'))))
+      .method(ConnectAccountRepo, 'findByUserId', control.once(ok({ ...account, password_hash: 'x' })))
       .method(ConnectClock, 'now', control.returns(NOW))
       .build();
     const response = await env.request({
@@ -254,11 +260,11 @@ describe('connect auth logout failure and idempotency branches (routes)', () => 
 
   it('logging out an already-revoked session is idempotent: 200 ended with count 0', resourceCase(async () => {
     const env = await testApp(CONFIG).select({ server: { module: ['connectAuth'] } })
-      .method(ConnectBrowserSessionRepo, 'findByTokenHash', control.once(control.returns(Promise.resolve({
+      .method(ConnectBrowserSessionRepo, 'findByTokenHash', control.once(ok({
         ...sessionRow, status: 'revoked',
-      }))))
-      .method(ConnectBrowserSessionRepo, 'revokeSession', control.once(control.returns(Promise.resolve())))
-      .method(ConnectAccountRepo, 'findByUserId', control.once(control.returns(Promise.resolve({ ...account, password_hash: 'x' }))))
+      })))
+      .method(ConnectBrowserSessionRepo, 'revokeSession', control.once(ok(undefined)))
+      .method(ConnectAccountRepo, 'findByUserId', control.once(ok({ ...account, password_hash: 'x' })))
       .method(ConnectClock, 'now', control.returns(NOW))
       .build();
     const response = await env.request({

@@ -1,4 +1,5 @@
 import { Component, LoadAs } from "@noego/ioc";
+import { Trust } from "@noego/trust";
 import { Query, QueryBinder, Single, run } from "sqlstack";
 
 export interface Swarm {
@@ -21,35 +22,50 @@ export interface Swarm {
 export default class SwarmRepo {
   @Single
   @Query()
-  createSwarm(_params: {
+  async createSwarm(_params: {
     swarm_id: string; owner_user_id: string; env: string; region: string;
     resource_class: string; client_swarm_id: string | null; idempotency_key: string | null;
     executor_id: string | null; created_at: string;
-  }): Promise<Swarm | null> { return run(); }
-
-  @Single
-  @Query()
-  findById(_params: { swarm_id: string }): Promise<Swarm | null> { return run(); }
-
-  @Single
-  @Query()
-  findByIdAndOwner(_params: { swarm_id: string; owner_user_id: string }): Promise<Swarm | null> {
-    return run();
+  }) {
+    return Trust.tryAsync(() => run<Swarm | null>(), (cause) => ({ kind: "write_failed", cause }));
   }
 
   @Single
   @Query()
-  findByOwnerAndIdempotencyKey(
+  async findById(_params: { swarm_id: string }) {
+    return Trust.tryAsync(() => run<Swarm | null>(), (cause) => ({ kind: "query_failed", cause }));
+  }
+
+  @Single
+  @Query()
+  async findByIdAndOwner(_params: { swarm_id: string; owner_user_id: string }) {
+    return Trust.tryAsync(
+      () => run<Swarm | null>(),
+      (cause) => ({ kind: "query_failed", cause }),
+    );
+  }
+
+  @Single
+  @Query()
+  async findByOwnerAndIdempotencyKey(
     _params: { owner_user_id: string; idempotency_key: string },
-  ): Promise<Swarm | null> {
-    return run();
+  ) {
+    return Trust.tryAsync(
+      () => run<Swarm | null>(),
+      (cause) => ({ kind: "query_failed", cause }),
+    );
   }
 
   @Query()
-  markStopping(_params: { swarm_id: string; owner_user_id: string }): Promise<void> { return run(); }
+  async markStopping(_params: { swarm_id: string; owner_user_id: string }) {
+    return Trust.tryAsync(() => run<void>(), (cause) => ({ kind: "write_failed", cause }));
+  }
 
   @Query()
-  markStopped(_params: { swarm_id: string; owner_user_id: string; stopped_at: string }): Promise<void> {
-    return run();
+  async markStopped(_params: { swarm_id: string; owner_user_id: string; stopped_at: string }) {
+    return Trust.tryAsync(
+      () => run<void>(),
+      (cause) => ({ kind: "write_failed", cause }),
+    );
   }
 }

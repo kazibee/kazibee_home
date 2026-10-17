@@ -17,6 +17,7 @@ import { createHash } from 'node:crypto';
 import path from 'node:path';
 import { testApp } from '@noego/app';
 import { test as control, testStub, resourceCase } from '@noego/testing';
+import { Result } from '@noego/trust';
 import RemoteToolGrantRepo from '../../../src/server/repo/remote_tool_grant_repo';
 import ConnectExecutorRepo from '../../../src/server/repo/connect_executor_repo';
 import ConnectBrowserSessionRepo from '../../../src/server/repo/connect_browser_session_repo';
@@ -28,6 +29,8 @@ const CONFIG = path.resolve(__dirname, '../../../noego.config.yml');
 const SELECT = { server: { module: ['remoteTools'] } } as const;
 
 const sha256 = (value: string) => createHash('sha256').update(value, 'utf8').digest('hex');
+/** A repository call that succeeds with `value`. */
+const ok = (value: unknown) => control.returns(Promise.resolve(Result.ok(value)));
 
 const PAT = 'G'.repeat(43);
 const SESSION_TOKEN = 'S'.repeat(43);
@@ -96,14 +99,14 @@ const executorRow = () => ({
 // A live PAT grant: reusable replacement description, not an application
 // constructor (same tokens/slots/descriptors as before).
 const patAuth = () => testStub()
-  .method(RemoteToolGrantRepo, 'findByTokenHash', control.returns(Promise.resolve(grantRow())))
-  .method(RemoteToolGrantRepo, 'touchLastUsed', control.returns(Promise.resolve(undefined)));
+  .method(RemoteToolGrantRepo, 'findByTokenHash', ok(grantRow()))
+  .method(RemoteToolGrantRepo, 'touchLastUsed', ok(undefined));
 
 // A live browser session resolving to an active account.
 const browserSession = () => testStub()
-  .method(ConnectBrowserSessionRepo, 'findByTokenHash', control.returns(Promise.resolve(sessionRow())))
-  .method(ConnectBrowserSessionRepo, 'touchSession', control.returns(Promise.resolve(undefined)))
-  .method(ConnectAccountRepo, 'findByUserId', control.returns(Promise.resolve(accountRow())));
+  .method(ConnectBrowserSessionRepo, 'findByTokenHash', ok(sessionRow()))
+  .method(ConnectBrowserSessionRepo, 'touchSession', ok(undefined))
+  .method(ConnectAccountRepo, 'findByUserId', ok(accountRow()));
 
 const ownerHeaders = () => ({
   cookie: `kazi_connect_session=${SESSION_TOKEN}; kazi_connect_csrf=${CSRF_TOKEN}`,
@@ -187,9 +190,9 @@ describe('remote tools routes through testDinner (no server, no database)', () =
   it('POST /grants mints a grant and returns the raw token exactly once', resourceCase(async () => {
     const env = await testApp(CONFIG).select(SELECT)
       .use(browserSession())
-      .method(ConnectExecutorRepo, 'findByExecutorId', control.once(control.returns(Promise.resolve(executorRow()))))
-      .method(RemoteToolGrantRepo, 'createGrant', control.once(control.returns(Promise.resolve(undefined))))
-      .method(RemoteToolGrantRepo, 'findByTokenHash', control.once(control.returns(Promise.resolve(grantRow()))))
+      .method(ConnectExecutorRepo, 'findByExecutorId', control.once(ok(executorRow())))
+      .method(RemoteToolGrantRepo, 'createGrant', control.once(ok(undefined)))
+      .method(RemoteToolGrantRepo, 'findByTokenHash', control.once(ok(grantRow())))
       .build();
     const response = await env.request({
       method: 'POST',
@@ -233,7 +236,7 @@ describe('remote tools routes through testDinner (no server, no database)', () =
 
   it('GET /grants answers 401 when the session cookie resolves to nothing', resourceCase(async () => {
     const env = await testApp(CONFIG).select(SELECT)
-      .method(ConnectBrowserSessionRepo, 'findByTokenHash', control.once(control.returns(Promise.resolve(null))))
+      .method(ConnectBrowserSessionRepo, 'findByTokenHash', control.once(ok(null)))
       .method(RemoteToolGrantRepo, 'listByOwner', control.never())
       .build();
     const response = await env.request({

@@ -13,12 +13,15 @@ import { createHash } from 'node:crypto';
 import path from 'node:path';
 import { testApp } from '@noego/app';
 import { test as control, resourceCase } from '@noego/testing';
-import OAuthTokenAuthService, { InvalidOAuthTokenError } from '../../../src/server/services/oauth_token_auth_service';
+import { Result } from '@noego/trust';
+import OAuthTokenAuthService from '../../../src/server/services/oauth_token_auth_service';
 import { tokenMatchesResource } from '../../../src/server/services/oauth_flow_service';
 import ConnectExecutorRepo from '../../../src/server/repo/connect_executor_repo';
 import OAuthRepo from '../../../src/server/repo/oauth_repo';
 
 const CONFIG = path.resolve(__dirname, '../../../apps/mcp/noego.config.yml');
+/** A repository call that succeeds with `value`. */
+const ok = (value: unknown) => control.returns(Promise.resolve(Result.ok(value)));
 
 const RESOURCE = 'https://mcp-dev.kazibee.com/mcp';
 const RESOURCE_TAG = createHash('sha256').update(RESOURCE, 'utf8').digest('base64url').slice(0, 16);
@@ -92,9 +95,9 @@ const exchangeForm = (overrides: Record<string, string> = {}) => form({
 describe('oauth refresh_token grant through testDinner', () => {
   it('rotates the refresh token and mints a fresh resource-bound access token', resourceCase(async () => {
     const env = await testApp(CONFIG).select({ server: { module: ['oauth'] } })
-      .method(OAuthRepo, 'findActiveTokenWithConnection', control.once(control.returns(Promise.resolve(refreshRow()))))
-      .method(OAuthRepo, 'rotateRefreshToken', control.once(control.returns(Promise.resolve({ rotated: true }))))
-      .method(OAuthRepo, 'createToken', control.once(control.returns(Promise.resolve(undefined))))
+      .method(OAuthRepo, 'findActiveTokenWithConnection', control.once(ok(refreshRow())))
+      .method(OAuthRepo, 'rotateRefreshToken', control.once(ok({ rotated: true })))
+      .method(OAuthRepo, 'createToken', control.once(ok(undefined)))
       .build();
     const response = await env.request({
       method: 'POST', path: '/oauth/token', ...refreshForm(),
@@ -155,7 +158,7 @@ describe('oauth refresh_token grant through testDinner', () => {
     ];
     for (const row of rows) {
       const env = await testApp(CONFIG).select({ server: { module: ['oauth'] } })
-        .method(OAuthRepo, 'findActiveTokenWithConnection', control.once(control.returns(Promise.resolve(row))))
+        .method(OAuthRepo, 'findActiveTokenWithConnection', control.once(ok(row)))
         .method(OAuthRepo, 'rotateRefreshToken', control.never())
         .build();
       const response = await env.request({
@@ -170,7 +173,7 @@ describe('oauth refresh_token grant through testDinner', () => {
   it('a refresh token owned by another client is invalid_client', resourceCase(async () => {
     const env = await testApp(CONFIG).select({ server: { module: ['oauth'] } })
       .method(OAuthRepo, 'findActiveTokenWithConnection', control.once(
-        control.returns(Promise.resolve(refreshRow({ client_id: 'oac_other' }))),
+        ok(refreshRow({ client_id: 'oac_other' })),
       ))
       .method(OAuthRepo, 'rotateRefreshToken', control.never())
       .build();
@@ -184,8 +187,8 @@ describe('oauth refresh_token grant through testDinner', () => {
 
   it('a lost rotation race (rotateRefreshToken -> null) is invalid_grant with no token minted', resourceCase(async () => {
     const env = await testApp(CONFIG).select({ server: { module: ['oauth'] } })
-      .method(OAuthRepo, 'findActiveTokenWithConnection', control.once(control.returns(Promise.resolve(refreshRow()))))
-      .method(OAuthRepo, 'rotateRefreshToken', control.once(control.returns(Promise.resolve(null))))
+      .method(OAuthRepo, 'findActiveTokenWithConnection', control.once(ok(refreshRow())))
+      .method(OAuthRepo, 'rotateRefreshToken', control.once(ok(null)))
       .method(OAuthRepo, 'createToken', control.never())
       .build();
     const response = await env.request({
@@ -212,7 +215,7 @@ describe('oauth authorization_code remaining branches', () => {
 
   it('an unknown or consumed code is invalid_grant', resourceCase(async () => {
     const env = await testApp(CONFIG).select({ server: { module: ['oauth'] } })
-      .method(OAuthRepo, 'consumeCode', control.once(control.returns(Promise.resolve(null))))
+      .method(OAuthRepo, 'consumeCode', control.once(ok(null)))
       .build();
     const response = await env.request({
       method: 'POST', path: '/oauth/token', ...exchangeForm(),
@@ -229,7 +232,7 @@ describe('oauth authorization_code remaining branches', () => {
       codeRow({ resource: 'https://other.example/mcp' }),
     ]) {
       const env = await testApp(CONFIG).select({ server: { module: ['oauth'] } })
-        .method(OAuthRepo, 'consumeCode', control.once(control.returns(Promise.resolve(row))))
+        .method(OAuthRepo, 'consumeCode', control.once(ok(row)))
         .method(OAuthRepo, 'findActiveConnectionById', control.never())
         .build();
       const response = await env.request({
@@ -263,8 +266,8 @@ describe('oauth authorization_code remaining branches', () => {
     ];
     for (const { connection, status, error } of cases) {
       const env = await testApp(CONFIG).select({ server: { module: ['oauth'] } })
-        .method(OAuthRepo, 'consumeCode', control.once(control.returns(Promise.resolve(codeRow()))))
-        .method(OAuthRepo, 'findActiveConnectionById', control.once(control.returns(Promise.resolve(connection))))
+        .method(OAuthRepo, 'consumeCode', control.once(ok(codeRow())))
+        .method(OAuthRepo, 'findActiveConnectionById', control.once(ok(connection)))
         .method(OAuthRepo, 'createToken', control.never())
         .build();
       const response = await env.request({
@@ -314,9 +317,9 @@ describe('OAuthTokenAuthService at service depth (real hashing, stubbed repos)',
     // OAuthTokenAuthService belongs to the protected MCP controller graph.
     const env = await testApp(CONFIG).select({ server: { module: ['oauth', 'mcp'] } })
       .method(OAuthRepo, 'findActiveTokenWithConnection', control.once(
-        control.returns(Promise.resolve(accessRow({ approved_scope: 'read' }))),
+        ok(accessRow({ approved_scope: 'read' })),
       ))
-      .method(ConnectExecutorRepo, 'listByOwner', control.once(control.returns(Promise.resolve([
+      .method(ConnectExecutorRepo, 'listByOwner', control.once(ok([
         executorRow({
           executor_id: 'exe_newer',
           display_name: 'Newer laptop',
@@ -337,10 +340,12 @@ describe('OAuthTokenAuthService at service depth (real hashing, stubbed repos)',
           state: 'pending',
           claimed_at: '2024-11-01T00:00:00.000Z',
         }),
-      ]))))
+      ])))
       .build();
     const service = await env.get<OAuthTokenAuthService>(OAuthTokenAuthService);
-    const principal = await service.authenticate(`Bearer ${ACCESS_TOKEN}`, RESOURCE);
+    const authenticated = await service.authenticate(`Bearer ${ACCESS_TOKEN}`, RESOURCE);
+    if (!authenticated.ok) throw new Error(`Expected a principal, got ${authenticated.error.kind}`);
+    const principal = authenticated.value;
     expect(principal).toMatchObject({
       user_id: 'usr_1',
       client_id: 'oac_client_1',
@@ -370,18 +375,19 @@ describe('OAuthTokenAuthService at service depth (real hashing, stubbed repos)',
     // OAuthTokenAuthService belongs to the protected MCP controller graph.
     const env = await testApp(CONFIG).select({ server: { module: ['oauth', 'mcp'] } })
       .method(OAuthRepo, 'findActiveTokenWithConnection', control.calls([
-        control.returns(Promise.resolve(null)),
-        control.returns(Promise.resolve(accessRow({ expires_at: past }))),
-        control.returns(Promise.resolve(accessRow({ kind: 'refresh' }))),
+        ok(null),
+        ok(accessRow({ expires_at: past })),
+        ok(accessRow({ kind: 'refresh' })),
       ]))
       .method(ConnectExecutorRepo, 'listByOwner', control.never())
       .build();
     const service = await env.get<OAuthTokenAuthService>(OAuthTokenAuthService);
-    await expect(service.authenticate('Bearer nope', RESOURCE)).rejects.toThrow(InvalidOAuthTokenError);
-    await expect(service.authenticate(undefined, RESOURCE)).rejects.toThrow(InvalidOAuthTokenError);
-    await expect(service.authenticate(`Bearer ${ACCESS_TOKEN}`, RESOURCE)).rejects.toThrow(InvalidOAuthTokenError);
-    await expect(service.authenticate(`Bearer ${ACCESS_TOKEN}`, RESOURCE)).rejects.toThrow(InvalidOAuthTokenError);
-    await expect(service.authenticate(`Bearer ${ACCESS_TOKEN}`, RESOURCE)).rejects.toThrow(InvalidOAuthTokenError);
+    const invalid = Result.err({ kind: 'invalid_token' });
+    await expect(service.authenticate('Bearer nope', RESOURCE)).resolves.toEqual(invalid);
+    await expect(service.authenticate(undefined, RESOURCE)).resolves.toEqual(invalid);
+    await expect(service.authenticate(`Bearer ${ACCESS_TOKEN}`, RESOURCE)).resolves.toEqual(invalid);
+    await expect(service.authenticate(`Bearer ${ACCESS_TOKEN}`, RESOURCE)).resolves.toEqual(invalid);
+    await expect(service.authenticate(`Bearer ${ACCESS_TOKEN}`, RESOURCE)).resolves.toEqual(invalid);
     await env.verify();
   }));
 });

@@ -4,6 +4,7 @@ import OAuthRepo, {
   type OAuthClientRecord,
   toCreateOAuthClientParams,
 } from "../repo/oauth_repo";
+import { repoUnavailable, type RepoUnavailable } from "../repo/repo_failure";
 import { ConnectClock } from "./connect_auth_primitives";
 import OAuthClientMetadataClient from "./oauth_client_metadata_client";
 
@@ -16,11 +17,13 @@ export interface OAuthClientMetadata extends Record<string, unknown> {
 
 export type ResolveOAuthClientResult =
   | { ok: true; client: OAuthClientRecord }
-  | { ok: false; error: "invalid_client" };
+  | { ok: false; error: "invalid_client" }
+  | RepoUnavailable;
 
 export type RegisterOAuthClientResult =
   | { ok: true; client: OAuthClientRecord }
-  | { ok: false; error: "invalid_client_metadata" };
+  | { ok: false; error: "invalid_client_metadata" }
+  | RepoUnavailable;
 
 @Component()
 export default class OAuthClientService {
@@ -32,7 +35,9 @@ export default class OAuthClientService {
 
   async resolveClient(clientId: string): Promise<ResolveOAuthClientResult> {
     if (clientId.startsWith("oac_")) {
-      const client = await this.clients.findClientById({ client_id: clientId });
+      const lookup = await this.clients.findClientById({ client_id: clientId });
+      if (!lookup.ok) return repoUnavailable(lookup.error);
+      const client = lookup.value;
       return client && client.kind === "dcr" && client.status === "active"
         ? { ok: true, client }
         : { ok: false, error: "invalid_client" };
@@ -42,7 +47,9 @@ export default class OAuthClientService {
       return { ok: false, error: "invalid_client" };
     }
 
-    const cached = await this.clients.findClientById({ client_id: clientId });
+    const cachedLookup = await this.clients.findClientById({ client_id: clientId });
+    if (!cachedLookup.ok) return repoUnavailable(cachedLookup.error);
+    const cached = cachedLookup.value;
     if (cached) {
       return cached.kind === "cimd" && cached.status === "active"
         ? { ok: true, client: cached }
@@ -77,7 +84,14 @@ export default class OAuthClientService {
         created_at: now,
         updated_at: now,
       };
-      await this.clients.createClient(toCreateOAuthClientParams(client));
+      const cachedClient = await this.clients.createClient(toCreateOAuthClientParams(client));
+      // Caching the fetched metadata is part of resolving the client. A unique
+      // violation means a concurrent request for the same document cached it
+      // first: the client is resolved. Any other write failure says nothing
+      // about the client, so it is `unavailable` (500), never invalid_client.
+      if (!cachedClient.ok && cachedClient.error.kind === "write_failed") {
+        if (!isUniqueViolation(cachedClient.error.cause)) return repoUnavailable(cachedClient.error);
+      }
       return { ok: true, client };
     } catch {
       return { ok: false, error: "invalid_client" };
@@ -113,7 +127,8 @@ export default class OAuthClientService {
       created_at: now,
       updated_at: now,
     };
-    await this.clients.createClient(toCreateOAuthClientParams(client));
+    const created = await this.clients.createClient(toCreateOAuthClientParams(client));
+    if (!created.ok) return repoUnavailable(created.error);
     return { ok: true, client };
   }
 
@@ -136,6 +151,14 @@ export default class OAuthClientService {
       );
     });
   }
+}
+
+/** Postgres 23505; sqlstack copies the driver code onto DatabaseError.code. */
+function isUniqueViolation(cause: unknown): boolean {
+  return cause instanceof Error && (
+    ("code" in cause && cause.code === "23505")
+    || cause.message.toLowerCase().includes("duplicate key value violates unique constraint")
+  );
 }
 
 function isMetadataObject(value: unknown): value is Record<string, unknown> {

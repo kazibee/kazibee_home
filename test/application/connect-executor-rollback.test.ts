@@ -4,16 +4,18 @@
  * from the independently authored executor registry schema plus plain
  * starting-state rows; no migrated template, shared reset, app factory or
  * inter-case dependence. Real repos on the fixture with only one seam
- * (audit append or claim lookup) stubbed to fail, so each mutation runs inside
- * its production @transaction wrapper, hits the service catch block while a
+ * (audit append or claim lookup) stubbed to fail the way the repos report it
+ * (a `Result.err` carrying the cause), so each mutation runs inside its
+ * production @transaction wrapper, takes the service failure path while a
  * transaction is genuinely open, and marks it rollback-only — proving the
- * partial writes never persist. Both the Error and the non-Error throw shapes
- * are driven through every site. Historical case names and assertions retained.
+ * partial writes never persist. Both Error and non-Error failure causes are
+ * driven through every site. Historical case names and assertions retained.
  */
 import { describe, it, expect } from "vitest";
 import path from "node:path";
 import { testApp } from "@noego/app";
 import { resourceCase, testStub, test as control } from "@noego/testing";
+import { Result } from "@noego/trust";
 import { testPostgres, DEFAULT_ADMIN_URL, type TestPostgresDatabase } from "sqlstack/testing";
 import ConnectExecutorLogic from "../../src/server/logic/connect_executor.logic";
 import ConnectExecutorAuditRepo from "../../src/server/repo/connect_executor_audit_repo";
@@ -68,20 +70,24 @@ const rowsOf = (built: TestPostgresDatabase) =>
   (sql: string, params: unknown[] = []) =>
     built.query(sql, params) as Promise<Record<string, unknown>[]>;
 
-/** Audit append fails with an Error, then with a non-Error, so both
- * rollbackOnly shapes are exercised; exactly two calls are verified. */
+/** A repository call that fails the way the repos report it: a named kind carrying the cause. */
+const fails = (kind: "query_failed" | "write_failed", cause: unknown) =>
+  control.returns(Promise.resolve(Result.err({ kind, cause })));
+
+/** Audit append fails with an Error cause, then with a non-Error cause, so
+ * both rollbackOnly shapes are exercised; exactly two calls are verified. */
 const failingAudit = () => testStub()
   .method(ConnectExecutorAuditRepo, "appendEvent", control.calls([
-    control.throws(new Error("audit append lost", { cause: new Error("disk detached") })),
-    control.throws("audit append torn"),
+    fails("write_failed", new Error("audit append lost", { cause: new Error("disk detached") })),
+    fails("write_failed", "audit append torn"),
   ]));
 
-/** decide() only reaches its own catch for failures it awaits — the claim
- * lookup — so that seam is the one stubbed to fail inside the transaction. */
+/** decide() maps a failed claim lookup inside the open transaction to
+ * failed, so that seam is the one stubbed to fail. */
 const failingClaimLookup = () => testStub()
   .method(ConnectExecutorClaimRepo, "findByClaimId", control.calls([
-    control.throws(new Error("claim lookup lost")),
-    control.throws("claim lookup torn"),
+    fails("query_failed", new Error("claim lookup lost")),
+    fails("query_failed", "claim lookup torn"),
   ]));
 
 /** The service maps the failure to rollback-only; the transaction wrapper may

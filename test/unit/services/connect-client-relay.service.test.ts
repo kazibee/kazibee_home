@@ -12,6 +12,7 @@ import { describe, expect, it } from "vitest";
 import path from "node:path";
 import { testApp } from "@noego/app";
 import { resourceCase, test as control, testStub } from "@noego/testing";
+import { Result } from "@noego/trust";
 import type { SseSink } from "../../../src/server/services/sse_stream";
 import ConnectClientRelayService from "../../../src/server/services/connect_client_relay_service";
 import ConnectExecutorConnectionRegistry from "../../../src/server/services/connect_executor_connection_registry";
@@ -110,14 +111,14 @@ const accepted = (frame: ClientCommandFrame): ExecutorOutboundFrame => ({
 // Repo / deployment-identity boundaries: a reusable replacement description
 // (singular method controls on the actual tokens), not an application constructor.
 const boundaries = () => testStub()
-  .method(ConnectDesktopDeviceRepo, "findByDeviceId", control.returns(Promise.resolve(desktop)))
-  .method(ConnectExecutorRepo, "findByExecutorId", control.returns(Promise.resolve(executor)))
+  .method(ConnectDesktopDeviceRepo, "findByDeviceId", control.returns(Promise.resolve(Result.ok(desktop))))
+  .method(ConnectExecutorRepo, "findByExecutorId", control.returns(Promise.resolve(Result.ok(executor))))
   .method(ConnectExecutorRepo, "listByOwner", control.watch(() =>
-    async ({ owner_user_id }: { owner_user_id: string; limit: number }): Promise<ConnectExecutor[]> =>
-      owner_user_id === desktop.owner_user_id ? [executor] : []))
-  .method(ConnectWebsiteDeploymentIdentityRepo, "findSingleton", control.returns(Promise.resolve({
+    async ({ owner_user_id }: { owner_user_id: string; limit: number }) =>
+      Result.ok<ConnectExecutor[]>(owner_user_id === desktop.owner_user_id ? [executor] : [])))
+  .method(ConnectWebsiteDeploymentIdentityRepo, "findSingleton", control.returns(Promise.resolve(Result.ok({
     website_deployment_id: command.websiteDeploymentId, created_at: T0,
-  })));
+  }))));
 
 // The real subjects resolved from the caller-built root (never constructed here).
 async function subjects(env: AppEnv) {
@@ -157,24 +158,24 @@ describe("ConnectClientRelayService", () => {
     const { service, registry, clock } = await subjects(env);
     openExecutor(scope, registry);
     openDesktop(scope, service);
-    await expect(service.listExecutors(actor)).resolves.toEqual([{
+    await expect(service.listExecutors(actor)).resolves.toEqual(Result.ok([{
       executorId: executor.executor_id,
       displayName: "Client executor",
       state: "active",
       online: true,
       presence: "online",
       protocolVersion: "1.0",
-    }]);
+    }]));
     clock.milliseconds += 46_000;
-    await expect(service.listExecutors(actor)).resolves.toEqual([
+    await expect(service.listExecutors(actor)).resolves.toEqual(Result.ok([
       expect.objectContaining({ online: false, presence: "stale" }),
-    ]);
+    ]));
     clock.milliseconds += 46_000;
-    await expect(service.listExecutors(actor)).resolves.toEqual([
+    await expect(service.listExecutors(actor)).resolves.toEqual(Result.ok([
       expect.objectContaining({ online: false, presence: "offline" }),
-    ]);
+    ]));
     await expect(service.listExecutors({ ...actor, ownerUserId: "usr_otherowner1" }))
-      .resolves.toEqual([]);
+      .resolves.toEqual(Result.ok([]));
   }));
 
   it("waits for the exact acceptance and routes the terminal result only to the origin", resourceCase(async (scope) => {

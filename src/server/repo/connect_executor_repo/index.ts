@@ -1,4 +1,5 @@
 import { Component, LoadAs } from "@noego/ioc";
+import { Trust } from "@noego/trust";
 import { Query, QueryBinder, Single, run } from "sqlstack";
 
 export type ConnectExecutorState = "pending" | "active" | "revoked";
@@ -23,45 +24,69 @@ export interface ConnectExecutor {
 @Component({ scope: LoadAs.Singleton })
 export default class ConnectExecutorRepo {
   @Query()
-  createExecutor(_params: Omit<ConnectExecutor, "owner_user_id" | "claimed_at" | "credential_generation" | "state">): Promise<void> {
-    return run();
+  async createExecutor(_params: Omit<ConnectExecutor, "owner_user_id" | "claimed_at" | "credential_generation" | "state">) {
+    return Trust.tryAsync(
+      () => run<void>(),
+      (cause) => ({ kind: "write_failed", cause }),
+    );
   }
 
   @Query()
-  refreshPending(_params: Omit<ConnectExecutor, "owner_user_id" | "claimed_at" | "credential_generation" | "state" | "created_at">): Promise<void> {
-    return run();
+  async refreshPending(_params: Omit<ConnectExecutor, "owner_user_id" | "claimed_at" | "credential_generation" | "state" | "created_at">) {
+    return Trust.tryAsync(
+      () => run<void>(),
+      (cause) => ({ kind: "write_failed", cause }),
+    );
   }
 
   @Single
   @Query()
-  findByExecutorId(_params: { executor_id: string }): Promise<ConnectExecutor | null> {
-    return run();
+  async findByExecutorId(_params: { executor_id: string }) {
+    return Trust.tryAsync(
+      () => run<ConnectExecutor | null>(),
+      (cause) => ({ kind: "query_failed", cause }),
+    );
   }
 
   @Query()
-  listByOwner(_params: { owner_user_id: string; limit: number }): Promise<ConnectExecutor[]> {
-    return run();
+  async listByOwner(_params: { owner_user_id: string; limit: number }) {
+    return Trust.tryAsync(
+      () => run<ConnectExecutor[]>(),
+      (cause) => ({ kind: "query_failed", cause }),
+    );
   }
 
   @Query()
-  acceptOwner(_params: { executor_id: string; owner_user_id: string; claimed_at: string }): Promise<void> {
-    return run();
+  async acceptOwner(_params: { executor_id: string; owner_user_id: string; claimed_at: string }) {
+    return Trust.tryAsync(
+      () => run<void>(),
+      (cause) => ({ kind: "write_failed", cause }),
+    );
   }
 
   @Query()
-  renameOwned(_params: { executor_id: string; owner_user_id: string; display_name: string; updated_at: string }): Promise<void> {
-    return run();
+  async renameOwned(_params: { executor_id: string; owner_user_id: string; display_name: string; updated_at: string }) {
+    return Trust.tryAsync(
+      () => run<void>(),
+      (cause) => ({ kind: "write_failed", cause }),
+    );
   }
 
   @Query()
-  revokeOwned(_params: { executor_id: string; owner_user_id: string; updated_at: string }): Promise<void> {
-    return run();
+  async revokeOwned(_params: { executor_id: string; owner_user_id: string; updated_at: string }) {
+    return Trust.tryAsync(
+      () => run<void>(),
+      (cause) => ({ kind: "write_failed", cause }),
+    );
   }
 
   @Query()
-  updatePresence(_params: {
+  async updatePresence(_params: {
     executor_id: string; device_id: string; credential_generation: number; last_seen_at: string;
-  }): Promise<void> {
-    return run();
+  }) {
+    return Trust.tryAsync(
+      () => run<void>(),
+      (cause) => ({ kind: "write_failed", cause }),
+    );
   }
 }

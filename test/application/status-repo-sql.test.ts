@@ -3,6 +3,7 @@
 import { describe, expect, it } from 'vitest';
 import { testApp } from '@noego/app';
 import { resourceCase } from '@noego/testing';
+import { Result } from '@noego/trust';
 import { testPostgres, DEFAULT_ADMIN_URL } from 'sqlstack/testing';
 import StatusRepo from '../../src/server/repo/status_repo';
 import Env from '../../src/server/services/env';
@@ -18,7 +19,7 @@ describe('StatusRepo', () => {
     const app = await testApp('./noego.config.yml')
       .select({ server: { path: ['/api/status'] } }).value(Env, bindings).build();
     const statusRepo = await app.get<StatusRepo>(StatusRepo);
-    const result = await statusRepo.checkDatabase() as unknown as Array<{ result: number }>;
-    expect(result).toEqual([{ result: 1 }]);
+    // The repository reports the raw rows as an ok Result (checkDatabase has no @Single shape).
+    expect(await statusRepo.checkDatabase()).toEqual(Result.ok([{ result: 1 }]));
   }));
 });

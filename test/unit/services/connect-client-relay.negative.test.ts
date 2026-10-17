@@ -18,6 +18,7 @@ import { describe, expect, it } from "vitest";
 import path from "node:path";
 import { testApp } from "@noego/app";
 import { resourceCase, test as control, testStub } from "@noego/testing";
+import { Result } from "@noego/trust";
 import type { SseSink } from "../../../src/server/services/sse_stream";
 import ConnectClientRelayService from "../../../src/server/services/connect_client_relay_service";
 import ConnectExecutorConnectionRegistry, {
@@ -118,11 +119,11 @@ const boundaries = (options: { dispatchOk?: boolean } = {}) => {
   const dispatched: ExecutorDispatchResult = options.dispatchOk === false
     ? { ok: false, reason: "backpressure" } : { ok: true };
   return testStub()
-    .method(ConnectDesktopDeviceRepo, "findByDeviceId", control.returns(Promise.resolve(desktop)))
-    .method(ConnectExecutorRepo, "findByExecutorId", control.returns(Promise.resolve(executor)))
-    .method(ConnectWebsiteDeploymentIdentityRepo, "findSingleton", control.returns(Promise.resolve({
+    .method(ConnectDesktopDeviceRepo, "findByDeviceId", control.returns(Promise.resolve(Result.ok(desktop))))
+    .method(ConnectExecutorRepo, "findByExecutorId", control.returns(Promise.resolve(Result.ok(executor))))
+    .method(ConnectWebsiteDeploymentIdentityRepo, "findSingleton", control.returns(Promise.resolve(Result.ok({
       website_deployment_id: command.websiteDeploymentId, created_at: T0,
-    })))
+    }))))
     .method(ConnectExecutorConnectionRegistry, "onDisconnect", control.watch())
     .method(ConnectExecutorConnectionRegistry, "matches", control.returns(true))
     .method(ConnectExecutorConnectionRegistry, "dispatch", control.returns(dispatched));

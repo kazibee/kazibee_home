@@ -20,6 +20,7 @@ import Ajv2020 from 'ajv/dist/2020.js';
 import protocolSchema from '@kazibee-internal/connect-protocol/canonical/schemas/kazi-connect-v1.schema.json' with { type: 'json' };
 import { testApp } from '@noego/app';
 import { test as control, resourceCase } from '@noego/testing';
+import { Result } from '@noego/trust';
 import ConnectExecutorLogic from '../../../src/server/logic/connect_executor.logic';
 import ConnectExecutorClaimRepo from '../../../src/server/repo/connect_executor_claim_repo';
 import ConnectExecutorRepo from '../../../src/server/repo/connect_executor_repo';
@@ -46,6 +47,8 @@ const FUTURE = '2999-01-01T00:00:00.000Z';
 const DEPLOYMENT_ID = `wdp_${'a'.repeat(32)}`;
 
 const returns = (value: unknown) => control.returns(Promise.resolve(value));
+/** A repository read that succeeds with `value`. */
+const ok = (value: unknown) => control.returns(Promise.resolve(Result.ok(value)));
 
 // Same compiled authority the CLI validates against: closed definitions, strict mode.
 const ajv = new Ajv2020({ allErrors: true, strict: true });
@@ -138,7 +141,7 @@ describe('executor enrollment responses match the canonical Kazi Connect V1 cont
 
   it('GET /claims/{claimId}/status (pending) answers a closed claimStatusResponse with the protocol header', resourceCase(async () => {
     const env = await testApp(CONFIG).select({ server: { module: ['connectExecutors'] } })
-      .method(ConnectExecutorClaimRepo, 'findByClaimId', control.once(returns(claimRow())))
+      .method(ConnectExecutorClaimRepo, 'findByClaimId', control.once(ok(claimRow())))
       .build();
     const response = await env.request({
       method: 'GET', path: `/v1/connect/executors/claims/${CLAIM_ID}/status`,
@@ -158,10 +161,10 @@ describe('executor enrollment responses match the canonical Kazi Connect V1 cont
 
   it('GET /claims/{claimId}/status (accepted) carries only websiteDeploymentId beyond the base envelope', resourceCase(async () => {
     const env = await testApp(CONFIG).select({ server: { module: ['connectExecutors'] } })
-      .method(ConnectExecutorClaimRepo, 'findByClaimId', returns(claimRow({ status: 'accepted' })))
-      .method(ConnectExecutorRepo, 'findByExecutorId', returns(executorRow()))
-      .method(ConnectExecutorCredentialRepo, 'findByTokenHash', returns(credentialRow()))
-      .method(ConnectWebsiteDeploymentIdentityRepo, 'findSingleton', returns({ website_deployment_id: DEPLOYMENT_ID }))
+      .method(ConnectExecutorClaimRepo, 'findByClaimId', ok(claimRow({ status: 'accepted' })))
+      .method(ConnectExecutorRepo, 'findByExecutorId', ok(executorRow()))
+      .method(ConnectExecutorCredentialRepo, 'findByTokenHash', ok(credentialRow()))
+      .method(ConnectWebsiteDeploymentIdentityRepo, 'findSingleton', ok({ website_deployment_id: DEPLOYMENT_ID }))
       .build();
     const response = await env.request({
       method: 'GET', path: `/v1/connect/executors/claims/${CLAIM_ID}/status`,

@@ -13,6 +13,8 @@
     "dev": "DATABASE_URL=${DATABASE_URL:-postgres://noego:noego_dev@localhost:5432/kazibee};if [ -z \"$GOOGLE_CLIENT_ID\" ] && command -v aws >/dev/null 2>&1;then GOOGLE_CLIENT_ID=$(aws ssm get-parameter --profile kazibee --region us-east-1 --name /kazibee/dev/google/client_id --with-decryption --query Parameter.Value --output text);fi;export DATABASE_URL GOOGLE_CLIENT_ID;PORT=${PORT:-3000};lsof -ti :$PORT|xargs kill 2>/dev/null;noego dev 2>&1 | tee server.log",
     "build": "noego build",
     "lint": "eslint src",
+    "lint:trust": "trust baseline src --config trust.config.json --baseline trust-baseline.json",
+    "lint:trust:update": "trust baseline src --config trust.config.json --baseline trust-baseline.json --update",
     "typecheck": "tsc --noEmit",
     "test:types": "tsc --noEmit -p tsconfig.test.json",
     "test": "NODE_OPTIONS='--import tsx' vitest run",
@@ -43,6 +45,7 @@
     "@noego/proper": "^0.4.0",
     "@noego/stitch": "^1.1.0",
     "@noego/trace": "^0.2.0",
+    "@noego/trust": "^0.5.0-dev.4",
     "bcryptjs": "^2.4.3",
     "dotenv": "^17.2.2",
     "jsonwebtoken": "^9.0.2",
@@ -53,9 +56,9 @@
   },
   "devDependencies": {
     "@kazibee-internal/web-agent-renderer": "0.1.4",
-    "@noego/app": "^3.2.1",
-    "@noego/dinner": "^2.3.0",
-    "@noego/forge": "^2.6.0",
+    "@noego/app": "3.2.1-dev.1",
+    "@noego/dinner": "^2.4.0-dev.0",
+    "@noego/forge": "2.7.0-dev.0",
     "@noego/testing": "^0.7.0",
     "@sveltejs/vite-plugin-svelte": "^5.0.3",
     "@tailwindcss/cli": "^4.2.4",
@@ -78,6 +81,12 @@
     "typescript-eslint": "^8.59.2",
     "vite": "^6.3.6",
     "vitest": "^4.0.17"
+  },
+  "overrides": {
+    "@noego/trust": "$@noego/trust",
+    "@noego/forge": {
+      "@noego/dinner": "$@noego/dinner"
+    }
   },
   "license": "MIT"
 }

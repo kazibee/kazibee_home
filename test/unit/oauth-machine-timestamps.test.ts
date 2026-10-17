@@ -1,4 +1,5 @@
 import { afterEach, expect, it, vi } from "vitest";
+import { Result } from "@noego/trust";
 import Service from "../../src/server/services/oauth_connection_machines_service";
 import Repo from "../../src/server/repo/connect_executor_repo";
 afterEach(() => vi.restoreAllMocks());
@@ -6,8 +7,10 @@ const row = (id: string, claimed: unknown, created: unknown = "2026-01-01T00:00:
   ({ executor_id: id, claimed_at: claimed, created_at: created, state, display_name: id });
 async function listed(rows: unknown[]) {
   vi.spyOn(console, "log").mockImplementation(() => {});
-  const repo = { listByOwner: vi.fn().mockResolvedValue(rows) } as unknown as Repo;
-  return (await new Service(repo).listForUser("owner", "read")).map(x => x.executor_id);
+  const repo = { listByOwner: vi.fn().mockResolvedValue(Result.ok(rows)) } as unknown as Repo;
+  const result = await new Service(repo).listForUser("owner", "read");
+  if (!result.ok) throw new Error(`Expected the owner's machines, got ${result.error.kind}`);
+  return result.value.map(x => x.executor_id);
 }
 it.each(["date", "string", "mixed"])("sorts three machines chronologically with %s timestamps", async mode => {
  const values = ["2026-01-03T00:00:00Z", "2026-01-01T00:00:00Z", "2026-01-02T00:00:00Z"]

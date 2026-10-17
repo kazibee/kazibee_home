@@ -1,10 +1,12 @@
 import { Component, Inject, LoadAs } from "@noego/ioc";
 import { createHash } from "node:crypto";
+import { Result } from "@noego/trust";
 import { currentAppTransaction } from "../repo/current_transaction";
 import ConnectDesktopDeviceRepo, { type ConnectDesktopDevice } from "../repo/connect_desktop_device_repo";
 import ConnectDesktopClaimRepo, { type ConnectDesktopClaim } from "../repo/connect_desktop_claim_repo";
 import ConnectDesktopCredentialRepo from "../repo/connect_desktop_credential_repo";
 import ConnectDesktopAuditRepo, { type ConnectDesktopAuditKind } from "../repo/connect_desktop_audit_repo";
+import type { RepoFailure } from "../repo/repo_failure";
 import { ConnectClock, ConnectCredentials, ConnectIdGenerator, WebsiteLoggerAdapter, type WebsiteLoggerPort } from "./connect_auth_primitives";
 import ConnectDesktopPolicy from "./connect_desktop_policy";
 import type {
@@ -13,7 +15,9 @@ import type {
 import type { ConnectDesktopActor } from "./connect_desktop_actor_resolver";
 import TraceAdapter, { type TracePort } from "../observability/trace_adapter";
 import ConnectClientRelayService from "./connect_client_relay_service";
-import ConnectWebsiteDeploymentIdentityService from "./connect_website_deployment_identity_service";
+import ConnectWebsiteDeploymentIdentityService, {
+  type DeploymentIdentityFailure,
+} from "./connect_website_deployment_identity_service";
 
 export interface ClaimChallenge {
   claimId: string; claimUrl: string; shortCode: string; displayName: string;
@@ -46,6 +50,12 @@ export type OwnerMutationResult =
   | { outcome: "not-found" }
   | { outcome: "failed" };
 
+/**
+ * Desktop claim and ownership flows. Repository failures are decided here,
+ * into each flow's existing `failed` outcome (or `conflict` for a unique
+ * violation while creating a claim), with the same logging and rollback-only
+ * marking a thrown error gets in that flow.
+ */
 @Component({ scope: LoadAs.Singleton })
 export default class ConnectDesktopService {
   private readonly logger: WebsiteLoggerPort;
@@ -74,10 +84,18 @@ export default class ConnectDesktopService {
     const tokenHash = this.credentials.hashToken(token);
     const envelopeHash = this.envelopeHash(input, tokenHash);
     try {
-      const existing = await this.claims.findByIdempotencyKey({ idempotency_key: input.idempotencyKey })
-        ?? await this.claims.findByClaimId({ claim_id: input.claimId });
+      const byIdempotencyKey = await this.claims.findByIdempotencyKey({ idempotency_key: input.idempotencyKey });
+      if (!byIdempotencyKey.ok) return this.createFailed(input, byIdempotencyKey.error);
+      let existing = byIdempotencyKey.value;
+      if (!existing) {
+        const byClaimId = await this.claims.findByClaimId({ claim_id: input.claimId });
+        if (!byClaimId.ok) return this.createFailed(input, byClaimId.error);
+        existing = byClaimId.value;
+      }
       if (existing) {
-        const device = await this.devices.findByDeviceId({ device_id: existing.device_id });
+        const existingDevice = await this.devices.findByDeviceId({ device_id: existing.device_id });
+        if (!existingDevice.ok) return this.createFailed(input, existingDevice.error);
+        const device = existingDevice.value;
         if (!device || existing.envelope_hash !== envelopeHash || existing.bootstrap_token_hash !== tokenHash
           || existing.claim_id !== input.claimId || existing.device_id !== input.deviceId
           || existing.status !== "pending") return { outcome: "conflict" };
@@ -87,46 +105,53 @@ export default class ConnectDesktopService {
       const createdAt = now.toISOString();
       const expiresAt = new Date(now.getTime() + this.policy.claimLifetimeMs).toISOString();
       const shortCode = this.shortCode(token, input.claimId);
-      await this.devices.createDevice({
+      const deviceCreated = await this.devices.createDevice({
         device_id: input.deviceId, display_name: input.displayName,
         platform: input.platform, architecture: input.architecture,
         desktop_version: input.desktopVersion, key_fingerprint: input.keyFingerprint,
         created_at: createdAt, updated_at: createdAt, last_seen_at: createdAt,
       });
-      await this.claims.createClaim({
+      if (!deviceCreated.ok) return this.createFailed(input, deviceCreated.error);
+      const claimCreated = await this.claims.createClaim({
         claim_id: input.claimId, device_id: input.deviceId, bootstrap_token_hash: tokenHash,
         short_code_hash: this.hash(shortCode), idempotency_key: input.idempotencyKey,
         envelope_hash: envelopeHash, created_at: createdAt, expires_at: expiresAt,
       });
-      await this.appendAudit("claim.created", input.deviceId, input.claimId, null, 0, input.correlationId, createdAt);
+      if (!claimCreated.ok) return this.createFailed(input, claimCreated.error);
+      const audited = await this.appendAudit("claim.created", input.deviceId, input.claimId, null, 0, input.correlationId, createdAt);
+      if (!audited.ok) return this.createFailed(input, audited.error);
       this.completed("claim-create", input.correlationId, input.deviceId, "created");
-      const claim = await this.claims.findByClaimId({ claim_id: input.claimId });
-      const device = await this.devices.findByDeviceId({ device_id: input.deviceId });
+      const claimLookup = await this.claims.findByClaimId({ claim_id: input.claimId });
+      if (!claimLookup.ok) return this.createFailed(input, claimLookup.error);
+      const deviceLookup = await this.devices.findByDeviceId({ device_id: input.deviceId });
+      if (!deviceLookup.ok) return this.createFailed(input, deviceLookup.error);
+      const claim = claimLookup.value;
+      const device = deviceLookup.value;
       if (!claim || !device) throw new Error("Claim persistence invariant failed");
       return { outcome: "created", challenge: this.challenge(claim, device, token) };
     } catch (error) {
-      if (error instanceof Error && error.message.toLowerCase().includes("unique constraint failed")) {
-        (await currentAppTransaction())?.rollbackOnly(error);
-        return { outcome: "conflict" };
-      }
-      this.failed("claim-create", input.correlationId, error);
-      (await currentAppTransaction())?.rollbackOnly(error instanceof Error ? error : new Error("Claim creation failed"));
-      return { outcome: "failed" };
+      return this.claimCreateError(input, error);
     }
   }
 
   async status(claimId: string, token: string | null): Promise<ClaimStatusResult> {
     try {
-      const claim = await this.claims.findByClaimId({ claim_id: claimId });
+      const claimLookup = await this.claims.findByClaimId({ claim_id: claimId });
+      if (!claimLookup.ok) return this.lookupFailed("claim-status", claimLookup.error);
+      const claim = claimLookup.value;
       if (!claim) return { outcome: "not-found" };
       if (!token || !this.credentials.matchesHash(token, claim.bootstrap_token_hash)) {
         return { outcome: "unauthorized" };
       }
       if (claim.status === "accepted") {
-        const device = await this.devices.findByDeviceId({ device_id: claim.device_id });
-        const credential = await this.credentialsRepo.findByTokenHash({
+        const deviceLookup = await this.devices.findByDeviceId({ device_id: claim.device_id });
+        if (!deviceLookup.ok) return this.lookupFailed("claim-status", deviceLookup.error);
+        const credentialLookup = await this.credentialsRepo.findByTokenHash({
           token_hash: claim.bootstrap_token_hash,
         });
+        if (!credentialLookup.ok) return this.lookupFailed("claim-status", credentialLookup.error);
+        const device = deviceLookup.value;
+        const credential = credentialLookup.value;
         if (!device || !this.websiteAccountId(device.owner_user_id)
           || device.owner_user_id !== claim.decided_by_user_id || device.state !== "active"
           || !credential || credential.status !== "active"
@@ -134,10 +159,12 @@ export default class ConnectDesktopService {
           || credential.generation !== device.credential_generation) {
           return { outcome: "unauthorized" };
         }
+        const deployment = await this.deploymentIdentity.get();
+        if (!deployment.ok) return this.lookupFailed("claim-status", deployment.error);
         return {
           outcome: "status", status: "accepted", deviceId: claim.device_id,
           credentialExpiresAt: credential.expires_at, websiteAccountId: device.owner_user_id,
-          websiteDeploymentId: await this.deploymentIdentity.get(),
+          websiteDeploymentId: deployment.value,
         };
       }
       return { outcome: "status", status: claim.status === "pending"
@@ -149,11 +176,15 @@ export default class ConnectDesktopService {
 
   async review(lookup: { claimId?: string; code?: string }): Promise<ClaimReviewResult> {
     try {
-      const claim = lookup.claimId
+      const claimLookup = lookup.claimId
         ? await this.claims.findByClaimId({ claim_id: lookup.claimId })
         : await this.claims.findByCodeHash({ short_code_hash: this.hash(lookup.code!) });
+      if (!claimLookup.ok) return this.lookupFailed("claim-review", claimLookup.error);
+      const claim = claimLookup.value;
       if (!claim) return { outcome: "not-found" };
-      const device = await this.devices.findByDeviceId({ device_id: claim.device_id });
+      const deviceLookup = await this.devices.findByDeviceId({ device_id: claim.device_id });
+      if (!deviceLookup.ok) return this.lookupFailed("claim-review", deviceLookup.error);
+      const device = deviceLookup.value;
       return device
         ? { outcome: "found", claim, device, status: this.claimStatus(claim) }
         : { outcome: "not-found" };
@@ -165,7 +196,9 @@ export default class ConnectDesktopService {
   async decide(actor: ConnectDesktopActor, input: DesktopClaimDecisionInput): Promise<ClaimDecisionResult> {
     if (actor.role !== "browser_session") return { outcome: "not-found" };
     try {
-      const claim = await this.claims.findByClaimId({ claim_id: input.claimId });
+      const claimLookup = await this.claims.findByClaimId({ claim_id: input.claimId });
+      if (!claimLookup.ok) return this.decisionFailed(input, claimLookup.error);
+      const claim = claimLookup.value;
       if (!claim) return { outcome: "not-found" };
       if (claim.status !== "pending") return this.terminalDecision(claim, actor.userId, input);
       const now = this.clock.now().toISOString();
@@ -173,9 +206,7 @@ export default class ConnectDesktopService {
       if (input.decision === "deny") return this.denyClaim(claim, actor.userId, input, now);
       return this.acceptClaim(claim, actor.userId, input, now);
     } catch (error) {
-      this.failed("claim-decision", input.correlationId, error);
-      (await currentAppTransaction())?.rollbackOnly(error instanceof Error ? error : new Error("Claim decision failed"));
-      return { outcome: "failed" };
+      return this.decisionError(input, error);
     }
   }
 
@@ -188,76 +219,95 @@ export default class ConnectDesktopService {
       && claim.status === expected;
     if (!idempotent) return { outcome: "replayed" };
     if (claim.status === "denied") return { outcome: "denied" };
-    const credential = await this.credentialsRepo.findByTokenHash({ token_hash: claim.bootstrap_token_hash });
-    const device = await this.devices.findByDeviceId({ device_id: claim.device_id });
-    const ownerUserId = device?.owner_user_id ?? null;
+    const credentialLookup = await this.credentialsRepo.findByTokenHash({ token_hash: claim.bootstrap_token_hash });
+    if (!credentialLookup.ok) return this.decisionFailed(input, credentialLookup.error);
+    const deviceLookup = await this.devices.findByDeviceId({ device_id: claim.device_id });
+    if (!deviceLookup.ok) return this.decisionFailed(input, deviceLookup.error);
+    const credential = credentialLookup.value;
+    const ownerUserId = deviceLookup.value?.owner_user_id ?? null;
     const websiteAccountId = this.websiteAccountId(ownerUserId) && ownerUserId === userId
       ? ownerUserId : null;
-    return credential && websiteAccountId
-      ? {
-        outcome: "accepted", deviceId: claim.device_id,
-        credentialExpiresAt: credential.expires_at, websiteAccountId,
-        websiteDeploymentId: await this.deploymentIdentity.get(),
-      }
-      : { outcome: "failed" };
+    if (!credential || !websiteAccountId) return { outcome: "failed" };
+    const deployment = await this.deploymentIdentity.get();
+    if (!deployment.ok) return this.decisionFailed(input, deployment.error);
+    return {
+      outcome: "accepted", deviceId: claim.device_id,
+      credentialExpiresAt: credential.expires_at, websiteAccountId,
+      websiteDeploymentId: deployment.value,
+    };
   }
 
   private async denyClaim(
     claim: ConnectDesktopClaim, userId: string, input: DesktopClaimDecisionInput, now: string,
   ): Promise<ClaimDecisionResult> {
-    await this.claims.denyPending({
+    const denied = await this.claims.denyPending({
       claim_id: claim.claim_id, decided_at: now, decided_by_user_id: userId,
       decision_idempotency_key: input.idempotencyKey,
     });
-    const decided = await this.claims.findByClaimId({ claim_id: claim.claim_id });
+    if (!denied.ok) return this.decisionFailed(input, denied.error);
+    const decidedLookup = await this.claims.findByClaimId({ claim_id: claim.claim_id });
+    if (!decidedLookup.ok) return this.decisionFailed(input, decidedLookup.error);
+    const decided = decidedLookup.value;
     if (!decided || decided.status !== "denied" || decided.decided_by_user_id !== userId) {
       return { outcome: "replayed" };
     }
-    await this.appendAudit("claim.denied", claim.device_id, claim.claim_id, userId, 0, input.correlationId, now);
+    const audited = await this.appendAudit("claim.denied", claim.device_id, claim.claim_id, userId, 0, input.correlationId, now);
+    if (!audited.ok) return this.decisionFailed(input, audited.error);
     return { outcome: "denied" };
   }
 
   private async acceptClaim(
     claim: ConnectDesktopClaim, userId: string, input: DesktopClaimDecisionInput, now: string,
   ): Promise<ClaimDecisionResult> {
-      await this.claims.acceptPending({
+      const accepted = await this.claims.acceptPending({
         claim_id: claim.claim_id, decided_at: now, decided_by_user_id: userId,
         decision_idempotency_key: input.idempotencyKey,
       });
-      const decided = await this.claims.findByClaimId({ claim_id: claim.claim_id });
+      if (!accepted.ok) return this.decisionFailed(input, accepted.error);
+      const decidedLookup = await this.claims.findByClaimId({ claim_id: claim.claim_id });
+      if (!decidedLookup.ok) return this.decisionFailed(input, decidedLookup.error);
+      const decided = decidedLookup.value;
       if (!decided || decided.status !== "accepted" || decided.decided_by_user_id !== userId
         || decided.decision_idempotency_key !== input.idempotencyKey) return { outcome: "replayed" };
-      await this.devices.acceptOwner({
+      const owned = await this.devices.acceptOwner({
         device_id: claim.device_id, owner_user_id: userId, claimed_at: now,
       });
-      const device = await this.devices.findByDeviceId({ device_id: claim.device_id });
+      if (!owned.ok) return this.decisionFailed(input, owned.error);
+      const deviceLookup = await this.devices.findByDeviceId({ device_id: claim.device_id });
+      if (!deviceLookup.ok) return this.decisionFailed(input, deviceLookup.error);
+      const device = deviceLookup.value;
       if (!device || device.owner_user_id !== userId || device.state !== "active"
         || device.credential_generation !== 1) throw new Error("Claim owner invariant failed");
       const credentialExpiresAt = new Date(
         new Date(now).getTime() + this.policy.credentialLifetimeMs,
       ).toISOString();
-      await this.credentialsRepo.createCredential({
+      const credentialCreated = await this.credentialsRepo.createCredential({
         credential_id: this.ids.credentialId(), device_id: device.device_id,
         generation: 1, token_hash: claim.bootstrap_token_hash, created_at: now,
         expires_at: credentialExpiresAt,
       });
-      await this.appendAudit("claim.accepted", device.device_id, claim.claim_id, userId, 1, input.correlationId, now);
+      if (!credentialCreated.ok) return this.decisionFailed(input, credentialCreated.error);
+      const audited = await this.appendAudit("claim.accepted", device.device_id, claim.claim_id, userId, 1, input.correlationId, now);
+      if (!audited.ok) return this.decisionFailed(input, audited.error);
+      const deployment = await this.deploymentIdentity.get();
+      if (!deployment.ok) return this.decisionFailed(input, deployment.error);
       return {
         outcome: "accepted", deviceId: device.device_id, credentialExpiresAt,
         websiteAccountId: userId,
-        websiteDeploymentId: await this.deploymentIdentity.get(),
+        websiteDeploymentId: deployment.value,
       };
   }
 
-  async list(actor: ConnectDesktopActor): Promise<ConnectDesktopDevice[]> {
-    return actor.role === "browser_session"
-      ? this.devices.listByOwner({ owner_user_id: actor.userId, limit: this.policy.ownerListLimit })
-      : [];
+  async list(actor: ConnectDesktopActor) {
+    if (actor.role !== "browser_session") return Result.ok<ConnectDesktopDevice[]>([]);
+    return this.devices.listByOwner({ owner_user_id: actor.userId, limit: this.policy.ownerListLimit });
   }
 
   async detail(actor: ConnectDesktopActor, deviceId: string): Promise<OwnerResult> {
     try {
-      const device = await this.devices.findByDeviceId({ device_id: deviceId });
+      const deviceLookup = await this.devices.findByDeviceId({ device_id: deviceId });
+      if (!deviceLookup.ok) return this.lookupFailed("device-detail", deviceLookup.error);
+      const device = deviceLookup.value;
       return actor.role === "browser_session" && device?.owner_user_id === actor.userId
         ? { outcome: "found", device } : { outcome: "not-found" };
     } catch {
@@ -269,22 +319,27 @@ export default class ConnectDesktopService {
     if (actor.role !== "browser_session") return { outcome: "not-found" };
     try {
       const before = await this.detail(actor, input.deviceId);
+      // A lookup that could not be answered is `failed` (already logged by detail), not a missing device.
+      if (before.outcome === "failed") return before;
       if (before.outcome !== "found" || before.device.state !== "active") return { outcome: "not-found" };
       const now = this.clock.now().toISOString();
-      await this.devices.renameOwned({
+      const renamed = await this.devices.renameOwned({
         device_id: input.deviceId, owner_user_id: actor.userId,
         display_name: input.displayName, updated_at: now,
       });
-      const after = await this.devices.findByDeviceId({ device_id: input.deviceId });
+      if (!renamed.ok) return this.mutationFailed(renamed.error, "Rename failed");
+      const afterLookup = await this.devices.findByDeviceId({ device_id: input.deviceId });
+      if (!afterLookup.ok) return this.mutationFailed(afterLookup.error, "Rename failed");
+      const after = afterLookup.value;
       if (!after || after.owner_user_id !== actor.userId || after.display_name !== input.displayName) {
         return { outcome: "not-found" };
       }
-      await this.appendAudit("desktop.renamed", after.device_id, null, actor.userId,
+      const audited = await this.appendAudit("desktop.renamed", after.device_id, null, actor.userId,
         after.credential_generation, input.correlationId, now);
+      if (!audited.ok) return this.mutationFailed(audited.error, "Rename failed");
       return { outcome: "renamed", device: after };
     } catch (error) {
-      (await currentAppTransaction())?.rollbackOnly(error instanceof Error ? error : new Error("Rename failed"));
-      return { outcome: "failed" };
+      return this.mutationAborted(error instanceof Error ? error : new Error("Rename failed"));
     }
   }
 
@@ -292,26 +347,75 @@ export default class ConnectDesktopService {
     if (actor.role !== "browser_session") return { outcome: "not-found" };
     try {
       const before = await this.detail(actor, input.deviceId);
+      // A lookup that could not be answered is `failed` (already logged by detail), not a missing device.
+      if (before.outcome === "failed") return before;
       if (before.outcome !== "found") return { outcome: "not-found" };
       if (before.device.state === "revoked") return { outcome: "revoked", device: before.device };
       const now = this.clock.now().toISOString();
-      await this.devices.revokeOwned({
+      const revoked = await this.devices.revokeOwned({
         device_id: input.deviceId, owner_user_id: actor.userId, updated_at: now,
       });
-      await this.credentialsRepo.revokeForDevice({ device_id: input.deviceId, revoked_at: now });
-      const after = await this.devices.findByDeviceId({ device_id: input.deviceId });
+      if (!revoked.ok) return this.mutationFailed(revoked.error, "Revoke failed");
+      const fenced = await this.credentialsRepo.revokeForDevice({ device_id: input.deviceId, revoked_at: now });
+      if (!fenced.ok) return this.mutationFailed(fenced.error, "Revoke failed");
+      const afterLookup = await this.devices.findByDeviceId({ device_id: input.deviceId });
+      if (!afterLookup.ok) return this.mutationFailed(afterLookup.error, "Revoke failed");
+      const after = afterLookup.value;
       if (!after || after.owner_user_id !== actor.userId || after.state !== "revoked"
         || after.credential_generation !== before.device.credential_generation + 1) {
         throw new Error("Credential fence invariant failed");
       }
-      await this.appendAudit("desktop.revoked", after.device_id, null, actor.userId,
+      const audited = await this.appendAudit("desktop.revoked", after.device_id, null, actor.userId,
         after.credential_generation, input.correlationId, now);
+      if (!audited.ok) return this.mutationFailed(audited.error, "Revoke failed");
       this.relay.revokeDesktop(after.device_id, input.correlationId);
       return { outcome: "revoked", device: after };
     } catch (error) {
-      (await currentAppTransaction())?.rollbackOnly(error instanceof Error ? error : new Error("Revoke failed"));
-      return { outcome: "failed" };
+      return this.mutationAborted(error instanceof Error ? error : new Error("Revoke failed"));
     }
+  }
+
+  /** A repository failure while creating a claim: handled exactly like a thrown one. */
+  private createFailed(input: DesktopClaimCreateInput, failure: RepoFailure) {
+    return this.claimCreateError(input, failure.cause);
+  }
+
+  /** A unique violation is a lost race (conflict); anything else fails the claim. Both roll back. */
+  private async claimCreateError(input: DesktopClaimCreateInput, error: unknown): Promise<ClaimCreateResult> {
+    if (error instanceof Error && error.message.toLowerCase().includes("unique constraint failed")) {
+      (await currentAppTransaction())?.rollbackOnly(error);
+      return { outcome: "conflict" };
+    }
+    this.failed("claim-create", input.correlationId, error);
+    (await currentAppTransaction())?.rollbackOnly(error instanceof Error ? error : new Error("Claim creation failed"));
+    return { outcome: "failed" };
+  }
+
+  /** A failure inside the decision transaction: logged, rolled back, `failed`. */
+  private decisionFailed(input: DesktopClaimDecisionInput, failure: DeploymentIdentityFailure) {
+    return this.decisionError(input, "cause" in failure ? failure.cause : new Error(failure.kind));
+  }
+
+  private async decisionError(input: DesktopClaimDecisionInput, error: unknown): Promise<ClaimDecisionResult> {
+    this.failed("claim-decision", input.correlationId, error);
+    (await currentAppTransaction())?.rollbackOnly(error instanceof Error ? error : new Error("Claim decision failed"));
+    return { outcome: "failed" };
+  }
+
+  /** A repository failure inside a rename/revoke transaction: rolled back, `failed`. */
+  private mutationFailed(failure: RepoFailure, fallback: string) {
+    return this.mutationAborted(failure.cause instanceof Error ? failure.cause : new Error(fallback));
+  }
+
+  private async mutationAborted(error: Error): Promise<OwnerMutationResult> {
+    (await currentAppTransaction())?.rollbackOnly(error);
+    return { outcome: "failed" };
+  }
+
+  /** A read-only lookup failed: logged once here, answered `failed`. */
+  private lookupFailed(action: string, failure: DeploymentIdentityFailure) {
+    this.failed(action, undefined, "cause" in failure ? failure.cause : new Error(failure.kind));
+    return { outcome: "failed" as const };
   }
 
   /** Accepted claim responses expose only the persisted opaque account identifier. */
@@ -358,7 +462,7 @@ export default class ConnectDesktopService {
     event_kind: ConnectDesktopAuditKind, device_id: string, claim_id: string | null,
     actor_user_id: string | null, credential_generation: number,
     correlation_id: string, occurred_at: string,
-  ): Promise<void> {
+  ) {
     return this.audit.appendEvent({
       audit_event_id: this.ids.auditEventId(), device_id, claim_id, actor_user_id,
       event_kind, credential_generation, occurred_at, correlation_id,
@@ -369,7 +473,7 @@ export default class ConnectDesktopService {
     this.logger.info("connect.desktops.completed", context);
     this.trace.info("completed", context);
   }
-  private failed(action: string, correlationId: string, error: unknown): void {
+  private failed(action: string, correlationId: string | undefined, error: unknown): void {
     const context = { route: "/v1/connect/desktops", action, correlationId, outcome: "failed",
       errorType: error instanceof Error ? error.name : "unknown" };
     this.logger.error("connect.desktops.failed", context);

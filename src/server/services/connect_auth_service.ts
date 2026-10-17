@@ -2,6 +2,7 @@ import { Component, Inject } from "@noego/ioc";
 import ConnectAccountRepo from "../repo/connect_account_repo";
 import ConnectBrowserSessionRepo from "../repo/connect_browser_session_repo";
 import ConnectIdentityRepo from "../repo/connect_identity_repo";
+import type { RepoFailure } from "../repo/repo_failure";
 import TraceAdapter, { type TracePort } from "../observability/trace_adapter";
 import ConnectAuthPolicy from "./connect_auth_policy";
 import {
@@ -51,6 +52,11 @@ export type LogoutResult =
   | { outcome: "csrf" }
   | { outcome: "failed" };
 
+/**
+ * Browser account flows. Repository failures are decided here into each
+ * flow's `failed` outcome (a unique violation during signup is `duplicate`),
+ * logged once, exactly as a thrown error in that flow is.
+ */
 @Component()
 export default class ConnectAuthService {
   private readonly logger: WebsiteLoggerPort;
@@ -80,18 +86,21 @@ export default class ConnectAuthService {
     try {
       const passwordHash = await this.passwords.hash(input.password);
       const now = this.clock.now().toISOString();
-      const existing = await this.accountRepo.findPasswordlessByEmail({ email: input.email });
+      const passwordless = await this.accountRepo.findPasswordlessByEmail({ email: input.email });
+      if (!passwordless.ok) return this.signupFailed(input, passwordless.error);
+      const existing = passwordless.value;
       if (existing) {
-        await this.accountRepo.setPassword({
+        const linked = await this.accountRepo.setPassword({
           user_id: existing.user_id,
           username: input.username,
           password_hash: passwordHash,
           updated_at: now,
         });
+        if (!linked.ok) return this.signupFailed(input, linked.error);
         this.completed("signup", input.correlationId, { userId: existing.user_id, outcome: "linked", count: 1 });
         return { outcome: "created", userId: existing.user_id, username: input.username, email: input.email };
       }
-      await this.accountRepo.createAccount({
+      const created = await this.accountRepo.createAccount({
         user_id: userId,
         username: input.username,
         email: input.email,
@@ -101,24 +110,22 @@ export default class ConnectAuthService {
         created_at: now,
         updated_at: now,
       });
+      if (!created.ok) return this.signupFailed(input, created.error);
       this.completed("signup", input.correlationId, { userId, outcome: "created", count: 1 });
       return { outcome: "created", userId, username: input.username, email: input.email };
     } catch (error) {
-      if (this.isUniqueViolation(error)) {
-        this.skipped("signup", input.correlationId, "duplicate");
-        return { outcome: "duplicate" };
-      }
-      this.failed("signup", input.correlationId, error);
-      return { outcome: "failed" };
+      return this.signupError(input, error);
     }
   }
 
   async login(input: LoginInput): Promise<LoginResult> {
     this.started("login", input.correlationId);
     try {
-      const account = input.identifier.includes("@")
+      const lookup = input.identifier.includes("@")
         ? await this.accountRepo.findByEmail({ email: input.identifier })
         : await this.accountRepo.findByUsername({ username: input.identifier });
+      if (!lookup.ok) return this.repoFailed("login", input.correlationId, lookup.error);
+      const account = lookup.value;
       const validPassword = account
         && account.password_hash
         ? await this.passwords.verify(input.password, account.password_hash)
@@ -145,11 +152,13 @@ export default class ConnectAuthService {
         return { outcome: "invalid-credentials" };
       }
 
-      let account = await this.accountRepo.findByEmail({ email });
+      const lookup = await this.accountRepo.findByEmail({ email });
+      if (!lookup.ok) return this.repoFailed("google", input.correlationId, lookup.error);
+      let account = lookup.value;
       if (!account) {
         const now = this.clock.now().toISOString();
         const userId = this.ids.userId();
-        await this.accountRepo.createAccount({
+        const created = await this.accountRepo.createAccount({
           user_id: userId,
           // Google does not supply a username; use the generated account ID
           // rather than assigning every new identity the same unique name.
@@ -161,16 +170,20 @@ export default class ConnectAuthService {
           created_at: now,
           updated_at: now,
         });
-        account = await this.accountRepo.findByEmail({ email });
+        if (!created.ok) return this.repoFailed("google", input.correlationId, created.error);
+        const persisted = await this.accountRepo.findByEmail({ email });
+        if (!persisted.ok) return this.repoFailed("google", input.correlationId, persisted.error);
+        account = persisted.value;
         if (!account) throw new Error("Google account was not persisted");
       }
-      await this.identityRepo.linkGoogle({
+      const linked = await this.identityRepo.linkGoogle({
         id: this.ids.identityId(),
         user_id: account.user_id,
         provider_subject: subject,
         email,
         created_at: this.clock.now().toISOString(),
       });
+      if (!linked.ok) return this.repoFailed("google", input.correlationId, linked.error);
       return this.createSession(account, input.correlationId, "google");
     } catch (error) {
       this.failed("google", input.correlationId, error);
@@ -182,7 +195,21 @@ export default class ConnectAuthService {
     this.started("session", input.correlationId);
     try {
       const authenticated = await this.sessionAuth.authenticate(sessionToken);
-      if (!authenticated.ok || authenticated.value.session.session_id !== input.sessionId) {
+      if (!authenticated.ok) {
+        switch (authenticated.error.kind) {
+          case "unauthorized":
+            this.skipped("session", input.correlationId, "unauthorized");
+            return { outcome: "unauthorized" };
+          case "query_failed":
+          case "write_failed":
+            return this.repoFailed("session", input.correlationId, authenticated.error);
+          default: {
+            const unhandled: never = authenticated.error;
+            return unhandled;
+          }
+        }
+      }
+      if (authenticated.value.session.session_id !== input.sessionId) {
         this.skipped("session", input.correlationId, "unauthorized");
         return { outcome: "unauthorized" };
       }
@@ -217,7 +244,7 @@ export default class ConnectAuthService {
     const csrfToken = this.credentials.randomToken();
     const absoluteExpiry = new Date(now.getTime() + this.policy.absoluteSessionMs);
     const idleExpiry = new Date(now.getTime() + this.policy.idleSessionMs);
-    await this.sessionRepo.createSession({
+    const created = await this.sessionRepo.createSession({
       session_id: sessionId,
       user_id: account.user_id,
       session_token_hash: this.credentials.hashToken(sessionToken),
@@ -228,6 +255,7 @@ export default class ConnectAuthService {
       idle_expires_at: idleExpiry.toISOString(),
       absolute_expires_at: absoluteExpiry.toISOString(),
     });
+    if (!created.ok) return this.repoFailed(action, correlationId, created.error);
     this.completed(action, correlationId, { userId: account.user_id, sessionId, outcome: "created", count: 1 });
     return {
       outcome: "created",
@@ -255,18 +283,30 @@ export default class ConnectAuthService {
         csrfHeader,
       );
       if (!authenticated.ok) {
-        this.skipped("logout", input.correlationId, authenticated.reason);
-        return { outcome: authenticated.reason };
+        switch (authenticated.error.kind) {
+          case "unauthorized":
+          case "csrf":
+            this.skipped("logout", input.correlationId, authenticated.error.kind);
+            return { outcome: authenticated.error.kind };
+          case "query_failed":
+          case "write_failed":
+            return this.repoFailed("logout", input.correlationId, authenticated.error);
+          default: {
+            const unhandled: never = authenticated.error;
+            return unhandled;
+          }
+        }
       }
       const session = authenticated.value.session;
       if (session.session_id !== input.sessionId) {
         this.skipped("logout", input.correlationId, "unauthorized");
         return { outcome: "unauthorized" };
       }
-      await this.sessionRepo.revokeSession({
+      const revoked = await this.sessionRepo.revokeSession({
         session_id: session.session_id,
         revoked_at: this.clock.now().toISOString(),
       });
+      if (!revoked.ok) return this.repoFailed("logout", input.correlationId, revoked.error);
       this.completed("logout", input.correlationId, {
         userId: session.user_id,
         sessionId: session.session_id,
@@ -278,6 +318,27 @@ export default class ConnectAuthService {
       this.failed("logout", input.correlationId, error);
       return { outcome: "failed" };
     }
+  }
+
+  /** A repository failure during signup: handled exactly like a thrown one. */
+  private signupFailed(input: SignupInput, failure: RepoFailure) {
+    return this.signupError(input, failure.cause);
+  }
+
+  /** A unique violation means the account exists (`duplicate`); anything else fails signup. */
+  private signupError(input: SignupInput, error: unknown): SignupResult {
+    if (this.isUniqueViolation(error)) {
+      this.skipped("signup", input.correlationId, "duplicate");
+      return { outcome: "duplicate" };
+    }
+    this.failed("signup", input.correlationId, error);
+    return { outcome: "failed" };
+  }
+
+  /** A repository failure in an auth flow: logged once here, answered `failed`. */
+  private repoFailed(action: string, correlationId: string, failure: RepoFailure) {
+    this.failed(action, correlationId, failure.cause);
+    return { outcome: "failed" as const };
   }
 
   private started(action: string, correlationId: string): void {

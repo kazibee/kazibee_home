@@ -1,19 +1,23 @@
 import { mcpStage } from "../observability/mcp_diagnostics";
 import { Component, Inject } from "@noego/ioc";
 import type { CompatRequest as Request, CompatResponse as Response } from "@noego/dinner";
-import ConnectExecutorActorResolver from "../services/connect_executor_actor_resolver";
+import { getLogger } from "@noego/logger";
+import { Result } from "@noego/trust";
+import ConnectExecutorActorResolver, { type ActorDenial } from "../services/connect_executor_actor_resolver";
 import RemoteToolDispatchService, { type DispatchResult } from "../services/remote_tool_dispatch_service";
 import RemoteToolGrantService from "../services/remote_tool_grant_service";
 import OAuthOrigins from "../services/oauth_origins";
 import OAuthTokenAuthService, {
-  InvalidOAuthTokenError,
   type OAuthPrincipal,
 } from "../services/oauth_token_auth_service";
 import OAuthConnectionMachinesService from "../services/oauth_connection_machines_service";
 import { connectionScopeToToolScopes } from "../services/oauth_scopes";
 import OAuthRepo from "../repo/oauth_repo";
 import RemoteWorkspaceRepo from "../repo/remote_workspace_repo";
+import { repoUnavailable, type RepoFailure, type RepoUnavailable } from "../repo/repo_failure";
 import { randomBytes } from "node:crypto";
+
+const logger = getLogger("kazibee:remote-tools-controller");
 
 type Context = { req: Request; res: Response };
 
@@ -73,21 +77,30 @@ export default class RemoteToolsController {
    * Resolves the bearer into a dispatch route. OAuth access tokens (resource-
    * tagged, minted for a connection) act as the user: their machines are the
    * user's active executors, resolved live on every call; legacy PAT grants
-   * keep their original static binding.
+   * keep their original static binding. A token or grant lookup that fails in
+   * the repository is `unavailable`, never a refused bearer.
    */
   private async resolveCaller(req: Request): Promise<
-    | { ok: true; principal?: OAuthPrincipal; route(toolName: string, args: Record<string, unknown>) : Promise<DispatchResult> }
+    | { ok: true; principal?: OAuthPrincipal; route(toolName: string, args: Record<string, unknown>) : Promise<DispatchResult | RepoUnavailable> }
     | { ok: false }
+    | RepoUnavailable
   > {
     const header = typeof req.headers.authorization === "string" ? req.headers.authorization : null;
     if (this.oauthTokens.looksLikeOAuthToken(header, this.origins.resource)) {
-      let principal: OAuthPrincipal;
-      try {
-        principal = await this.oauthTokens.authenticate(header, this.origins.resource);
-      } catch (error) {
-        if (error instanceof InvalidOAuthTokenError) return { ok: false };
-        throw error;
+      const authenticated = await this.oauthTokens.authenticate(header, this.origins.resource);
+      if (!authenticated.ok) {
+        switch (authenticated.error.kind) {
+          case "invalid_token":
+            return { ok: false };
+          case "query_failed":
+            return repoUnavailable(authenticated.error);
+          default: {
+            const unhandled: never = authenticated.error;
+            return unhandled;
+          }
+        }
       }
+      const principal = authenticated.value;
       return {
         ok: true,
         principal,
@@ -95,7 +108,9 @@ export default class RemoteToolsController {
       };
     }
 
-    const grant = await this.grants.authenticate(bearer(req));
+    const authenticated = await this.grants.authenticate(bearer(req));
+    if (!authenticated.ok) return repoUnavailable(authenticated.error);
+    const grant = authenticated.value;
     if (!grant) return { ok: false };
     return {
       ok: true,
@@ -113,7 +128,7 @@ export default class RemoteToolsController {
     principal: OAuthPrincipal,
     toolName: string,
     args: Record<string, unknown>,
-  ): Promise<DispatchResult> {
+  ): Promise<DispatchResult | RepoUnavailable> {
     // The MCP surface speaks server-minted rws_ ids only; executors never
     // learn them and clients never see machine-local wrk_ ids, so two
     // machines can never collide or spoof each other's workspaces.
@@ -131,9 +146,11 @@ export default class RemoteToolsController {
       args = Object.fromEntries(Object.entries(args).filter(([key]) => key !== "machineId"));
     } else if (typeof args.workspaceId === "string" && args.workspaceId.startsWith("rws_")) {
       remoteWorkspaceId = args.workspaceId;
-      const row = await this.remoteWorkspaces.findRemoteWorkspace({
+      const lookup = await this.remoteWorkspaces.findRemoteWorkspace({
         remote_workspace_id: args.workspaceId,
       });
+      if (!lookup.ok) return repoUnavailable(lookup.error);
+      const row = lookup.value;
       if (!row || row.user_id !== principal.user_id) {
         return { ok: false, code: "WORKSPACE_UNAVAILABLE", message: "Unknown workspace id. Call list_workspaces." };
       }
@@ -173,29 +190,41 @@ export default class RemoteToolsController {
     toolName: string,
     remoteWorkspaceId: string | null,
     outcome: Extract<DispatchResult, { ok: true }>,
-  ): Promise<DispatchResult> {
+  ): Promise<DispatchResult | RepoUnavailable> {
     const payload = outcome.payload as Record<string, unknown> | null;
     if (!payload || typeof payload !== "object") return outcome;
     if (toolName === "list_workspaces" && Array.isArray(payload.workspaces)) {
-      const workspaces = await Promise.all(payload.workspaces.map(async (entry) => {
-        const workspace = entry as { workspaceId?: unknown; name?: unknown };
-        if (typeof workspace.workspaceId !== "string") return entry;
-        const row = await this.remoteWorkspaces.upsertRemoteWorkspace({
-          remote_workspace_id: `rws_${randomBytes(16).toString("hex")}`,
-          user_id: principal.user_id,
-          executor_id: executorId,
-          local_workspace_id: workspace.workspaceId,
-          display_name: typeof workspace.name === "string" ? workspace.name : workspace.workspaceId,
-          now: new Date().toISOString(),
-        });
-        return row ? { ...workspace, workspaceId: row.remote_workspace_id } : entry;
-      }));
+      const minted = await Promise.all(payload.workspaces.map(
+        (entry) => this.mintWorkspaceId(principal, executorId, entry),
+      ));
+      const workspaces: unknown[] = [];
+      for (const workspace of minted) {
+        if (!workspace.ok) return repoUnavailable(workspace.error);
+        workspaces.push(workspace.value);
+      }
       return { ...outcome, payload: { ...payload, workspaces } };
     }
     if (remoteWorkspaceId && typeof payload.workspaceId === "string") {
       return { ...outcome, payload: { ...payload, workspaceId: remoteWorkspaceId } };
     }
     return outcome;
+  }
+
+  /** One listed workspace with its machine-local id replaced by the server-minted one. */
+  private async mintWorkspaceId(principal: OAuthPrincipal, executorId: string, entry: unknown) {
+    const workspace = entry as { workspaceId?: unknown; name?: unknown };
+    if (typeof workspace.workspaceId !== "string") return Result.ok(entry);
+    const upserted = await this.remoteWorkspaces.upsertRemoteWorkspace({
+      remote_workspace_id: `rws_${randomBytes(16).toString("hex")}`,
+      user_id: principal.user_id,
+      executor_id: executorId,
+      local_workspace_id: workspace.workspaceId,
+      display_name: typeof workspace.name === "string" ? workspace.name : workspace.workspaceId,
+      now: new Date().toISOString(),
+    });
+    if (!upserted.ok) return upserted;
+    const row = upserted.value;
+    return Result.ok(row ? { ...workspace, workspaceId: row.remote_workspace_id } : entry);
   }
 
   /**
@@ -234,6 +263,7 @@ export default class RemoteToolsController {
   private async mcpRun({ req, res }: Context) {
     const caller = await mcpStage("resolve_caller", () => this.resolveCaller(req));
     if (!caller.ok) {
+      if ("failure" in caller) return this.unavailable(res, "resolve-caller", caller.failure);
       // RFC 9728: point OAuth-capable clients at the protected-resource
       // metadata; PAT holders just see the 401.
       res.setHeader(
@@ -275,6 +305,7 @@ export default class RemoteToolsController {
         // the tools visible to this grant's scopes, schemas included.
         const outcome = await caller.route("tool_help", {});
         if (!outcome.ok) {
+          if ("failure" in outcome) return this.unavailable(res, "tools-list", outcome.failure);
           return rpcError(res, body.id, -32603, `${outcome.code}: ${outcome.message}`);
         }
         const payload = outcome.payload as { tools?: Array<{ name: string; description: string; inputSchema: unknown }> };
@@ -341,6 +372,7 @@ export default class RemoteToolsController {
             isError: false,
           });
         }
+        if ("failure" in outcome) return this.unavailable(res, "tools-call", outcome.failure);
         // Tool-domain failures are successful JSON-RPC envelopes with
         // isError=true; only protocol failures use JSON-RPC errors.
         return rpcResult(res, body.id, {
@@ -367,7 +399,7 @@ export default class RemoteToolsController {
   async createGrant({ req, res }: Context) {
     const sessionId = typeof req.query.sessionId === "string" ? req.query.sessionId : "";
     const actor = await this.actors.browser(req, sessionId, true);
-    if (!actor.ok) return res.status(401).json({ error: true, message: "Not signed in." });
+    if (!actor.ok) return this.notSignedIn(res, actor);
 
     const body = req.body as { executorId?: string; workspaceId?: string; scopes?: string[] } | undefined;
     if (!body || typeof body.executorId !== "string" || typeof body.workspaceId !== "string" || !Array.isArray(body.scopes)) {
@@ -380,6 +412,7 @@ export default class RemoteToolsController {
       scopes: body.scopes,
     });
     if (!result.ok) {
+      if ("failure" in result) return this.unavailable(res, "create-grant", result.failure);
       return res.status(400).json({ error: true, message: `Grant creation failed: ${result.reason}.` });
     }
     // Raw token exactly once; only hashes are stored.
@@ -396,10 +429,11 @@ export default class RemoteToolsController {
   async listGrants({ req, res }: Context) {
     const sessionId = typeof req.query.sessionId === "string" ? req.query.sessionId : "";
     const actor = await this.actors.browser(req, sessionId, false);
-    if (!actor.ok) return res.status(401).json({ error: true, message: "Not signed in." });
+    if (!actor.ok) return this.notSignedIn(res, actor);
     const grants = await this.grants.list((actor.actor as { userId: string }).userId);
+    if (!grants.ok) return this.unavailable(res, "list-grants", grants.error);
     return res.json({
-      grants: grants.map((grant) => ({
+      grants: grants.value.map((grant) => ({
         grantId: grant.grant_id,
         executorId: grant.executor_id,
         workspaceId: grant.workspace_id,
@@ -414,12 +448,13 @@ export default class RemoteToolsController {
   async revokeGrant({ req, res }: Context) {
     const sessionId = typeof req.query.sessionId === "string" ? req.query.sessionId : "";
     const actor = await this.actors.browser(req, sessionId, true);
-    if (!actor.ok) return res.status(401).json({ error: true, message: "Not signed in." });
+    if (!actor.ok) return this.notSignedIn(res, actor);
     const grantId = req.params?.grantId;
     if (typeof grantId !== "string" || !/^rtg_[A-Za-z0-9]{8,64}$/.test(grantId)) {
       return res.status(400).json({ error: true, message: "Invalid grant id." });
     }
-    await this.grants.revoke((actor.actor as { userId: string }).userId, grantId);
+    const revoked = await this.grants.revoke((actor.actor as { userId: string }).userId, grantId);
+    if (!revoked.ok) return this.unavailable(res, "revoke-grant", revoked.error);
     return res.json({ ok: true });
   }
 
@@ -431,27 +466,36 @@ export default class RemoteToolsController {
   async listConnections({ req, res }: Context) {
     const sessionId = typeof req.query.sessionId === "string" ? req.query.sessionId : "";
     const actor = await this.actors.browser(req, sessionId, false);
-    if (!actor.ok) return res.status(401).json({ error: true, message: "Not signed in." });
+    if (!actor.ok) return this.notSignedIn(res, actor);
     const userId = (actor.actor as { userId: string }).userId;
 
     const connections = await this.oauth.listConnectionsByUser({ user_id: userId });
-    const withMembers = await Promise.all(connections.map(async (connection) => ({
-      connectionId: connection.connection_id,
-      clientId: connection.client_id,
-      clientName: connection.client_name,
-      approvedScope: connection.approved_scope,
-      allowShell: connection.allow_shell,
-      allowWeb: connection.allow_web,
-      status: connection.status,
-      createdAt: connection.created_at,
-      members: (await this.machines.listForUser(userId, connection.approved_scope))
-        .map((member) => ({
+    if (!connections.ok) return this.unavailable(res, "list-connections", connections.error);
+    const listed = await Promise.all(connections.value.map(async (connection) => {
+      const members = await this.machines.listForUser(userId, connection.approved_scope);
+      if (!members.ok) return members;
+      return Result.ok({
+        connectionId: connection.connection_id,
+        clientId: connection.client_id,
+        clientName: connection.client_name,
+        approvedScope: connection.approved_scope,
+        allowShell: connection.allow_shell,
+        allowWeb: connection.allow_web,
+        status: connection.status,
+        createdAt: connection.created_at,
+        members: members.value.map((member) => ({
           executorId: member.executor_id,
           displayName: member.display_name,
           workspaceId: member.workspace_id,
           scope: member.scope,
         })),
-    })));
+      });
+    }));
+    const withMembers: unknown[] = [];
+    for (const connection of listed) {
+      if (!connection.ok) return this.unavailable(res, "list-connections", connection.error);
+      withMembers.push(connection.value);
+    }
     return res.json({ connections: withMembers });
   }
 
@@ -463,10 +507,12 @@ export default class RemoteToolsController {
   async updateConnection({ req, res }: Context) {
     const sessionId = typeof req.query.sessionId === "string" ? req.query.sessionId : "";
     const actor = await this.actors.browser(req, sessionId, true);
-    if (!actor.ok) return res.status(401).json({ error: true, message: "Not signed in." });
+    if (!actor.ok) return this.notSignedIn(res, actor);
     const userId = (actor.actor as { userId: string }).userId;
 
-    const connection = await this.ownedConnection(req.params?.connectionId, userId);
+    const owned = await this.ownedConnection(req.params?.connectionId, userId);
+    if (!owned.ok) return this.unavailable(res, "update-connection", owned.error);
+    const connection = owned.value;
     if (!connection) return res.status(404).json({ error: true, message: "Connection not found." });
 
     const body = req.body as { access?: string; allowShell?: boolean; allowWeb?: boolean } | undefined;
@@ -476,12 +522,13 @@ export default class RemoteToolsController {
     const allowShell = typeof body?.allowShell === "boolean" ? body.allowShell : connection.allow_shell;
     const allowWeb = typeof body?.allowWeb === "boolean" ? body.allowWeb : connection.allow_web;
 
-    await this.oauth.updateConnectionCapabilities({
+    const updated = await this.oauth.updateConnectionCapabilities({
       connection_id: connection.connection_id,
       approved_scope: access,
       allow_shell: allowShell,
       allow_web: allowWeb,
     });
+    if (!updated.ok) return this.unavailable(res, "update-connection", updated.error);
     return res.json({
       ok: true,
       connection: {
@@ -496,26 +543,44 @@ export default class RemoteToolsController {
   async revokeConnection({ req, res }: Context) {
     const sessionId = typeof req.query.sessionId === "string" ? req.query.sessionId : "";
     const actor = await this.actors.browser(req, sessionId, true);
-    if (!actor.ok) return res.status(401).json({ error: true, message: "Not signed in." });
+    if (!actor.ok) return this.notSignedIn(res, actor);
     const userId = (actor.actor as { userId: string }).userId;
 
-    const connection = await this.ownedConnection(req.params?.connectionId, userId);
+    const owned = await this.ownedConnection(req.params?.connectionId, userId);
+    if (!owned.ok) return this.unavailable(res, "revoke-connection", owned.error);
+    const connection = owned.value;
     if (!connection) return res.status(404).json({ error: true, message: "Connection not found." });
     const revokedAt = new Date().toISOString();
-    await this.oauth.revokeTokensByConnection({
+    const tokens = await this.oauth.revokeTokensByConnection({
       connection_id: connection.connection_id,
       revoked_at: revokedAt,
     });
-    await this.oauth.revokeConnection({
+    if (!tokens.ok) return this.unavailable(res, "revoke-connection", tokens.error);
+    const revoked = await this.oauth.revokeConnection({
       connection_id: connection.connection_id,
       revoked_at: revokedAt,
     });
+    if (!revoked.ok) return this.unavailable(res, "revoke-connection", revoked.error);
     return res.json({ ok: true });
   }
 
   private async ownedConnection(connectionId: unknown, userId: string) {
-    if (typeof connectionId !== "string" || !/^ocn_[a-f0-9]{32}$/.test(connectionId)) return null;
-    const connection = await this.oauth.findActiveConnectionById({ connection_id: connectionId });
-    return connection && connection.user_id === userId ? connection : null;
+    if (typeof connectionId !== "string" || !/^ocn_[a-f0-9]{32}$/.test(connectionId)) return Result.ok(null);
+    const lookup = await this.oauth.findActiveConnectionById({ connection_id: connectionId });
+    if (!lookup.ok) return lookup;
+    const connection = lookup.value;
+    return Result.ok(connection && connection.user_id === userId ? connection : null);
+  }
+
+  /** The browser session could not be resolved: 401, or 500 when the lookup itself failed. */
+  private notSignedIn(res: Response, denial: ActorDenial) {
+    if (denial.reason === "unavailable") return this.unavailable(res, "session", denial.failure);
+    return res.status(401).json({ error: true, message: "Not signed in." });
+  }
+
+  /** A repository lookup or write failed below this endpoint: logged here, answered 500. */
+  private unavailable(res: Response, action: string, failure: RepoFailure) {
+    logger.error("Remote tools repository failure", { action, kind: failure.kind, error: failure.cause });
+    return res.status(500).json({ error: true, message: "Internal server error." });
   }
 }

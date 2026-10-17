@@ -1,4 +1,5 @@
 import { Component, LoadAs } from "@noego/ioc";
+import { Trust } from "@noego/trust";
 import { Query, QueryBinder, Single, run } from "sqlstack";
 
 export type ConnectExecutorClaimStatus = "pending" | "accepted" | "denied";
@@ -21,40 +22,61 @@ export interface ConnectExecutorClaim {
 @Component({ scope: LoadAs.Singleton })
 export default class ConnectExecutorClaimRepo {
   @Query()
-  createClaim(_params: Omit<ConnectExecutorClaim, "status" | "decided_at" | "decided_by_user_id" | "decision_idempotency_key">): Promise<void> {
-    return run();
+  async createClaim(_params: Omit<ConnectExecutorClaim, "status" | "decided_at" | "decided_by_user_id" | "decision_idempotency_key">) {
+    return Trust.tryAsync(
+      () => run<void>(),
+      (cause) => ({ kind: "write_failed", cause }),
+    );
   }
 
   @Query()
-  deletePendingByExecutorId(_params: { executor_id: string }): Promise<void> {
-    return run();
-  }
-
-  @Single
-  @Query()
-  findByClaimId(_params: { claim_id: string }): Promise<ConnectExecutorClaim | null> {
-    return run();
-  }
-
-  @Single
-  @Query()
-  findByCodeHash(_params: { short_code_hash: string }): Promise<ConnectExecutorClaim | null> {
-    return run();
+  async deletePendingByExecutorId(_params: { executor_id: string }) {
+    return Trust.tryAsync(
+      () => run<void>(),
+      (cause) => ({ kind: "write_failed", cause }),
+    );
   }
 
   @Single
   @Query()
-  findByIdempotencyKey(_params: { idempotency_key: string }): Promise<ConnectExecutorClaim | null> {
-    return run();
+  async findByClaimId(_params: { claim_id: string }) {
+    return Trust.tryAsync(
+      () => run<ConnectExecutorClaim | null>(),
+      (cause) => ({ kind: "query_failed", cause }),
+    );
+  }
+
+  @Single
+  @Query()
+  async findByCodeHash(_params: { short_code_hash: string }) {
+    return Trust.tryAsync(
+      () => run<ConnectExecutorClaim | null>(),
+      (cause) => ({ kind: "query_failed", cause }),
+    );
+  }
+
+  @Single
+  @Query()
+  async findByIdempotencyKey(_params: { idempotency_key: string }) {
+    return Trust.tryAsync(
+      () => run<ConnectExecutorClaim | null>(),
+      (cause) => ({ kind: "query_failed", cause }),
+    );
   }
 
   @Query()
-  acceptPending(_params: { claim_id: string; decided_at: string; decided_by_user_id: string; decision_idempotency_key: string }): Promise<void> {
-    return run();
+  async acceptPending(_params: { claim_id: string; decided_at: string; decided_by_user_id: string; decision_idempotency_key: string }) {
+    return Trust.tryAsync(
+      () => run<void>(),
+      (cause) => ({ kind: "write_failed", cause }),
+    );
   }
 
   @Query()
-  denyPending(_params: { claim_id: string; decided_at: string; decided_by_user_id: string; decision_idempotency_key: string }): Promise<void> {
-    return run();
+  async denyPending(_params: { claim_id: string; decided_at: string; decided_by_user_id: string; decision_idempotency_key: string }) {
+    return Trust.tryAsync(
+      () => run<void>(),
+      (cause) => ({ kind: "write_failed", cause }),
+    );
   }
 }

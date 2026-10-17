@@ -1,11 +1,13 @@
 import { Component, Inject, LoadAs } from "@noego/ioc";
 import ConnectExecutorCredentialRepo from "../repo/connect_executor_credential_repo";
 import ConnectExecutorRepo from "../repo/connect_executor_repo";
+import { repoUnavailable, type RepoUnavailable } from "../repo/repo_failure";
 import { ConnectCredentials } from "./connect_auth_primitives";
 
 export type ChannelAuthResult =
   | { ok: true; executorId: string; deviceId: string; generation: number; ownerUserId: string }
-  | { ok: false };
+  | { ok: false }
+  | RepoUnavailable;
 
 /**
  * Authenticates an executor's WebSocket channel upgrade.
@@ -17,7 +19,8 @@ export type ChannelAuthResult =
  * credential, and require every identity axis to agree.
  *
  * Fails closed on any mismatch and never distinguishes "unknown token" from
- * "revoked" or "wrong executor" to the caller.
+ * "revoked" or "wrong executor" to the caller. A lookup that fails in the
+ * repository is `unavailable`, not a refusal.
  */
 @Component({ scope: LoadAs.Singleton })
 export default class ConnectChannelAuthService {
@@ -33,9 +36,11 @@ export default class ConnectChannelAuthService {
     deviceId: string;
     generation: number;
   }): Promise<ChannelAuthResult> {
-    const credential = await this.credentials.findByTokenHash({
+    const credentialLookup = await this.credentials.findByTokenHash({
       token_hash: this.tokens.hashToken(input.token),
     });
+    if (!credentialLookup.ok) return repoUnavailable(credentialLookup.error);
+    const credential = credentialLookup.value;
     if (!credential
       || credential.status !== "active"
       || credential.executor_id !== input.executorId
@@ -43,7 +48,9 @@ export default class ConnectChannelAuthService {
       return { ok: false };
     }
 
-    const executor = await this.executors.findByExecutorId({ executor_id: input.executorId });
+    const executorLookup = await this.executors.findByExecutorId({ executor_id: input.executorId });
+    if (!executorLookup.ok) return repoUnavailable(executorLookup.error);
+    const executor = executorLookup.value;
     if (!executor
       || executor.state !== "active"
       || executor.device_id !== input.deviceId

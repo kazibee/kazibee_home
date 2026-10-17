@@ -1,4 +1,5 @@
 import { Component, LoadAs } from "@noego/ioc";
+import { Trust } from "@noego/trust";
 import { Query, QueryBinder, run } from "sqlstack";
 
 export type ConnectDesktopAuditKind =
@@ -9,7 +10,7 @@ export type ConnectDesktopAuditKind =
 @Component({ scope: LoadAs.Singleton })
 export default class ConnectDesktopAuditRepo {
   @Query()
-  appendEvent(_params: {
+  async appendEvent(_params: {
     audit_event_id: string;
     device_id: string;
     claim_id: string | null;
@@ -18,7 +19,10 @@ export default class ConnectDesktopAuditRepo {
     credential_generation: number;
     occurred_at: string;
     correlation_id: string;
-  }): Promise<void> {
-    return run();
+  }) {
+    return Trust.tryAsync(
+      () => run<void>(),
+      (cause) => ({ kind: "write_failed", cause }),
+    );
   }
 }

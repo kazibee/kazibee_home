@@ -11,6 +11,7 @@ import { describe, expect, it } from "vitest";
 import path from "node:path";
 import { testApp } from "@noego/app";
 import { resourceCase, test as control, testStub } from "@noego/testing";
+import { Result } from "@noego/trust";
 import ConnectAgentSessionService from "../../../src/server/services/connect_agent_session_service";
 import ConnectAgentSessionRepo, {
   type ConnectAgentHandoff,
@@ -46,18 +47,19 @@ describe("ConnectAgentSessionService handoffs", () => {
       .method(ConnectAgentSessionRepo, "consumeHandoff", control.watch(() =>
         async ({ token_hash, consumed_at }: { token_hash: string; consumed_at: string }) => {
           if (!store.handoff || store.handoff.token_hash !== token_hash || store.handoff.consumed_at
-            || new Date(store.handoff.expires_at).getTime() <= new Date(consumed_at).getTime()) return null;
+            || new Date(store.handoff.expires_at).getTime() <= new Date(consumed_at).getTime()) return Result.ok(null);
           store.handoff = { ...store.handoff, consumed_at };
-          return store.handoff;
+          return Result.ok(store.handoff);
         }))
       .method(ConnectAgentSessionRepo, "createSession", control.watch(() =>
         async (value: Omit<ConnectAgentSession, "revoked_at">) => {
           store.sessions.push({ ...value, revoked_at: null });
+          return Result.ok(undefined);
         }))
       .build());
     const target = await env.get<ConnectAgentSessionService>(ConnectAgentSessionService);
     expect((await target.consumeHandoff("t".repeat(43))).ok).toBe(true);
-    expect((await target.consumeHandoff("t".repeat(43))).ok).toBe(false);
+    expect(await target.consumeHandoff("t".repeat(43))).toEqual({ ok: false });
     expect(store.sessions).toHaveLength(1);
   }));
 
@@ -79,17 +81,18 @@ describe("ConnectAgentSessionService handoffs", () => {
       .method(ConnectAgentSessionRepo, "consumeHandoff", control.watch(() =>
         async ({ token_hash, consumed_at }: { token_hash: string; consumed_at: string }) => {
           if (!store.handoff || store.handoff.token_hash !== token_hash || store.handoff.consumed_at
-            || new Date(store.handoff.expires_at).getTime() <= new Date(consumed_at).getTime()) return null;
+            || new Date(store.handoff.expires_at).getTime() <= new Date(consumed_at).getTime()) return Result.ok(null);
           store.handoff = { ...store.handoff, consumed_at };
-          return store.handoff;
+          return Result.ok(store.handoff);
         }))
       .method(ConnectAgentSessionRepo, "createSession", control.watch(() =>
         async (value: Omit<ConnectAgentSession, "revoked_at">) => {
           store.sessions.push({ ...value, revoked_at: null });
+          return Result.ok(undefined);
         }))
       .build());
     const target = await env.get<ConnectAgentSessionService>(ConnectAgentSessionService);
-    expect((await target.consumeHandoff("t".repeat(43))).ok).toBe(false);
+    expect(await target.consumeHandoff("t".repeat(43))).toEqual({ ok: false });
     expect(store.sessions).toHaveLength(0);
   }));
 });

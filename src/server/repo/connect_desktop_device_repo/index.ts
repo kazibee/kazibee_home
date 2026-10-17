@@ -1,4 +1,5 @@
 import { Component, LoadAs } from "@noego/ioc";
+import { Trust } from "@noego/trust";
 import { Query, QueryBinder, Single, run } from "sqlstack";
 
 export type ConnectDesktopState = "pending" | "active" | "revoked";
@@ -22,34 +23,52 @@ export interface ConnectDesktopDevice {
 @Component({ scope: LoadAs.Singleton })
 export default class ConnectDesktopDeviceRepo {
   @Query()
-  createDevice(_params: Omit<ConnectDesktopDevice, "owner_user_id" | "claimed_at" | "credential_generation" | "state">): Promise<void> {
-    return run();
+  async createDevice(_params: Omit<ConnectDesktopDevice, "owner_user_id" | "claimed_at" | "credential_generation" | "state">) {
+    return Trust.tryAsync(
+      () => run<void>(),
+      (cause) => ({ kind: "write_failed", cause }),
+    );
   }
 
   @Single
   @Query()
-  findByDeviceId(_params: { device_id: string }): Promise<ConnectDesktopDevice | null> {
-    return run();
+  async findByDeviceId(_params: { device_id: string }) {
+    return Trust.tryAsync(
+      () => run<ConnectDesktopDevice | null>(),
+      (cause) => ({ kind: "query_failed", cause }),
+    );
   }
 
   @Query()
-  listByOwner(_params: { owner_user_id: string; limit: number }): Promise<ConnectDesktopDevice[]> {
-    return run();
+  async listByOwner(_params: { owner_user_id: string; limit: number }) {
+    return Trust.tryAsync(
+      () => run<ConnectDesktopDevice[]>(),
+      (cause) => ({ kind: "query_failed", cause }),
+    );
   }
 
   @Query()
-  acceptOwner(_params: { device_id: string; owner_user_id: string; claimed_at: string }): Promise<void> {
-    return run();
+  async acceptOwner(_params: { device_id: string; owner_user_id: string; claimed_at: string }) {
+    return Trust.tryAsync(
+      () => run<void>(),
+      (cause) => ({ kind: "write_failed", cause }),
+    );
   }
 
   @Query()
-  renameOwned(_params: { device_id: string; owner_user_id: string; display_name: string; updated_at: string }): Promise<void> {
-    return run();
+  async renameOwned(_params: { device_id: string; owner_user_id: string; display_name: string; updated_at: string }) {
+    return Trust.tryAsync(
+      () => run<void>(),
+      (cause) => ({ kind: "write_failed", cause }),
+    );
   }
 
   @Query()
-  revokeOwned(_params: { device_id: string; owner_user_id: string; updated_at: string }): Promise<void> {
-    return run();
+  async revokeOwned(_params: { device_id: string; owner_user_id: string; updated_at: string }) {
+    return Trust.tryAsync(
+      () => run<void>(),
+      (cause) => ({ kind: "write_failed", cause }),
+    );
   }
 
 }

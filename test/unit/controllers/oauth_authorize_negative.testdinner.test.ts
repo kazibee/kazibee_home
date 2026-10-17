@@ -7,7 +7,7 @@
  * error arms: inactive/revoked clients (DCR and cached CIMD), malformed CIMD
  * metadata, malformed redirect URI registrations, unauthenticated and invalid
  * consent context/deny requests, scope-escalation and read_write capping in
- * approve, and the best-effort .catch() compensation arms. CIMD documents are
+ * approve, and the best-effort compensation arms. CIMD documents are
  * served through the app's own OAuthClientMetadataClient boundary (per-app
  * testStub; no globals are patched). resourceCase owns environment cleanup.
  */
@@ -16,6 +16,7 @@ import { createHash } from 'node:crypto';
 import path from 'node:path';
 import { testApp } from '@noego/app';
 import { test as control, testStub, resourceCase } from '@noego/testing';
+import { Result } from '@noego/trust';
 import OAuthAuthorizeService from '../../../src/server/services/oauth_authorize_service';
 import OAuthClientMetadataClient from '../../../src/server/services/oauth_client_metadata_client';
 import OAuthRepo from '../../../src/server/repo/oauth_repo';
@@ -23,6 +24,11 @@ import ConnectBrowserSessionRepo from '../../../src/server/repo/connect_browser_
 import ConnectAccountRepo from '../../../src/server/repo/connect_account_repo';
 
 const CONFIG = path.resolve(__dirname, '../../../noego.config.yml');
+/** A repository call that succeeds with `value`. */
+const ok = (value: unknown) => control.returns(Promise.resolve(Result.ok(value)));
+/** A repository call that fails the way the repos report it: a named kind carrying the cause. */
+const fails = (kind: 'query_failed' | 'write_failed', cause: unknown) =>
+  control.returns(Promise.resolve(Result.err({ kind, cause })));
 
 const RESOURCE = 'https://mcp-dev.kazibee.com/mcp';
 const REDIRECT_URI = 'https://client.example/callback';
@@ -79,13 +85,6 @@ const authedHeaders = {
   'x-csrf-token': CSRF_TOKEN,
 };
 
-/** A pre-handled rejected promise: safe to hand to control.returns(). */
-function rejected(message: string): Promise<never> {
-  const promise = Promise.reject(new Error(message));
-  promise.catch(() => undefined);
-  return promise;
-}
-
 /** The CIMD document the app's metadata boundary serves exactly once for the client_id URL. */
 const cimdDocument = (body: unknown) => testStub()
   .method(OAuthClientMetadataClient, 'request', control.once(control.returns(Promise.resolve(
@@ -103,7 +102,7 @@ describe('oauth authorize negative flows through testDinner', () => {
     ];
     for (const row of rows) {
       const env = await testApp(CONFIG).select({ server: { module: ['oauthAuthorization'] } })
-        .method(OAuthRepo, 'findClientById', control.once(control.returns(Promise.resolve(row))))
+        .method(OAuthRepo, 'findClientById', control.once(ok(row)))
         .build();
       const response = await env.request({
         method: 'GET',
@@ -120,7 +119,7 @@ describe('oauth authorize negative flows through testDinner', () => {
     const CIMD_ID = 'https://client.example/oauth-client.json';
     const env = await testApp(CONFIG).select({ server: { module: ['oauthAuthorization'] } })
       .use(cimdDocument(['nope']))
-      .method(OAuthRepo, 'findClientById', control.once(control.returns(Promise.resolve(null))))
+      .method(OAuthRepo, 'findClientById', control.once(ok(null)))
       .method(OAuthRepo, 'createClient', control.never())
       .build();
     const response = await env.request({
@@ -137,8 +136,8 @@ describe('oauth authorize negative flows through testDinner', () => {
     const CIMD_ID = 'https://client.example/oauth-client.json';
     const env = await testApp(CONFIG).select({ server: { module: ['oauthAuthorization'] } })
       .use(cimdDocument({ client_id: CIMD_ID, redirect_uris: [REDIRECT_URI] }))
-      .method(OAuthRepo, 'findClientById', control.once(control.returns(Promise.resolve(null))))
-      .method(OAuthRepo, 'createClient', control.once(control.returns(Promise.resolve(undefined))))
+      .method(OAuthRepo, 'findClientById', control.once(ok(null)))
+      .method(OAuthRepo, 'createClient', control.once(ok(undefined)))
       .build();
     const response = await env.request({
       method: 'GET',
@@ -152,10 +151,10 @@ describe('oauth authorize negative flows through testDinner', () => {
 
   it('a registered but non-URL redirect target is invalid_request (no redirect)', resourceCase(async () => {
     const env = await testApp(CONFIG).select({ server: { module: ['oauthAuthorization'] } })
-      .method(OAuthRepo, 'findClientById', control.once(control.returns(Promise.resolve({
+      .method(OAuthRepo, 'findClientById', control.once(ok({
         ...dcrClient,
         redirect_uris: ['not a url'],
-      }))))
+      })))
       .build();
     const response = await env.request({
       method: 'GET',
@@ -169,10 +168,10 @@ describe('oauth authorize negative flows through testDinner', () => {
 
   it('a loopback redirect never matches an unparseable registered URI', resourceCase(async () => {
     const env = await testApp(CONFIG).select({ server: { module: ['oauthAuthorization'] } })
-      .method(OAuthRepo, 'findClientById', control.once(control.returns(Promise.resolve({
+      .method(OAuthRepo, 'findClientById', control.once(ok({
         ...dcrClient,
         redirect_uris: ['%% not parseable %%'],
-      }))))
+      })))
       .build();
     const response = await env.request({
       method: 'GET',
@@ -200,9 +199,9 @@ describe('oauth authorize negative flows through testDinner', () => {
 
   it('an authenticated context request with invalid OAuth params is a 400 JSON error', resourceCase(async () => {
     const env = await testApp(CONFIG).select({ server: { module: ['oauthAuthorization'] } })
-      .method(ConnectBrowserSessionRepo, 'findByTokenHash', control.once(control.returns(Promise.resolve(activeSession))))
-      .method(ConnectBrowserSessionRepo, 'touchSession', control.returns(Promise.resolve(undefined)))
-      .method(ConnectAccountRepo, 'findByUserId', control.once(control.returns(Promise.resolve(activeAccount))))
+      .method(ConnectBrowserSessionRepo, 'findByTokenHash', control.once(ok(activeSession)))
+      .method(ConnectBrowserSessionRepo, 'touchSession', ok(undefined))
+      .method(ConnectAccountRepo, 'findByUserId', control.once(ok(activeAccount)))
       .method(OAuthRepo, 'findClientById', control.never())
       .build();
     const response = await env.request({
@@ -237,10 +236,31 @@ describe('oauth authorize negative flows through testDinner', () => {
 
   it('a deny crash inside the service maps to the 500 JSON error', resourceCase(async () => {
     const env = await testApp(CONFIG).select({ server: { module: ['oauthAuthorization'] } })
-      .method(ConnectBrowserSessionRepo, 'findByTokenHash', control.once(control.returns(Promise.resolve(activeSession))))
-      .method(ConnectBrowserSessionRepo, 'touchSession', control.returns(Promise.resolve(undefined)))
-      .method(ConnectAccountRepo, 'findByUserId', control.once(control.returns(Promise.resolve(activeAccount))))
+      .method(ConnectBrowserSessionRepo, 'findByTokenHash', control.once(ok(activeSession)))
+      .method(ConnectBrowserSessionRepo, 'touchSession', ok(undefined))
+      .method(ConnectAccountRepo, 'findByUserId', control.once(ok(activeAccount)))
       .method(OAuthRepo, 'findClientById', control.once(control.throws(new Error('db down'))))
+      .build();
+    const response = await env.request({
+      method: 'POST',
+      path: '/oauth/consent/deny',
+      headers: authedHeaders,
+      body: { sessionId: 'ses_1', ...validParams },
+    });
+    expect(response.status).toBe(500);
+    expect(await response.json()).toEqual({
+      error: 'server_error',
+      message: 'Could not deny authorization',
+    });
+    await env.verify();
+  }));
+
+  it('a deny client lookup failure maps to the same 500 JSON error', resourceCase(async () => {
+    const env = await testApp(CONFIG).select({ server: { module: ['oauthAuthorization'] } })
+      .method(ConnectBrowserSessionRepo, 'findByTokenHash', control.once(ok(activeSession)))
+      .method(ConnectBrowserSessionRepo, 'touchSession', ok(undefined))
+      .method(ConnectAccountRepo, 'findByUserId', control.once(ok(activeAccount)))
+      .method(OAuthRepo, 'findClientById', control.once(fails('query_failed', new Error('db down'))))
       .build();
     const response = await env.request({
       method: 'POST',
@@ -258,10 +278,10 @@ describe('oauth authorize negative flows through testDinner', () => {
 
   it('deny with an empty state omits the state parameter from the redirect', resourceCase(async () => {
     const env = await testApp(CONFIG).select({ server: { module: ['oauthAuthorization'] } })
-      .method(ConnectBrowserSessionRepo, 'findByTokenHash', control.once(control.returns(Promise.resolve(activeSession))))
-      .method(ConnectBrowserSessionRepo, 'touchSession', control.returns(Promise.resolve(undefined)))
-      .method(ConnectAccountRepo, 'findByUserId', control.once(control.returns(Promise.resolve(activeAccount))))
-      .method(OAuthRepo, 'findClientById', control.once(control.returns(Promise.resolve(dcrClient))))
+      .method(ConnectBrowserSessionRepo, 'findByTokenHash', control.once(ok(activeSession)))
+      .method(ConnectBrowserSessionRepo, 'touchSession', ok(undefined))
+      .method(ConnectAccountRepo, 'findByUserId', control.once(ok(activeAccount)))
+      .method(OAuthRepo, 'findClientById', control.once(ok(dcrClient)))
       .build();
     const response = await env.request({
       method: 'POST',
@@ -279,9 +299,9 @@ describe('oauth authorize negative flows through testDinner', () => {
 
   it('an authenticated approve with invalid OAuth params is a 400 JSON error', resourceCase(async () => {
     const env = await testApp(CONFIG).select({ server: { module: ['oauthAuthorization'] } })
-      .method(ConnectBrowserSessionRepo, 'findByTokenHash', control.once(control.returns(Promise.resolve(activeSession))))
-      .method(ConnectBrowserSessionRepo, 'touchSession', control.returns(Promise.resolve(undefined)))
-      .method(ConnectAccountRepo, 'findByUserId', control.once(control.returns(Promise.resolve(activeAccount))))
+      .method(ConnectBrowserSessionRepo, 'findByTokenHash', control.once(ok(activeSession)))
+      .method(ConnectBrowserSessionRepo, 'touchSession', ok(undefined))
+      .method(ConnectAccountRepo, 'findByUserId', control.once(ok(activeAccount)))
       .method(OAuthRepo, 'findClientById', control.never())
       .method(OAuthRepo, 'createConnection', control.never())
       .build();
@@ -301,10 +321,10 @@ describe('oauth authorize negative flows through testDinner', () => {
 
   it('approve rejects a parseable approved scope that escalates read to read_write', resourceCase(async () => {
     const env = await testApp(CONFIG).select({ server: { module: ['oauthAuthorization'] } })
-      .method(ConnectBrowserSessionRepo, 'findByTokenHash', control.once(control.returns(Promise.resolve(activeSession))))
-      .method(ConnectBrowserSessionRepo, 'touchSession', control.returns(Promise.resolve(undefined)))
-      .method(ConnectAccountRepo, 'findByUserId', control.once(control.returns(Promise.resolve(activeAccount))))
-      .method(OAuthRepo, 'findClientById', control.returns(Promise.resolve(dcrClient)))
+      .method(ConnectBrowserSessionRepo, 'findByTokenHash', control.once(ok(activeSession)))
+      .method(ConnectBrowserSessionRepo, 'touchSession', ok(undefined))
+      .method(ConnectAccountRepo, 'findByUserId', control.once(ok(activeAccount)))
+      .method(OAuthRepo, 'findClientById', ok(dcrClient))
       .method(OAuthRepo, 'createConnection', control.never())
       .build();
     const response = await env.request({
@@ -328,13 +348,13 @@ describe('oauth authorize negative flows through testDinner', () => {
 
   it('compensation still fails safe when revoke also fails after code issuance fails', resourceCase(async () => {
     const env = await testApp(CONFIG).select({ server: { module: ['oauthAuthorization'] } })
-      .method(ConnectBrowserSessionRepo, 'findByTokenHash', control.once(control.returns(Promise.resolve(activeSession))))
-      .method(ConnectBrowserSessionRepo, 'touchSession', control.returns(Promise.resolve(undefined)))
-      .method(ConnectAccountRepo, 'findByUserId', control.once(control.returns(Promise.resolve(activeAccount))))
-      .method(OAuthRepo, 'findClientById', control.returns(Promise.resolve(dcrClient)))
-      .method(OAuthRepo, 'createConnection', control.once(control.returns(Promise.resolve(undefined))))
-      .method(OAuthRepo, 'createCode', control.once(control.throws(new Error('code write failed'))))
-      .method(OAuthRepo, 'revokeConnection', control.once(control.returns(rejected('revoke also failed'))))
+      .method(ConnectBrowserSessionRepo, 'findByTokenHash', control.once(ok(activeSession)))
+      .method(ConnectBrowserSessionRepo, 'touchSession', ok(undefined))
+      .method(ConnectAccountRepo, 'findByUserId', control.once(ok(activeAccount)))
+      .method(OAuthRepo, 'findClientById', ok(dcrClient))
+      .method(OAuthRepo, 'createConnection', control.once(ok(undefined)))
+      .method(OAuthRepo, 'createCode', control.once(fails('write_failed', new Error('code write failed'))))
+      .method(OAuthRepo, 'revokeConnection', control.once(fails('write_failed', new Error('revoke also failed'))))
       .method(OAuthRepo, 'revokeSupersededConnections', control.never())
       .build();
     const response = await env.request({
@@ -369,14 +389,14 @@ describe('oauth authorize negative flows through testDinner', () => {
 
   it('failed best-effort superseding never breaks a fresh authorization', resourceCase(async () => {
     const env = await testApp(CONFIG).select({ server: { module: ['oauthAuthorization'] } })
-      .method(ConnectBrowserSessionRepo, 'findByTokenHash', control.once(control.returns(Promise.resolve(activeSession))))
-      .method(ConnectBrowserSessionRepo, 'touchSession', control.returns(Promise.resolve(undefined)))
-      .method(ConnectAccountRepo, 'findByUserId', control.once(control.returns(Promise.resolve(activeAccount))))
-      .method(OAuthRepo, 'findClientById', control.returns(Promise.resolve(dcrClient)))
-      .method(OAuthRepo, 'createConnection', control.once(control.returns(Promise.resolve(undefined))))
-      .method(OAuthRepo, 'createCode', control.once(control.returns(Promise.resolve(undefined))))
-      .method(OAuthRepo, 'revokeSupersededConnectionTokens', control.once(control.returns(rejected('supersede tokens failed'))))
-      .method(OAuthRepo, 'revokeSupersededConnections', control.once(control.returns(rejected('supersede connections failed'))))
+      .method(ConnectBrowserSessionRepo, 'findByTokenHash', control.once(ok(activeSession)))
+      .method(ConnectBrowserSessionRepo, 'touchSession', ok(undefined))
+      .method(ConnectAccountRepo, 'findByUserId', control.once(ok(activeAccount)))
+      .method(OAuthRepo, 'findClientById', ok(dcrClient))
+      .method(OAuthRepo, 'createConnection', control.once(ok(undefined)))
+      .method(OAuthRepo, 'createCode', control.once(ok(undefined)))
+      .method(OAuthRepo, 'revokeSupersededConnectionTokens', control.once(fails('write_failed', new Error('supersede tokens failed'))))
+      .method(OAuthRepo, 'revokeSupersededConnections', control.once(fails('write_failed', new Error('supersede connections failed'))))
       .method(OAuthRepo, 'revokeConnection', control.never())
       .build();
     const response = await env.request({

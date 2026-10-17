@@ -1,4 +1,5 @@
 import { Component, LoadAs } from "@noego/ioc";
+import { Trust } from "@noego/trust";
 import { Query, QueryBinder, Single, run } from "sqlstack";
 
 export type ConnectDesktopClaimStatus = "pending" | "accepted" | "denied";
@@ -21,35 +22,53 @@ export interface ConnectDesktopClaim {
 @Component({ scope: LoadAs.Singleton })
 export default class ConnectDesktopClaimRepo {
   @Query()
-  createClaim(_params: Omit<ConnectDesktopClaim, "status" | "decided_at" | "decided_by_user_id" | "decision_idempotency_key">): Promise<void> {
-    return run();
+  async createClaim(_params: Omit<ConnectDesktopClaim, "status" | "decided_at" | "decided_by_user_id" | "decision_idempotency_key">) {
+    return Trust.tryAsync(
+      () => run<void>(),
+      (cause) => ({ kind: "write_failed", cause }),
+    );
   }
 
   @Single
   @Query()
-  findByClaimId(_params: { claim_id: string }): Promise<ConnectDesktopClaim | null> {
-    return run();
+  async findByClaimId(_params: { claim_id: string }) {
+    return Trust.tryAsync(
+      () => run<ConnectDesktopClaim | null>(),
+      (cause) => ({ kind: "query_failed", cause }),
+    );
   }
 
   @Single
   @Query()
-  findByCodeHash(_params: { short_code_hash: string }): Promise<ConnectDesktopClaim | null> {
-    return run();
+  async findByCodeHash(_params: { short_code_hash: string }) {
+    return Trust.tryAsync(
+      () => run<ConnectDesktopClaim | null>(),
+      (cause) => ({ kind: "query_failed", cause }),
+    );
   }
 
   @Single
   @Query()
-  findByIdempotencyKey(_params: { idempotency_key: string }): Promise<ConnectDesktopClaim | null> {
-    return run();
+  async findByIdempotencyKey(_params: { idempotency_key: string }) {
+    return Trust.tryAsync(
+      () => run<ConnectDesktopClaim | null>(),
+      (cause) => ({ kind: "query_failed", cause }),
+    );
   }
 
   @Query()
-  acceptPending(_params: { claim_id: string; decided_at: string; decided_by_user_id: string; decision_idempotency_key: string }): Promise<void> {
-    return run();
+  async acceptPending(_params: { claim_id: string; decided_at: string; decided_by_user_id: string; decision_idempotency_key: string }) {
+    return Trust.tryAsync(
+      () => run<void>(),
+      (cause) => ({ kind: "write_failed", cause }),
+    );
   }
 
   @Query()
-  denyPending(_params: { claim_id: string; decided_at: string; decided_by_user_id: string; decision_idempotency_key: string }): Promise<void> {
-    return run();
+  async denyPending(_params: { claim_id: string; decided_at: string; decided_by_user_id: string; decision_idempotency_key: string }) {
+    return Trust.tryAsync(
+      () => run<void>(),
+      (cause) => ({ kind: "write_failed", cause }),
+    );
   }
 }

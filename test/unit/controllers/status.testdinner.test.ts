@@ -8,6 +8,7 @@ import { describe, it, expect } from 'vitest';
 import path from 'node:path';
 import { testApp } from '@noego/app';
 import { test as control, resourceCase } from '@noego/testing';
+import { Result } from '@noego/trust';
 import StatusLogic from '../../../src/server/logic/status.logic';
 import { GUEST_ACTOR, createActor } from '../../../src/server/types/actor';
 import { ForbiddenError } from '../../../src/server/errors/domain_errors';
@@ -35,7 +36,7 @@ describe('status routes through testDinner (no server, no database)', () => {
 
   it('admin deep status reports connected when the SQL boundary reports 1', resourceCase(async () => {
     const env = await testApp(CONFIG).select({ server: { module: ['status'] } })
-      .method(StatusRepo, 'checkDatabase', control.once(control.returns(Promise.resolve({ result: 1 }))))
+      .method(StatusRepo, 'checkDatabase', control.once(control.returns(Promise.resolve(Result.ok({ result: 1 })))))
       .build();
     // Logic-depth surface for the admin branch (auth middleware owns req.user
     // in production; the authorization rule itself lives in StatusLogic).
@@ -56,7 +57,9 @@ describe('status routes through testDinner (no server, no database)', () => {
 
   it('database failures degrade to a structured ERROR payload', resourceCase(async () => {
     const env = await testApp(CONFIG).select({ server: { module: ['status'] } })
-      .method(StatusRepo, 'checkDatabase', control.once(control.throws(new Error('connection refused'))))
+      .method(StatusRepo, 'checkDatabase', control.once(control.returns(Promise.resolve(
+        Result.err({ kind: 'query_failed', cause: new Error('connection refused') }),
+      ))))
       .build();
     const logic = await env.get<StatusLogic>(StatusLogic);
     const result = await logic.getDatabaseStatus(createActor({ id: 1, role: 'admin' }));

@@ -1,10 +1,14 @@
 import { Component, Inject } from "@noego/ioc";
 import type { CompatRequest as Request, CompatResponse as Response } from "@noego/dinner";
+import { getLogger } from "@noego/logger";
 import ConnectChannelAuthService from "../services/connect_channel_auth_service";
 import Env from "../services/env";
 import RawRequest from "../services/raw_request";
+import type { RepoUnavailable } from "../repo/repo_failure";
 
 type Context = { req: Request; res: Response };
+
+const logger = getLogger("kazibee:connect-channel-controller");
 
 interface CoordinatorNamespace {
   idFromName(name: string): unknown;
@@ -83,6 +87,10 @@ export default class ConnectChannelController {
       generation: Number(generation),
     });
     if (!verdict.ok) {
+      if ("failure" in verdict) {
+        this.logUnavailable(executorId, verdict);
+        return res.status(500).json({ error: true, code: "CHANNEL_AUTH_UNAVAILABLE" });
+      }
       return res.status(401).json({ error: true, code: "CHANNEL_AUTH_FAILED" });
     }
 
@@ -127,7 +135,20 @@ export default class ConnectChannelController {
       deviceId: body.deviceId,
       generation: Number(body.generation),
     });
-    if (!verdict.ok) return res.status(401).json({ ok: false });
+    if (!verdict.ok) {
+      if ("failure" in verdict) {
+        this.logUnavailable(body.executorId, verdict);
+        return res.status(500).json({ ok: false });
+      }
+      return res.status(401).json({ ok: false });
+    }
     return res.json({ ok: true, executorId: verdict.executorId, generation: verdict.generation });
+  }
+
+  /** The credential lookup failed in the repository: logged here, answered 500. */
+  private logUnavailable(executorId: string, unavailable: RepoUnavailable): void {
+    logger.error("Executor channel credential lookup failed", {
+      executorId, kind: unavailable.failure.kind, error: unavailable.failure.cause,
+    });
   }
 }

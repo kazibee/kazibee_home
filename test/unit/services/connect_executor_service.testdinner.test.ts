@@ -14,6 +14,7 @@ import path from 'node:path';
 
 import { testApp } from "@noego/app";
 import { resourceCase, testStub, test as control } from "@noego/testing";
+import { Result } from "@noego/trust";
 
 import ConnectExecutorService from '../../../src/server/services/connect_executor_service';
 import type { ConnectExecutorActor } from '../../../src/server/services/connect_executor_actor_resolver';
@@ -94,7 +95,11 @@ const credentialRow = (overrides: Record<string, unknown> = {}) => ({
   ...overrides,
 });
 
-const returns = (value: unknown) => control.returns(Promise.resolve(value));
+/** A repository read/write that succeeds with `value`. */
+const returns = (value: unknown) => control.returns(Promise.resolve(Result.ok(value)));
+/** A repository read (`query_failed`) or write (`write_failed`) that fails with `cause`. */
+const fails = (kind: "query_failed" | "write_failed", cause: unknown) =>
+  control.returns(Promise.resolve(Result.err({ kind, cause })));
 
 const deploymentIdentity = testStub().method(ConnectWebsiteDeploymentIdentityRepo, "findSingleton", returns({ website_deployment_id: DEPLOYMENT_ID }));
 
@@ -183,7 +188,7 @@ describe('createClaim', () => {
     const env = await testApp(CONFIG).select({ server: { module: ["connectExecutors"] } })
       .method(ConnectExecutorClaimRepo, "findByIdempotencyKey", returns(null))
       .method(ConnectExecutorClaimRepo, "findByClaimId", returns(null))
-      .method(ConnectExecutorClaimRepo, "createClaim", control.throws(new Error('UNIQUE constraint failed: connect_executor_claims.claim_id')))
+      .method(ConnectExecutorClaimRepo, "createClaim", fails('write_failed', new Error('UNIQUE constraint failed: connect_executor_claims.claim_id')))
       .method(ConnectExecutorRepo, "findByExecutorId", returns(null))
       .method(ConnectExecutorRepo, "createExecutor", returns(undefined))
       .build();
@@ -195,7 +200,7 @@ describe('createClaim', () => {
 
   it('maps any other repository failure to failed', resourceCase(async () => {
     const env = await testApp(CONFIG).select({ server: { module: ["connectExecutors"] } })
-      .method(ConnectExecutorClaimRepo, "findByIdempotencyKey", control.throws(new Error('boom')))
+      .method(ConnectExecutorClaimRepo, "findByIdempotencyKey", fails('query_failed', new Error('boom')))
       .build();
     const service = await env.get<ConnectExecutorService>(ConnectExecutorService);
       expect(await service.createClaim(claimInput(), BOOTSTRAP_TOKEN)).toEqual({ outcome: 'failed' });
@@ -280,7 +285,7 @@ describe('status', () => {
 
   it('degrades a repository failure to failed', resourceCase(async () => {
     const env = await testApp(CONFIG).select({ server: { module: ["connectExecutors"] } })
-      .method(ConnectExecutorClaimRepo, "findByClaimId", control.throws(new Error('boom')))
+      .method(ConnectExecutorClaimRepo, "findByClaimId", fails('query_failed', new Error('boom')))
       .build();
     const service = await env.get<ConnectExecutorService>(ConnectExecutorService);
       expect(await service.status(CLAIM_ID, BOOTSTRAP_TOKEN)).toEqual({ outcome: 'failed' });
@@ -316,7 +321,7 @@ describe('review', () => {
 
   it('degrades a repository failure to failed', resourceCase(async () => {
     const env = await testApp(CONFIG).select({ server: { module: ["connectExecutors"] } })
-      .method(ConnectExecutorClaimRepo, "findByClaimId", control.throws(new Error('boom')))
+      .method(ConnectExecutorClaimRepo, "findByClaimId", fails('query_failed', new Error('boom')))
       .build();
     const service = await env.get<ConnectExecutorService>(ConnectExecutorService);
       expect(await service.review({ claimId: CLAIM_ID })).toEqual({ outcome: 'failed' });
@@ -481,8 +486,8 @@ describe('list / presence / detail', () => {
       .method(ConnectExecutorRepo, "listByOwner", control.once(returns([executorRow()])))
       .build();
     const service = await env.get<ConnectExecutorService>(ConnectExecutorService);
-      expect(await service.list(browserActor)).toHaveLength(1);
-      expect(await service.list(deviceActor)).toEqual([]);
+      expect(await service.list(browserActor)).toEqual(Result.ok([executorRow()]));
+      expect(await service.list(deviceActor)).toEqual(Result.ok([]));
 
     await env.verify();
   }));
@@ -502,7 +507,7 @@ describe('list / presence / detail', () => {
       .method(ConnectExecutorRepo, "findByExecutorId", control.calls([
           returns(executorRow()),
           returns(executorRow({ owner_user_id: 'usr_someoneelse' })),
-          control.throws(new Error('boom')),
+          fails('query_failed', new Error('boom')),
         ]))
       .build();
     const service = await env.get<ConnectExecutorService>(ConnectExecutorService);
@@ -560,11 +565,22 @@ describe('rename', () => {
           returns(executorRow({ display_name: 'Old Name' })),
           returns(executorRow()),
         ]))
-      .method(ConnectExecutorRepo, "renameOwned", control.calls([returns(undefined), control.throws(new Error('boom'))]))
+      .method(ConnectExecutorRepo, "renameOwned", control.calls([returns(undefined), fails('write_failed', new Error('boom'))]))
       .build();
     const service = await env.get<ConnectExecutorService>(ConnectExecutorService);
       expect(await service.rename(browserActor, renameInput)).toEqual({ outcome: 'not-found' });
       expect(await service.rename(browserActor, renameInput)).toEqual({ outcome: 'failed' });
+
+    await env.verify();
+  }));
+
+  it('answers failed, not not-found, when the executor lookup fails, and writes nothing', resourceCase(async () => {
+    const env = await testApp(CONFIG).select({ server: { module: ["connectExecutors"] } })
+      .method(ConnectExecutorRepo, "findByExecutorId", control.once(fails('query_failed', new Error('db down'))))
+      .method(ConnectExecutorRepo, "renameOwned", control.never())
+      .build();
+    const service = await env.get<ConnectExecutorService>(ConnectExecutorService);
+    expect(await service.rename(browserActor, renameInput)).toEqual({ outcome: 'failed' });
 
     await env.verify();
   }));
@@ -628,6 +644,18 @@ describe('revoke', () => {
       .build();
     const service = await env.get<ConnectExecutorService>(ConnectExecutorService);
       expect(await service.revoke(browserActor, revokeInput)).toEqual({ outcome: 'failed' });
+
+    await env.verify();
+  }));
+
+  it('answers failed, not not-found, when the executor lookup fails, and writes nothing', resourceCase(async () => {
+    const env = await testApp(CONFIG).select({ server: { module: ["connectExecutors"] } })
+      .method(ConnectExecutorRepo, "findByExecutorId", control.once(fails('query_failed', new Error('db down'))))
+      .method(ConnectExecutorRepo, "revokeOwned", control.never())
+      .method(ConnectExecutorCredentialRepo, "revokeForExecutor", control.never())
+      .build();
+    const service = await env.get<ConnectExecutorService>(ConnectExecutorService);
+    expect(await service.revoke(browserActor, revokeInput)).toEqual({ outcome: 'failed' });
 
     await env.verify();
   }));

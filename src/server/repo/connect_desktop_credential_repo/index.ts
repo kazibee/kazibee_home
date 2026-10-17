@@ -1,4 +1,5 @@
 import { Component, LoadAs } from "@noego/ioc";
+import { Trust } from "@noego/trust";
 import { Query, QueryBinder, Single, run } from "sqlstack";
 
 export interface ConnectDesktopCredential {
@@ -17,18 +18,27 @@ export interface ConnectDesktopCredential {
 @Component({ scope: LoadAs.Singleton })
 export default class ConnectDesktopCredentialRepo {
   @Query()
-  createCredential(_params: Omit<ConnectDesktopCredential, "status" | "revoked_at" | "audience">): Promise<void> {
-    return run();
+  async createCredential(_params: Omit<ConnectDesktopCredential, "status" | "revoked_at" | "audience">) {
+    return Trust.tryAsync(
+      () => run<void>(),
+      (cause) => ({ kind: "write_failed", cause }),
+    );
   }
 
   @Single
   @Query()
-  findByTokenHash(_params: { token_hash: string }): Promise<ConnectDesktopCredential | null> {
-    return run();
+  async findByTokenHash(_params: { token_hash: string }) {
+    return Trust.tryAsync(
+      () => run<ConnectDesktopCredential | null>(),
+      (cause) => ({ kind: "query_failed", cause }),
+    );
   }
 
   @Query()
-  revokeForDevice(_params: { device_id: string; revoked_at: string }): Promise<void> {
-    return run();
+  async revokeForDevice(_params: { device_id: string; revoked_at: string }) {
+    return Trust.tryAsync(
+      () => run<void>(),
+      (cause) => ({ kind: "write_failed", cause }),
+    );
   }
 }

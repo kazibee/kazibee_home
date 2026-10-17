@@ -18,6 +18,7 @@ import path from 'node:path';
 import { createHash } from 'node:crypto';
 import { testApp } from '@noego/app';
 import { test as control, resourceCase } from '@noego/testing';
+import { Result } from '@noego/trust';
 import ConnectDesktopLogic from '../../../src/server/logic/connect_desktop.logic';
 import type { ConnectDesktopActor } from '../../../src/server/services/connect_desktop_actor_resolver';
 import ConnectDesktopClaimRepo from '../../../src/server/repo/connect_desktop_claim_repo';
@@ -28,6 +29,8 @@ const CONFIG = path.resolve(__dirname, '../../../noego.config.yml');
 const SELECT = { server: { module: ['connectDesktops'] } } as const;
 
 const sha256 = (value: string) => createHash('sha256').update(value, 'utf8').digest('hex');
+/** A repository read that succeeds with `value`. */
+const ok = (value: unknown) => control.returns(Promise.resolve(Result.ok(value)));
 
 const NOW = new Date('2026-01-01T00:00:00.000Z');
 const TOKEN = 'B'.repeat(43);
@@ -56,7 +59,7 @@ const browserActor: ConnectDesktopActor = {
 describe('connect desktop routes through testDinner (no server, no database)', () => {
   it('GET /claims/{claimId}/status for an unknown claim is 404 with the request correlation id', resourceCase(async () => {
     const env = await testApp(CONFIG).select(SELECT)
-      .method(ConnectDesktopClaimRepo, 'findByClaimId', control.once(control.returns(Promise.resolve(null))))
+      .method(ConnectDesktopClaimRepo, 'findByClaimId', control.once(ok(null)))
       .build();
     const response = await env.request({
       method: 'GET', path: `/v1/connect/desktops/claims/${CLAIM_ID}/status`,
@@ -72,7 +75,7 @@ describe('connect desktop routes through testDinner (no server, no database)', (
 
   it('GET /claims/{claimId}/status with a wrong bootstrap token is a uniform 401', resourceCase(async () => {
     const env = await testApp(CONFIG).select(SELECT)
-      .method(ConnectDesktopClaimRepo, 'findByClaimId', control.once(control.returns(Promise.resolve(claim))))
+      .method(ConnectDesktopClaimRepo, 'findByClaimId', control.once(ok(claim)))
       .method(ConnectDesktopDeviceRepo, 'findByDeviceId', control.never())
       .build();
     const response = await env.request({
@@ -87,7 +90,7 @@ describe('connect desktop routes through testDinner (no server, no database)', (
 
   it('GET /claims/{claimId}/status reports pending for a live claim with the right token', resourceCase(async () => {
     const env = await testApp(CONFIG).select(SELECT)
-      .method(ConnectDesktopClaimRepo, 'findByClaimId', control.once(control.returns(Promise.resolve(claim))))
+      .method(ConnectDesktopClaimRepo, 'findByClaimId', control.once(ok(claim)))
       .method(ConnectClock, 'now', control.returns(NOW))
       .build();
     const response = await env.request({
@@ -105,7 +108,7 @@ describe('connect desktop routes through testDinner (no server, no database)', (
 
   it('an expired pending claim is reported as expired, straight from the clock', resourceCase(async () => {
     const env = await testApp(CONFIG).select(SELECT)
-      .method(ConnectDesktopClaimRepo, 'findByClaimId', control.once(control.returns(Promise.resolve(claim))))
+      .method(ConnectDesktopClaimRepo, 'findByClaimId', control.once(ok(claim)))
       .method(ConnectClock, 'now', control.returns(new Date(NOW.getTime() + 3_600_000)))
       .build();
     const response = await env.request({
@@ -143,17 +146,17 @@ describe('connect desktop routes through testDinner (no server, no database)', (
 
   it('logic-depth list: owners see their devices; no browser session means an empty list', resourceCase(async () => {
     const env = await testApp(CONFIG).select(SELECT)
-      .method(ConnectDesktopDeviceRepo, 'listByOwner', control.once(control.returns(Promise.resolve([device]))))
+      .method(ConnectDesktopDeviceRepo, 'listByOwner', control.once(ok([device])))
       .build();
     const logic = await env.get<ConnectDesktopLogic>(ConnectDesktopLogic);
-    expect(await logic.list(browserActor)).toEqual([device]);
-    expect(await logic.list({ role: 'desktop_device', deviceId: DEVICE_ID, generation: 1 })).toEqual([]);
+    expect(await logic.list(browserActor)).toEqual(Result.ok([device]));
+    expect(await logic.list({ role: 'desktop_device', deviceId: DEVICE_ID, generation: 1 })).toEqual(Result.ok([]));
     await env.verify();
   }));
 
   it('logic-depth detail: ownership is enforced on the device row', resourceCase(async () => {
     const env = await testApp(CONFIG).select(SELECT)
-      .method(ConnectDesktopDeviceRepo, 'findByDeviceId', control.returns(Promise.resolve(device)))
+      .method(ConnectDesktopDeviceRepo, 'findByDeviceId', ok(device))
       .build();
     const logic = await env.get<ConnectDesktopLogic>(ConnectDesktopLogic);
     expect(await logic.detail(browserActor, DEVICE_ID)).toEqual({ outcome: 'found', device });
@@ -164,9 +167,9 @@ describe('connect desktop routes through testDinner (no server, no database)', (
 
   it('logic-depth review: a short code resolves through its hash to the claim and device', resourceCase(async () => {
     const env = await testApp(CONFIG).select(SELECT)
-      .method(ConnectDesktopClaimRepo, 'findByCodeHash', control.once(control.returns(Promise.resolve(claim))))
+      .method(ConnectDesktopClaimRepo, 'findByCodeHash', control.once(ok(claim)))
       .method(ConnectDesktopClaimRepo, 'findByClaimId', control.never())
-      .method(ConnectDesktopDeviceRepo, 'findByDeviceId', control.once(control.returns(Promise.resolve(device))))
+      .method(ConnectDesktopDeviceRepo, 'findByDeviceId', control.once(ok(device)))
       .method(ConnectClock, 'now', control.returns(NOW))
       .build();
     const logic = await env.get<ConnectDesktopLogic>(ConnectDesktopLogic);

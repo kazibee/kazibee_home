@@ -6,6 +6,7 @@ import { describe, expect, it } from 'vitest';
 import path from 'node:path';
 import { testApp } from '@noego/app';
 import { test as control, testStub, resourceCase } from '@noego/testing';
+import { Result } from '@noego/trust';
 import { SqlStack, SqlStackDB } from 'sqlstack';
 import Env from '../../../src/server/services/env';
 import StatusRepo from '../../../src/server/repo/status_repo';
@@ -41,8 +42,8 @@ describe('testApp over the real product config', () => {
   it('a heavier graph: connect signup resolves its full controller/logic/service chain', resourceCase(async scope => {
     const app = scope.environment(await testApp(CONFIG).use(boundaries)
       .select({server: {path: ['/v1/connect/auth/signup']}})
-      .method(ConnectAccountRepo, 'findPasswordlessByEmail', control.once(control.returns(Promise.resolve(null))))
-      .method(ConnectAccountRepo, 'createAccount', control.once(control.returns(Promise.resolve())))
+      .method(ConnectAccountRepo, 'findPasswordlessByEmail', control.once(control.returns(Promise.resolve(Result.ok(null)))))
+      .method(ConnectAccountRepo, 'createAccount', control.once(control.returns(Promise.resolve(Result.ok(undefined)))))
       .method(ConnectIdGenerator, 'userId', control.returns('usr_testapp01'))
       .build());
     const response = await app.request({

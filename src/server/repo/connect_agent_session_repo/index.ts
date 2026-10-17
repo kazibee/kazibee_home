@@ -1,4 +1,5 @@
 import { Component } from "@noego/ioc";
+import { Trust } from "@noego/trust";
 import { Query, QueryBinder, Single, run } from "sqlstack";
 
 export interface ConnectAgentHandoff {
@@ -26,29 +27,44 @@ export interface ConnectAgentSession {
 @Component()
 export default class ConnectAgentSessionRepo {
   @Query()
-  createHandoff(_params: Omit<ConnectAgentHandoff, "consumed_at">): Promise<void> {
-    return run();
+  async createHandoff(_params: Omit<ConnectAgentHandoff, "consumed_at">) {
+    return Trust.tryAsync(
+      () => run<void>(),
+      (cause) => ({ kind: "write_failed", cause }),
+    );
   }
 
   @Single
   @Query()
-  consumeHandoff(_params: { token_hash: string; consumed_at: string }): Promise<ConnectAgentHandoff | null> {
-    return run();
+  async consumeHandoff(_params: { token_hash: string; consumed_at: string }) {
+    return Trust.tryAsync(
+      () => run<ConnectAgentHandoff | null>(),
+      (cause) => ({ kind: "write_failed", cause }),
+    );
   }
 
   @Query()
-  createSession(_params: Omit<ConnectAgentSession, "revoked_at">): Promise<void> {
-    return run();
+  async createSession(_params: Omit<ConnectAgentSession, "revoked_at">) {
+    return Trust.tryAsync(
+      () => run<void>(),
+      (cause) => ({ kind: "write_failed", cause }),
+    );
   }
 
   @Single
   @Query()
-  findByTokenHash(_params: { session_token_hash: string }): Promise<ConnectAgentSession | null> {
-    return run();
+  async findByTokenHash(_params: { session_token_hash: string }) {
+    return Trust.tryAsync(
+      () => run<ConnectAgentSession | null>(),
+      (cause) => ({ kind: "query_failed", cause }),
+    );
   }
 
   @Query()
-  touchSession(_params: { session_id: string; last_seen_at: string; idle_expires_at: string }): Promise<void> {
-    return run();
+  async touchSession(_params: { session_id: string; last_seen_at: string; idle_expires_at: string }) {
+    return Trust.tryAsync(
+      () => run<void>(),
+      (cause) => ({ kind: "write_failed", cause }),
+    );
   }
 }

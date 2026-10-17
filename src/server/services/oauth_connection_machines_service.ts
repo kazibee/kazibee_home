@@ -1,5 +1,6 @@
 import { mcpStage } from "../observability/mcp_diagnostics";
 import { Component, Inject } from "@noego/ioc";
+import { Result } from "@noego/trust";
 import ConnectExecutorRepo from "../repo/connect_executor_repo";
 import type { OAuthConnectionScope } from "../repo/oauth_repo";
 
@@ -26,15 +27,14 @@ export default class OAuthConnectionMachinesService {
   ) {}
 
   /** Oldest link first: the deterministic routing order for default picks. */
-  async listForUser(
-    userId: string,
-    scope: OAuthConnectionScope,
-  ): Promise<OAuthConnectionMember[]> {
-    const owned = await mcpStage("executor_lookup", () => this.executors.listByOwner({
+  async listForUser(userId: string, scope: OAuthConnectionScope) {
+    const lookup = await mcpStage("executor_lookup", () => this.executors.listByOwner({
       owner_user_id: userId,
       limit: OWNER_EXECUTOR_LIMIT,
     }));
-    return mcpStage("executor_sort", async () => owned
+    if (!lookup.ok) return lookup;
+    const owned = lookup.value;
+    const members: OAuthConnectionMember[] = await mcpStage("executor_sort", async () => owned
       .filter((executor) => executor.state === "active")
       .sort((left, right) =>
         timestampMillis(left.claimed_at ?? left.created_at) - timestampMillis(right.claimed_at ?? right.created_at)
@@ -45,6 +45,7 @@ export default class OAuthConnectionMachinesService {
         scope,
         display_name: executor.display_name,
       })), { count: owned.length, timestampTypes: [...new Set(owned.map(e => typeof (e.claimed_at ?? e.created_at)))].join(",") });
+    return Result.ok(members);
   }
 }
 

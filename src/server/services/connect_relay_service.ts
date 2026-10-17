@@ -1,4 +1,5 @@
 import { Component, Inject } from "@noego/ioc";
+import { Result } from "@noego/trust";
 import type { SseSink as Response } from "./sse_stream";
 import ConnectExecutorRepo from "../repo/connect_executor_repo";
 import ConnectExecutorConnectionRegistry, {
@@ -19,13 +20,15 @@ export default class ConnectRelayService implements ConnectExecutorDispatchPort 
     @Inject(ConnectClientRelayService) private readonly clients: ConnectClientRelayService,
   ) {}
 
+  /** The ack for a hello/heartbeat (null for routed output), or `write_failed` when presence could not be stored. */
   async receive(actor: Extract<ConnectExecutorActor, { role: "executor_device" }>, frame: ExecutorOutboundFrame) {
     const at = this.clock.now().toISOString();
     if (frame.kind === "channel.hello" || frame.kind === "channel.heartbeat") {
-      await this.executors.updatePresence({
+      const presence = await this.executors.updatePresence({
         executor_id: actor.executorId, device_id: actor.deviceId,
         credential_generation: actor.generation, last_seen_at: at,
       });
+      if (!presence.ok) return presence;
       this.registry.touch(actor.executorId, actor.generation);
       if (frame.kind === "channel.hello") {
         this.registry.hello(actor.executorId, actor.generation, frame.correlationId);
@@ -34,11 +37,11 @@ export default class ConnectRelayService implements ConnectExecutorDispatchPort 
     if (frame.kind !== "channel.hello" && frame.kind !== "channel.heartbeat") {
       this.clients.receive(actor.executorId, frame);
     }
-    return frame.kind === "channel.hello" || frame.kind === "channel.heartbeat"
+    return Result.ok(frame.kind === "channel.hello" || frame.kind === "channel.heartbeat"
       ? {
         kind: "channel.ack", protocolVersion: "1.0", executorId: actor.executorId,
         acknowledgedKind: frame.kind, correlationId: frame.correlationId,
-      } : null;
+      } : null);
   }
 
   open(actor: Extract<ConnectExecutorActor, { role: "executor_device" }>, response: Response): string {

@@ -15,6 +15,7 @@ import { createHash } from 'node:crypto';
 import path from 'node:path';
 import { testApp } from '@noego/app';
 import { test as control, testStub, resourceCase } from '@noego/testing';
+import { Result } from '@noego/trust';
 import OAuthClientMetadataClient from '../../../src/server/services/oauth_client_metadata_client';
 import OAuthRepo from '../../../src/server/repo/oauth_repo';
 import ConnectExecutorRepo from '../../../src/server/repo/connect_executor_repo';
@@ -23,6 +24,11 @@ import ConnectBrowserSessionRepo from '../../../src/server/repo/connect_browser_
 import ConnectAccountRepo from '../../../src/server/repo/connect_account_repo';
 
 const CONFIG = path.resolve(__dirname, '../../../noego.config.yml');
+/** A repository call that succeeds with `value`. */
+const ok = (value: unknown) => control.returns(Promise.resolve(Result.ok(value)));
+/** A repository call that fails the way the repos report it: a named kind carrying the cause. */
+const fails = (kind: 'query_failed' | 'write_failed', cause: unknown) =>
+  control.returns(Promise.resolve(Result.err({ kind, cause })));
 
 const RESOURCE = 'https://mcp-dev.kazibee.com/mcp';
 const REDIRECT_URI = 'https://client.example/callback';
@@ -99,13 +105,13 @@ describe('oauth authorize deep flows through testDinner', () => {
   it('POST /oauth/consent/approve succeeds with zero linked machines and writes connection then code', resourceCase(async () => {
     const written: string[] = [];
     const recorded = <T>(name: string, value: T) =>
-      control.returns((async () => { written.push(name); return value; })());
+      control.returns((async () => { written.push(name); return Result.ok(value); })());
     // Session + account stubs shared by every authenticated consent request.
     const env = await testApp(CONFIG).select({ server: { module: ['oauthAuthorization'] } })
-      .method(ConnectBrowserSessionRepo, 'findByTokenHash', control.once(control.returns(Promise.resolve(activeSession))))
-      .method(ConnectBrowserSessionRepo, 'touchSession', control.returns(Promise.resolve(undefined)))
-      .method(ConnectAccountRepo, 'findByUserId', control.once(control.returns(Promise.resolve(activeAccount))))
-      .method(OAuthRepo, 'findClientById', control.returns(Promise.resolve(dcrClient)))
+      .method(ConnectBrowserSessionRepo, 'findByTokenHash', control.once(ok(activeSession)))
+      .method(ConnectBrowserSessionRepo, 'touchSession', ok(undefined))
+      .method(ConnectAccountRepo, 'findByUserId', control.once(ok(activeAccount)))
+      .method(OAuthRepo, 'findClientById', ok(dcrClient))
       .method(OAuthRepo, 'createConnection', control.once(recorded('connection', undefined)))
       .method(OAuthRepo, 'createCode', control.once(recorded('code', undefined)))
       .method(OAuthRepo, 'revokeSupersededConnectionTokens', control.once(recorded('supersede-tokens', undefined)))
@@ -138,13 +144,13 @@ describe('oauth authorize deep flows through testDinner', () => {
 
   it('approve compensates: a failed code issuance revokes the fresh connection', resourceCase(async () => {
     const env = await testApp(CONFIG).select({ server: { module: ['oauthAuthorization'] } })
-      .method(ConnectBrowserSessionRepo, 'findByTokenHash', control.once(control.returns(Promise.resolve(activeSession))))
-      .method(ConnectBrowserSessionRepo, 'touchSession', control.returns(Promise.resolve(undefined)))
-      .method(ConnectAccountRepo, 'findByUserId', control.once(control.returns(Promise.resolve(activeAccount))))
-      .method(OAuthRepo, 'findClientById', control.returns(Promise.resolve(dcrClient)))
-      .method(OAuthRepo, 'createConnection', control.once(control.returns(Promise.resolve(undefined))))
-      .method(OAuthRepo, 'createCode', control.once(control.throws(new Error('code write failed'))))
-      .method(OAuthRepo, 'revokeConnection', control.once(control.returns(Promise.resolve(undefined))))
+      .method(ConnectBrowserSessionRepo, 'findByTokenHash', control.once(ok(activeSession)))
+      .method(ConnectBrowserSessionRepo, 'touchSession', ok(undefined))
+      .method(ConnectAccountRepo, 'findByUserId', control.once(ok(activeAccount)))
+      .method(OAuthRepo, 'findClientById', ok(dcrClient))
+      .method(OAuthRepo, 'createConnection', control.once(ok(undefined)))
+      .method(OAuthRepo, 'createCode', control.once(fails('write_failed', new Error('code write failed'))))
+      .method(OAuthRepo, 'revokeConnection', control.once(ok(undefined)))
       .method(OAuthRepo, 'revokeSupersededConnections', control.never())
       .build();
     const response = await env.request({
@@ -164,10 +170,10 @@ describe('oauth authorize deep flows through testDinner', () => {
 
   it('approve rejects an approved scope that escalates read to read_write', resourceCase(async () => {
     const env = await testApp(CONFIG).select({ server: { module: ['oauthAuthorization'] } })
-      .method(ConnectBrowserSessionRepo, 'findByTokenHash', control.once(control.returns(Promise.resolve(activeSession))))
-      .method(ConnectBrowserSessionRepo, 'touchSession', control.returns(Promise.resolve(undefined)))
-      .method(ConnectAccountRepo, 'findByUserId', control.once(control.returns(Promise.resolve(activeAccount))))
-      .method(OAuthRepo, 'findClientById', control.returns(Promise.resolve(dcrClient)))
+      .method(ConnectBrowserSessionRepo, 'findByTokenHash', control.once(ok(activeSession)))
+      .method(ConnectBrowserSessionRepo, 'touchSession', ok(undefined))
+      .method(ConnectAccountRepo, 'findByUserId', control.once(ok(activeAccount)))
+      .method(OAuthRepo, 'findClientById', ok(dcrClient))
       .method(OAuthRepo, 'createConnection', control.never())
       .build();
     const response = await env.request({
@@ -190,14 +196,14 @@ describe('oauth authorize deep flows through testDinner', () => {
 
   it('GET /oauth/consent/context projects the client and live executor presence', resourceCase(async () => {
     const env = await testApp(CONFIG).select({ server: { module: ['oauthAuthorization'] } })
-      .method(ConnectBrowserSessionRepo, 'findByTokenHash', control.once(control.returns(Promise.resolve(activeSession))))
-      .method(ConnectBrowserSessionRepo, 'touchSession', control.returns(Promise.resolve(undefined)))
-      .method(ConnectAccountRepo, 'findByUserId', control.once(control.returns(Promise.resolve(activeAccount))))
-      .method(OAuthRepo, 'findClientById', control.returns(Promise.resolve(dcrClient)))
-      .method(ConnectExecutorRepo, 'listByOwner', control.once(control.returns(Promise.resolve([
+      .method(ConnectBrowserSessionRepo, 'findByTokenHash', control.once(ok(activeSession)))
+      .method(ConnectBrowserSessionRepo, 'touchSession', ok(undefined))
+      .method(ConnectAccountRepo, 'findByUserId', control.once(ok(activeAccount)))
+      .method(OAuthRepo, 'findClientById', ok(dcrClient))
+      .method(ConnectExecutorRepo, 'listByOwner', control.once(ok([
         executor,
         { ...executor, executor_id: 'exe_pending', state: 'pending' },
-      ]))))
+      ])))
       .method(RemoteToolDispatchService, 'presenceDetail', control.once(control.returns(Promise.resolve({
         state: 'online',
         workspaces: [{ workspaceId: 'ws_1', displayName: 'Repo', state: 'ready' }],
@@ -228,11 +234,11 @@ describe('oauth authorize deep flows through testDinner', () => {
 
   it('context with a null presence detail degrades the executor to offline', resourceCase(async () => {
     const env = await testApp(CONFIG).select({ server: { module: ['oauthAuthorization'] } })
-      .method(ConnectBrowserSessionRepo, 'findByTokenHash', control.once(control.returns(Promise.resolve(activeSession))))
-      .method(ConnectBrowserSessionRepo, 'touchSession', control.returns(Promise.resolve(undefined)))
-      .method(ConnectAccountRepo, 'findByUserId', control.once(control.returns(Promise.resolve(activeAccount))))
-      .method(OAuthRepo, 'findClientById', control.returns(Promise.resolve({ ...dcrClient, client_name: '  ' })))
-      .method(ConnectExecutorRepo, 'listByOwner', control.once(control.returns(Promise.resolve([executor]))))
+      .method(ConnectBrowserSessionRepo, 'findByTokenHash', control.once(ok(activeSession)))
+      .method(ConnectBrowserSessionRepo, 'touchSession', ok(undefined))
+      .method(ConnectAccountRepo, 'findByUserId', control.once(ok(activeAccount)))
+      .method(OAuthRepo, 'findClientById', ok({ ...dcrClient, client_name: '  ' }))
+      .method(ConnectExecutorRepo, 'listByOwner', control.once(ok([executor])))
       .method(RemoteToolDispatchService, 'presenceDetail', control.once(control.returns(Promise.resolve(null))))
       .build();
     const response = await env.request({
@@ -256,10 +262,10 @@ describe('oauth authorize deep flows through testDinner', () => {
 
   it('context failures inside the service map to a 500 JSON error', resourceCase(async () => {
     const env = await testApp(CONFIG).select({ server: { module: ['oauthAuthorization'] } })
-      .method(ConnectBrowserSessionRepo, 'findByTokenHash', control.once(control.returns(Promise.resolve(activeSession))))
-      .method(ConnectBrowserSessionRepo, 'touchSession', control.returns(Promise.resolve(undefined)))
-      .method(ConnectAccountRepo, 'findByUserId', control.once(control.returns(Promise.resolve(activeAccount))))
-      .method(OAuthRepo, 'findClientById', control.once(control.throws(new Error('db down'))))
+      .method(ConnectBrowserSessionRepo, 'findByTokenHash', control.once(ok(activeSession)))
+      .method(ConnectBrowserSessionRepo, 'touchSession', ok(undefined))
+      .method(ConnectAccountRepo, 'findByUserId', control.once(ok(activeAccount)))
+      .method(OAuthRepo, 'findClientById', control.once(fails('query_failed', new Error('db down'))))
       .build();
     const response = await env.request({
       method: 'GET',
@@ -284,7 +290,7 @@ describe('oauth authorize deep flows through testDinner', () => {
     ];
     for (const { override, error } of cases) {
       const env = await testApp(CONFIG).select({ server: { module: ['oauthAuthorization'] } })
-        .method(OAuthRepo, 'findClientById', control.returns(Promise.resolve(dcrClient)))
+        .method(OAuthRepo, 'findClientById', ok(dcrClient))
         .build();
       const response = await env.request({
         method: 'GET',
@@ -301,7 +307,7 @@ describe('oauth authorize deep flows through testDinner', () => {
 
   it('validate: an unregistered redirect_uri renders the plain 400 page, never a redirect', resourceCase(async () => {
     const env = await testApp(CONFIG).select({ server: { module: ['oauthAuthorization'] } })
-      .method(OAuthRepo, 'findClientById', control.returns(Promise.resolve(dcrClient)))
+      .method(OAuthRepo, 'findClientById', ok(dcrClient))
       .build();
     const response = await env.request({
       method: 'GET',
@@ -314,7 +320,7 @@ describe('oauth authorize deep flows through testDinner', () => {
 
   it('validate: a loopback redirect matches its registration ignoring the ephemeral port', resourceCase(async () => {
     const env = await testApp(CONFIG).select({ server: { module: ['oauthAuthorization'] } })
-      .method(OAuthRepo, 'findClientById', control.returns(Promise.resolve(dcrClient)))
+      .method(OAuthRepo, 'findClientById', ok(dcrClient))
       .build();
     const response = await env.request({
       method: 'GET',
@@ -334,8 +340,8 @@ describe('oauth authorize deep flows through testDinner', () => {
     };
     const env = await testApp(CONFIG).select({ server: { module: ['oauthAuthorization'] } })
       .use(cimdResponse(jsonResponse(metadata)))
-      .method(OAuthRepo, 'findClientById', control.once(control.returns(Promise.resolve(null))))
-      .method(OAuthRepo, 'createClient', control.once(control.returns(Promise.resolve(undefined))))
+      .method(OAuthRepo, 'findClientById', control.once(ok(null)))
+      .method(OAuthRepo, 'createClient', control.once(ok(undefined)))
       .build();
     const response = await env.request({
       method: 'GET',
@@ -359,7 +365,7 @@ describe('oauth authorize deep flows through testDinner', () => {
     for (const attempt of attempts) {
       const env = await testApp(CONFIG).select({ server: { module: ['oauthAuthorization'] } })
         .use(attempt)
-        .method(OAuthRepo, 'findClientById', control.once(control.returns(Promise.resolve(null))))
+        .method(OAuthRepo, 'findClientById', control.once(ok(null)))
         .method(OAuthRepo, 'createClient', control.never())
         .build();
       const response = await env.request({
@@ -373,15 +379,47 @@ describe('oauth authorize deep flows through testDinner', () => {
     }
   }));
 
+  it('a failed CIMD cache write is a 500 server_error, while a duplicate-key write from a concurrent resolve still resolves', resourceCase(async () => {
+    const CIMD_ID = 'https://client.example/oauth-client.json';
+    const metadata = { client_id: CIMD_ID, client_name: 'CIMD Client', redirect_uris: [REDIRECT_URI] };
+    const query = { ...validParams, client_id: CIMD_ID };
+
+    const failed = await testApp(CONFIG).select({ server: { module: ['oauthAuthorization'] } })
+      .use(cimdResponse(jsonResponse(metadata)))
+      .method(OAuthRepo, 'findClientById', control.once(ok(null)))
+      .method(OAuthRepo, 'createClient', control.once(fails('write_failed', new Error('db down'))))
+      .build();
+    const unavailable = await failed.request({ method: 'GET', path: '/oauth/authorize', query });
+    expect(unavailable.status).toBe(500);
+    const body = await unavailable.text();
+    expect(body).toContain('server_error');
+    expect(body).not.toContain('invalid_client');
+    await failed.verify();
+
+    const duplicate = Object.assign(
+      new Error('duplicate key value violates unique constraint "oauth_clients_pkey"'),
+      { code: '23505' },
+    );
+    const raced = await testApp(CONFIG).select({ server: { module: ['oauthAuthorization'] } })
+      .use(cimdResponse(jsonResponse(metadata)))
+      .method(OAuthRepo, 'findClientById', control.once(ok(null)))
+      .method(OAuthRepo, 'createClient', control.once(fails('write_failed', duplicate)))
+      .build();
+    const resolved = await raced.request({ method: 'GET', path: '/oauth/authorize', query });
+    expect(resolved.status).toBe(200);
+    expect(await resolved.text()).toContain('<div id="app">');
+    await raced.verify();
+  }));
+
   it('a cached CIMD client resolves without any fetch; a non-oac non-https id never queries', resourceCase(async () => {
     const CIMD_ID = 'https://client.example/oauth-client.json';
     const env = await testApp(CONFIG).select({ server: { module: ['oauthAuthorization'] } })
       .method(OAuthClientMetadataClient, 'request', control.never())
-      .method(OAuthRepo, 'findClientById', control.once(control.returns(Promise.resolve({
+      .method(OAuthRepo, 'findClientById', control.once(ok({
         ...dcrClient,
         client_id: CIMD_ID,
         kind: 'cimd',
-      }))))
+      })))
       .build();
     const cached = await env.request({
       method: 'GET',
@@ -417,5 +455,19 @@ describe('oauth authorize deep flows through testDinner', () => {
     });
     expect(response.status).toBe(500);
     expect(await response.text()).toContain('server_error');
+  }));
+
+  it('a client lookup failure on GET /oauth/authorize renders the same plain 500 error page', resourceCase(async () => {
+    const env = await testApp(CONFIG).select({ server: { module: ['oauthAuthorization'] } })
+      .method(OAuthRepo, 'findClientById', control.once(fails('query_failed', new Error('db down'))))
+      .build();
+    const response = await env.request({
+      method: 'GET',
+      path: '/oauth/authorize',
+      query: validParams,
+    });
+    expect(response.status).toBe(500);
+    expect(await response.text()).toContain('server_error');
+    await env.verify();
   }));
 });

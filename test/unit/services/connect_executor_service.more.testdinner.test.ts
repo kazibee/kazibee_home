@@ -10,6 +10,7 @@ import path from 'node:path';
 
 import { testApp } from "@noego/app";
 import { resourceCase, test as control } from "@noego/testing";
+import { Result } from "@noego/trust";
 
 import ConnectExecutorService from '../../../src/server/services/connect_executor_service';
 import type { ConnectExecutorActor } from '../../../src/server/services/connect_executor_actor_resolver';
@@ -45,7 +46,11 @@ const decisionInput = (): ClaimDecisionInput => ({
   idempotencyKey: IDEMPOTENCY_KEY, correlationId: CORRELATION_ID,
 });
 
-const returns = (value: unknown) => control.returns(Promise.resolve(value));
+/** A repository read/write that succeeds with `value`. */
+const returns = (value: unknown) => control.returns(Promise.resolve(Result.ok(value)));
+/** A repository read that fails with `cause`. */
+const queryFails = (cause: unknown) =>
+  control.returns(Promise.resolve(Result.err({ kind: 'query_failed', cause })));
 
 describe('createClaim persistence invariant', () => {
   it('degrades to failed when the freshly created claim cannot be read back', resourceCase(async () => {
@@ -67,7 +72,7 @@ describe('createClaim persistence invariant', () => {
 describe('decide failure mapping', () => {
   it('degrades a repository failure with a nested cause to failed', resourceCase(async () => {
     const env = await testApp(CONFIG).select({ server: { module: ["connectExecutors"] } })
-      .method(ConnectExecutorClaimRepo, "findByClaimId", control.throws(new Error('boom', { cause: new Error('socket reset') })))
+      .method(ConnectExecutorClaimRepo, "findByClaimId", queryFails(new Error('boom', { cause: new Error('socket reset') })))
       .build();
     const service = await env.get<ConnectExecutorService>(ConnectExecutorService);
       expect(await service.decide(browserActor, decisionInput())).toEqual({ outcome: 'failed' });
@@ -77,7 +82,7 @@ describe('decide failure mapping', () => {
 
   it('degrades a non-Error throw to failed without losing the log context', resourceCase(async () => {
     const env = await testApp(CONFIG).select({ server: { module: ["connectExecutors"] } })
-      .method(ConnectExecutorClaimRepo, "findByClaimId", control.throws('wire torn'))
+      .method(ConnectExecutorClaimRepo, "findByClaimId", queryFails('wire torn'))
       .build();
     const service = await env.get<ConnectExecutorService>(ConnectExecutorService);
       expect(await service.decide(browserActor, decisionInput())).toEqual({ outcome: 'failed' });

@@ -1,4 +1,5 @@
 import { Component, LoadAs } from "@noego/ioc";
+import { Trust } from "@noego/trust";
 import { Query, QueryBinder, Single, run } from "sqlstack";
 
 export interface SwarmMachine {
@@ -20,30 +21,46 @@ export interface SwarmMachine {
 @Component({ scope: LoadAs.Singleton })
 export default class SwarmMachineRepo {
   @Query()
-  createMachine(_params: {
+  async createMachine(_params: {
     machine_id: string; swarm_id: string; task_definition_arn: string; region: string;
     token_hash: string; created_at: string;
-  }): Promise<void> { return run(); }
+  }) {
+    return Trust.tryAsync(() => run<void>(), (cause) => ({ kind: "write_failed", cause }));
+  }
 
   @Single
   @Query()
-  findById(_params: { swarm_id: string; machine_id: string }): Promise<SwarmMachine | null> { return run(); }
+  async findById(_params: { swarm_id: string; machine_id: string }) {
+    return Trust.tryAsync(() => run<SwarmMachine | null>(), (cause) => ({ kind: "query_failed", cause }));
+  }
 
   @Query()
-  listBySwarm(_params: { swarm_id: string }): Promise<SwarmMachine[]> { return run(); }
+  async listBySwarm(_params: { swarm_id: string }) {
+    return Trust.tryAsync(() => run<SwarmMachine[]>(), (cause) => ({ kind: "query_failed", cause }));
+  }
 
   @Query()
-  listNonStoppedBySwarm(_params: { swarm_id: string }): Promise<SwarmMachine[]> { return run(); }
+  async listNonStoppedBySwarm(_params: { swarm_id: string }) {
+    return Trust.tryAsync(() => run<SwarmMachine[]>(), (cause) => ({ kind: "query_failed", cause }));
+  }
 
   @Query()
-  markRunning(_params: { machine_id: string; ecs_task_arn: string }): Promise<void> { return run(); }
+  async markRunning(_params: { machine_id: string; ecs_task_arn: string }) {
+    return Trust.tryAsync(() => run<void>(), (cause) => ({ kind: "write_failed", cause }));
+  }
 
   @Query()
-  markStopping(_params: { machine_id: string }): Promise<void> { return run(); }
+  async markStopping(_params: { machine_id: string }) {
+    return Trust.tryAsync(() => run<void>(), (cause) => ({ kind: "write_failed", cause }));
+  }
 
   @Query()
-  markStopped(_params: { machine_id: string; stopped_at: string }): Promise<void> { return run(); }
+  async markStopped(_params: { machine_id: string; stopped_at: string }) {
+    return Trust.tryAsync(() => run<void>(), (cause) => ({ kind: "write_failed", cause }));
+  }
 
   @Query()
-  markFailed(_params: { machine_id: string; failure: string; stopped_at: string }): Promise<void> { return run(); }
+  async markFailed(_params: { machine_id: string; failure: string; stopped_at: string }) {
+    return Trust.tryAsync(() => run<void>(), (cause) => ({ kind: "write_failed", cause }));
+  }
 }

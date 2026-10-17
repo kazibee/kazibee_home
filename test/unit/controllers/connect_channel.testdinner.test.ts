@@ -14,6 +14,7 @@ import path from 'node:path';
 import { createHash } from 'node:crypto';
 import { testApp } from '@noego/app';
 import { test as control, testStub, resourceCase } from '@noego/testing';
+import { Result } from '@noego/trust';
 import ConnectExecutorCredentialRepo from '../../../src/server/repo/connect_executor_credential_repo';
 import ConnectExecutorRepo from '../../../src/server/repo/connect_executor_repo';
 import RawRequest from '../../../src/server/services/raw_request';
@@ -46,13 +47,14 @@ const validBody = {
   generation: '1', audience: 'executor-relay', protocolVersion: '1.1',
 };
 
-const returns = (value: unknown) => control.returns(Promise.resolve(value));
+/** A repository read that succeeds with `value`. */
+const ok = (value: unknown) => control.returns(Promise.resolve(Result.ok(value)));
 
 // A live credential row matched by an active executor row: exactly one lookup
 // each. A reusable replacement description, not an application constructor.
 const liveCredential = (executorRow: Record<string, unknown> = executor) => testStub()
-  .method(ConnectExecutorCredentialRepo, 'findByTokenHash', control.once(returns(credential)))
-  .method(ConnectExecutorRepo, 'findByExecutorId', control.once(returns(executorRow)));
+  .method(ConnectExecutorCredentialRepo, 'findByTokenHash', control.once(ok(credential)))
+  .method(ConnectExecutorRepo, 'findByExecutorId', control.once(ok(executorRow)));
 
 // Neither repo may be consulted.
 const noLookups = () => testStub()
@@ -90,7 +92,7 @@ describe('executor channel routes through testDinner (no server, no database)', 
 
   it('POST /channel-auth with an unknown token is 401 and never touches the executor row', resourceCase(async () => {
     const env = await testApp(CONFIG).select(SELECT)
-      .method(ConnectExecutorCredentialRepo, 'findByTokenHash', control.once(returns(null)))
+      .method(ConnectExecutorCredentialRepo, 'findByTokenHash', control.once(ok(null)))
       .method(ConnectExecutorRepo, 'findByExecutorId', control.never())
       .build();
     const response = await env.request({

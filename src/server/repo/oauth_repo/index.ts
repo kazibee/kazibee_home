@@ -1,4 +1,5 @@
 import { Component } from "@noego/ioc";
+import { Trust } from "@noego/trust";
 import { Query, QueryBinder, Single, run } from "sqlstack";
 
 export type OAuthClientKind = "cimd" | "dcr";
@@ -33,6 +34,7 @@ export interface CreateOAuthClientParams
 export function toCreateOAuthClientParams(
   record: OAuthClientRecord,
 ): CreateOAuthClientParams {
+  //trust:accept both values come from a parsed request body or JSON document (string[] and plain JSON data): no cycles or BigInt for stringify to throw on
   return {
     ...record,
     redirect_uris: JSON.stringify(record.redirect_uris),
@@ -105,48 +107,69 @@ export interface RotateRefreshTokenParams {
 @Component()
 export default class OAuthRepo {
   @Query()
-  createClient(_params: CreateOAuthClientParams): Promise<void> {
-    return run();
+  async createClient(_params: CreateOAuthClientParams) {
+    return Trust.tryAsync(
+      () => run<void>(),
+      (cause) => ({ kind: "write_failed", cause }),
+    );
   }
 
   @Single
   @Query()
-  findClientById(_params: { client_id: string }): Promise<OAuthClientRecord | null> {
-    return run();
+  async findClientById(_params: { client_id: string }) {
+    return Trust.tryAsync(
+      () => run<OAuthClientRecord | null>(),
+      (cause) => ({ kind: "query_failed", cause }),
+    );
   }
 
   @Query()
-  createConnection(_params: OAuthConnectionRecord): Promise<void> {
-    return run();
+  async createConnection(_params: OAuthConnectionRecord) {
+    return Trust.tryAsync(
+      () => run<void>(),
+      (cause) => ({ kind: "write_failed", cause }),
+    );
   }
 
   @Single
   @Query()
-  findActiveConnectionById(_params: {
+  async findActiveConnectionById(_params: {
     connection_id: string;
-  }): Promise<OAuthConnectionRecord | null> {
-    return run();
+  }) {
+    return Trust.tryAsync(
+      () => run<OAuthConnectionRecord | null>(),
+      (cause) => ({ kind: "query_failed", cause }),
+    );
   }
 
   @Query()
-  revokeConnection(_params: { connection_id: string; revoked_at: string }): Promise<void> {
-    return run();
+  async revokeConnection(_params: { connection_id: string; revoked_at: string }) {
+    return Trust.tryAsync(
+      () => run<void>(),
+      (cause) => ({ kind: "write_failed", cause }),
+    );
   }
 
   @Query()
-  listConnectionsByUser(_params: { user_id: string }): Promise<OAuthConnectionListRecord[]> {
-    return run();
+  async listConnectionsByUser(_params: { user_id: string }) {
+    return Trust.tryAsync(
+      () => run<OAuthConnectionListRecord[]>(),
+      (cause) => ({ kind: "query_failed", cause }),
+    );
   }
 
   /** Owner-driven capability edit; no-op for revoked connections. */
   @Query()
-  updateConnectionCapabilities(_params: {
+  async updateConnectionCapabilities(_params: {
     connection_id: string;
     approved_scope: OAuthConnectionScope;
     allow_shell: boolean;
     allow_web: boolean;
-  }): Promise<void> {
-    return run();
+  }) {
+    return Trust.tryAsync(
+      () => run<void>(),
+      (cause) => ({ kind: "write_failed", cause }),
+    );
   }
 
   /**
@@ -155,65 +178,89 @@ export default class OAuthRepo {
    * name is the durable identity). Call before revokeSupersededConnections.
    */
   @Query()
-  revokeSupersededConnectionTokens(_params: {
+  async revokeSupersededConnectionTokens(_params: {
     user_id: string;
     connection_id: string;
     client_name: string;
     revoked_at: string;
-  }): Promise<void> {
-    return run();
+  }) {
+    return Trust.tryAsync(
+      () => run<void>(),
+      (cause) => ({ kind: "write_failed", cause }),
+    );
   }
 
   @Query()
-  revokeSupersededConnections(_params: {
+  async revokeSupersededConnections(_params: {
     user_id: string;
     connection_id: string;
     client_name: string;
     revoked_at: string;
-  }): Promise<void> {
-    return run();
+  }) {
+    return Trust.tryAsync(
+      () => run<void>(),
+      (cause) => ({ kind: "write_failed", cause }),
+    );
   }
 
   @Query()
-  createCode(_params: OAuthCodeRecord): Promise<void> {
-    return run();
+  async createCode(_params: OAuthCodeRecord) {
+    return Trust.tryAsync(
+      () => run<void>(),
+      (cause) => ({ kind: "write_failed", cause }),
+    );
   }
 
   @Single
   @Query()
-  consumeCode(_params: {
+  async consumeCode(_params: {
     code_hash: string;
     consumed_at: string;
-  }): Promise<OAuthCodeRecord | null> {
-    return run();
+  }) {
+    return Trust.tryAsync(
+      () => run<OAuthCodeRecord | null>(),
+      (cause) => ({ kind: "write_failed", cause }),
+    );
   }
 
   @Query()
-  createToken(_params: OAuthTokenRecord): Promise<void> {
-    return run();
+  async createToken(_params: OAuthTokenRecord) {
+    return Trust.tryAsync(
+      () => run<void>(),
+      (cause) => ({ kind: "write_failed", cause }),
+    );
   }
 
   @Single
   @Query()
-  findActiveTokenWithConnection(_params: {
+  async findActiveTokenWithConnection(_params: {
     token_hash: string;
-  }): Promise<ActiveTokenWithConnection | null> {
-    return run();
+  }) {
+    return Trust.tryAsync(
+      () => run<ActiveTokenWithConnection | null>(),
+      (cause) => ({ kind: "query_failed", cause }),
+    );
   }
 
   @Query()
-  revokeTokensByConnection(_params: {
+  async revokeTokensByConnection(_params: {
     connection_id: string;
     revoked_at: string;
-  }): Promise<void> {
-    return run();
+  }) {
+    return Trust.tryAsync(
+      () => run<void>(),
+      (cause) => ({ kind: "write_failed", cause }),
+    );
   }
 
   @Single
   @Query()
-  rotateRefreshToken(
+  async rotateRefreshToken(
     _params: RotateRefreshTokenParams,
-  ): Promise<OAuthTokenRecord | null> {
-    return run();
+  ) {
+    return Trust.tryAsync(
+      () => run<OAuthTokenRecord | null>(),
+      (cause) => ({ kind: "write_failed", cause }),
+    );
   }
 }

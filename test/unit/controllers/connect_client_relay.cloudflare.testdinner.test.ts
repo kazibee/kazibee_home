@@ -34,6 +34,7 @@ import { createHash } from 'node:crypto';
 import path from 'node:path';
 import { testApp } from '@noego/app';
 import { test as control, testStub, resourceCase } from '@noego/testing';
+import { Result } from '@noego/trust';
 import Ajv2020 from 'ajv/dist/2020.js';
 import protocolSchema from '@kazibee-internal/connect-protocol/canonical/schemas/kazi-connect-v1.schema.json' with { type: 'json' };
 import ConnectExecutorRepo from '../../../src/server/repo/connect_executor_repo';
@@ -44,6 +45,8 @@ import ConnectDesktopDeviceRepo from '../../../src/server/repo/connect_desktop_d
 const CONFIG = path.resolve(__dirname, '../../../noego.config.yml');
 
 const sha256 = (value: string) => createHash('sha256').update(value, 'utf8').digest('hex');
+/** A repository read that succeeds with `value`. */
+const ok = (value: unknown) => control.returns(Promise.resolve(Result.ok(value)));
 
 const TOKEN = 'D'.repeat(43);
 const DEVICE_ID = 'dev_desktop01';
@@ -109,8 +112,8 @@ const executorRow = () => ({
 });
 
 const desktopAuth = () => testStub()
-  .method(ConnectDesktopCredentialRepo, 'findByTokenHash', control.returns(Promise.resolve(credentialRow())))
-  .method(ConnectDesktopDeviceRepo, 'findByDeviceId', control.returns(Promise.resolve(deviceRow())));
+  .method(ConnectDesktopCredentialRepo, 'findByTokenHash', ok(credentialRow()))
+  .method(ConnectDesktopDeviceRepo, 'findByDeviceId', ok(deviceRow()));
 
 const executorListResponse = () => ({
   kind: 'executor.list.response',
@@ -212,7 +215,7 @@ describe('connect client relay routes under the Cloudflare no-runtime-codegen co
   it('control: on unrestricted Node the real route answers 200 with the protocol header', resourceCase(async () => {
     const env = await testApp(CONFIG).select({ server: { module: ['connectClientRelay'] } })
       .use(desktopAuth())
-      .method(ConnectExecutorRepo, 'listByOwner', control.once(control.returns(Promise.resolve([executorRow()]))))
+      .method(ConnectExecutorRepo, 'listByOwner', control.once(ok([executorRow()])))
       .build();
     const response = await env.request({
       method: 'GET',
@@ -228,12 +231,12 @@ describe('connect client relay routes under the Cloudflare no-runtime-codegen co
 
   it('GET /executors accepts the existing executor machine credential without runtime codegen', resourceCase(async () => {
     const env = await testApp(CONFIG).select({ server: { module: ['connectClientRelay'] } })
-      .method(ConnectExecutorCredentialRepo, 'findByTokenHash', control.returns(Promise.resolve({
+      .method(ConnectExecutorCredentialRepo, 'findByTokenHash', ok({
         credential_id: 'cred_machine01', executor_id: EXECUTOR_ID, generation: 1,
         token_hash: sha256(TOKEN), status: 'active', created_at: '2026-01-01T00:00:00.000Z', revoked_at: null,
-      })))
-      .method(ConnectExecutorRepo, 'findByExecutorId', control.returns(Promise.resolve(executorRow())))
-      .method(ConnectExecutorRepo, 'listByOwner', control.returns(Promise.resolve([executorRow()])))
+      }))
+      .method(ConnectExecutorRepo, 'findByExecutorId', ok(executorRow()))
+      .method(ConnectExecutorRepo, 'listByOwner', ok([executorRow()]))
       .method(ConnectDesktopCredentialRepo, 'findByTokenHash', control.never())
       .method(ConnectDesktopDeviceRepo, 'findByDeviceId', control.never())
       .build();
@@ -253,7 +256,7 @@ describe('connect client relay routes under the Cloudflare no-runtime-codegen co
   it('GET /executors with a valid Desktop credential answers 200 when runtime codegen is disallowed', resourceCase(async () => {
     const env = await testApp(CONFIG).select({ server: { module: ['connectClientRelay'] } })
       .use(desktopAuth())
-      .method(ConnectExecutorRepo, 'listByOwner', control.returns(Promise.resolve([executorRow()])))
+      .method(ConnectExecutorRepo, 'listByOwner', ok([executorRow()]))
       .build();
     // Guard is scoped to the request: the framework has finished its setup,
     // the controller/parser are resolved cold on the request path, while
@@ -272,7 +275,7 @@ describe('connect client relay routes under the Cloudflare no-runtime-codegen co
 
   it('GET /executors with an unknown credential answers 401 revoked with the protocol header when runtime codegen is disallowed', resourceCase(async () => {
     const env = await testApp(CONFIG).select({ server: { module: ['connectClientRelay'] } })
-      .method(ConnectDesktopCredentialRepo, 'findByTokenHash', control.returns(Promise.resolve(null)))
+      .method(ConnectDesktopCredentialRepo, 'findByTokenHash', ok(null))
       .method(ConnectExecutorRepo, 'listByOwner', control.never())
       .build();
     const response = await withoutRuntimeCodegen(() => env.request({

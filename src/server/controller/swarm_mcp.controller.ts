@@ -1,10 +1,14 @@
 import { Component, Inject } from "@noego/ioc";
 import type { CompatRequest as Request, CompatResponse as Response } from "@noego/dinner";
+import { getLogger } from "@noego/logger";
 import RemoteToolDispatchService, { type DispatchResult } from "../services/remote_tool_dispatch_service";
 import SwarmRepo, { type Swarm } from "../repo/swarm_repo";
+import type { RepoFailure } from "../repo/repo_failure";
 import { SWARM_ID } from "../../shared/swarm_head_protocol";
 
 type Context = { req: Request; res: Response };
+
+const logger = getLogger("kazibee:swarm-mcp-controller");
 
 const SERVER_INFO = { name: "Kazibee Swarm Member Tools", version: "0.1.0" };
 const SUPPORTED_PROTOCOL_VERSIONS = ["2025-06-18", "2025-03-26", "2024-11-05"];
@@ -55,7 +59,9 @@ export default class SwarmMcpController {
     if (typeof swarmId !== "string" || !SWARM_ID.test(swarmId)) {
       return res.status(404).json({ error: true, code: "SWARM_NOT_FOUND" });
     }
-    const swarm = await this.swarms.findById({ swarm_id: swarmId });
+    const found = await this.swarms.findById({ swarm_id: swarmId });
+    if (!found.ok) return this.unavailable(res, swarmId, found.error);
+    const swarm = found.value;
     if (!swarm || swarm.state !== "active") {
       return res.status(404).json({ error: true, code: "SWARM_NOT_FOUND" });
     }
@@ -141,6 +147,12 @@ export default class SwarmMcpController {
       default:
         return rpcError(res, body.id, -32601, `Method not found: ${body.method}`);
     }
+  }
+
+  /** The swarm lookup failed in the repository: logged here, answered 500. */
+  private unavailable(res: Response, swarmId: string, failure: RepoFailure) {
+    logger.error("Swarm lookup failed", { swarmId, kind: failure.kind, error: failure.cause });
+    return res.status(500).json({ error: true, code: "INTERNAL_ERROR" });
   }
 
   private route(swarm: Swarm, token: string, toolName: string, args: Record<string, unknown>): Promise<DispatchResult> {

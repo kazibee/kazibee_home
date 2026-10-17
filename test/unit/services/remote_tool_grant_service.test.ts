@@ -13,6 +13,7 @@ import { describe, it, expect } from 'vitest';
 import path from 'node:path';
 import { testApp } from '@noego/app';
 import { resourceCase, test as control, testStub, type MethodDescriptor } from '@noego/testing';
+import { Result } from '@noego/trust';
 import RemoteToolGrantService from '../../../src/server/services/remote_tool_grant_service';
 import RemoteToolGrantRepo from '../../../src/server/repo/remote_tool_grant_repo';
 import type { RemoteToolGrant } from '../../../src/server/repo/remote_tool_grant_repo';
@@ -27,6 +28,9 @@ const EXECUTOR_ID = 'exe_machine01';
 const WORKSPACE_ID = 'wrk_workspace1';
 const FUTURE = '2999-01-01T00:00:00.000Z';
 const PAST = '2000-01-01T00:00:00.000Z';
+
+/** A repository call that succeeds with `value`. */
+const ok = (value: unknown) => control.returns(Promise.resolve(Result.ok(value)));
 
 const grantRow = (overrides: Partial<RemoteToolGrant> = {}): RemoteToolGrant => ({
   grant_id: `rtg_${'a'.repeat(32)}`,
@@ -60,15 +64,15 @@ function repos(overrides: {
   executors?: Partial<Record<ExecutorMethod, MethodDescriptor>>;
 } = {}) {
   const grants: Record<GrantMethod, MethodDescriptor> = {
-    createGrant: control.returns(Promise.resolve(undefined)),
-    findByTokenHash: control.returns(Promise.resolve(null)),
-    touchLastUsed: control.returns(Promise.resolve(undefined)),
-    listByOwner: control.returns(Promise.resolve([])),
-    revokeGrant: control.returns(Promise.resolve(undefined)),
+    createGrant: ok(undefined),
+    findByTokenHash: ok(null),
+    touchLastUsed: ok(undefined),
+    listByOwner: ok([]),
+    revokeGrant: ok(undefined),
     ...overrides.grants,
   };
   const executors: Record<ExecutorMethod, MethodDescriptor> = {
-    findByExecutorId: control.returns(Promise.resolve(activeExecutor())),
+    findByExecutorId: ok(activeExecutor()),
     ...overrides.executors,
   };
   let stub = testStub();
@@ -109,7 +113,7 @@ describe('create validation', () => {
 
   it('rejects an inactive executor as executor_not_owned', resourceCase(async (scope) => {
     const env = scope.environment(await testApp(CONFIG).select(SELECT).use(repos({
-      executors: { findByExecutorId: control.returns(Promise.resolve({ ...activeExecutor(), state: 'revoked' })) },
+      executors: { findByExecutorId: ok({ ...activeExecutor(), state: 'revoked' }) },
     })).build());
     const service = await env.get<RemoteToolGrantService>(RemoteToolGrantService);
     const result = await service.create(createInput());
@@ -119,8 +123,8 @@ describe('create validation', () => {
   it('throws when the grant row vanishes between insert and readback', resourceCase(async (scope) => {
     const env = scope.environment(await testApp(CONFIG).select(SELECT).use(repos({
       grants: {
-        createGrant: control.returns(Promise.resolve(undefined)),
-        findByTokenHash: control.returns(Promise.resolve(null)),
+        createGrant: ok(undefined),
+        findByTokenHash: ok(null),
       },
     })).build());
     const service = await env.get<RemoteToolGrantService>(RemoteToolGrantService);
@@ -132,10 +136,13 @@ describe('create validation', () => {
     const row = grantRow();
     const env = scope.environment(await testApp(CONFIG).select(SELECT).use(repos({
       grants: {
-        createGrant: control.watch(() => async (input: { token_hash: string }) => { seen.push(input.token_hash); }),
+        createGrant: control.watch(() => async (input: { token_hash: string }) => {
+          seen.push(input.token_hash);
+          return Result.ok(undefined);
+        }),
         findByTokenHash: control.watch(() => async ({ token_hash }: { token_hash: string }) => {
           seen.push(token_hash);
-          return row;
+          return Result.ok(row);
         }),
       },
     })).build());
@@ -155,19 +162,19 @@ describe('authenticate', () => {
       grants: { findByTokenHash: control.throws(new Error('must not be called')) },
     })).build());
     const svc = await env.get<RemoteToolGrantService>(RemoteToolGrantService);
-    expect(await svc.authenticate(null)).toBeNull();
-    expect(await svc.authenticate('short')).toBeNull();
+    expect(await svc.authenticate(null)).toEqual(Result.ok(null));
+    expect(await svc.authenticate('short')).toEqual(Result.ok(null));
   }));
 
   it('rejects an expired grant even when it is otherwise active', resourceCase(async (scope) => {
     const env = scope.environment(await testApp(CONFIG).select(SELECT).use(repos({
       grants: {
-        findByTokenHash: control.returns(Promise.resolve(grantRow({ expires_at: PAST }))),
+        findByTokenHash: ok(grantRow({ expires_at: PAST })),
         touchLastUsed: control.throws(new Error('must not touch an expired grant')),
       },
     })).build());
     const svc = await env.get<RemoteToolGrantService>(RemoteToolGrantService);
-    expect(await svc.authenticate('G'.repeat(43))).toBeNull();
+    expect(await svc.authenticate('G'.repeat(43))).toEqual(Result.ok(null));
   }));
 
   it('accepts an unexpired dated grant and touches last_used_at', resourceCase(async (scope) => {
@@ -175,12 +182,15 @@ describe('authenticate', () => {
     const row = grantRow({ expires_at: FUTURE });
     const env = scope.environment(await testApp(CONFIG).select(SELECT).use(repos({
       grants: {
-        findByTokenHash: control.returns(Promise.resolve(row)),
-        touchLastUsed: control.watch(() => async () => { touched += 1; }),
+        findByTokenHash: ok(row),
+        touchLastUsed: control.watch(() => async () => {
+          touched += 1;
+          return Result.ok(undefined);
+        }),
       },
     })).build());
     const svc = await env.get<RemoteToolGrantService>(RemoteToolGrantService);
-    expect(await svc.authenticate('G'.repeat(43))).toEqual(row);
+    expect(await svc.authenticate('G'.repeat(43))).toEqual(Result.ok(row));
     expect(touched).toBe(1);
   }));
 });

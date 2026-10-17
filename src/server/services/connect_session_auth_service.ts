@@ -1,4 +1,5 @@
 import { Component, Inject } from "@noego/ioc";
+import { Result } from "@noego/trust";
 import ConnectAccountRepo, { type ConnectAccount } from "../repo/connect_account_repo";
 import ConnectBrowserSessionRepo, {
   type ConnectBrowserSession,
@@ -11,10 +12,12 @@ export interface AuthenticatedConnectSession {
   session: ConnectBrowserSession;
 }
 
-export type ConnectSessionAuthResult =
-  | { ok: true; value: AuthenticatedConnectSession }
-  | { ok: false; reason: "unauthorized" | "csrf" };
-
+/**
+ * Browser-session authentication. Every method returns a trust Result: the
+ * authenticated account and session, or a failure of kind `unauthorized`,
+ * `csrf`, or the repositories' `query_failed` / `write_failed`. Callers decide
+ * what each kind means for their response.
+ */
 @Component()
 export default class ConnectSessionAuthService {
   constructor(
@@ -25,7 +28,7 @@ export default class ConnectSessionAuthService {
     @Inject(ConnectAuthPolicy) private readonly policy: ConnectAuthPolicy,
   ) {}
 
-  async authenticate(sessionToken: string | null): Promise<ConnectSessionAuthResult> {
+  async authenticate(sessionToken: string | null) {
     const result = await this.load(sessionToken, false);
     if (!result.ok) return result;
     return this.refresh(result.value);
@@ -40,50 +43,46 @@ export default class ConnectSessionAuthService {
     sessionToken: string | null,
     csrfCookie: string | null,
     csrfHeader: string | null,
-  ): Promise<ConnectSessionAuthResult> {
+  ) {
     const result = await this.load(sessionToken, false);
     if (!result.ok) return result;
     if (!this.validCsrf(result.value.session, csrfCookie, csrfHeader)) {
-      return { ok: false, reason: "csrf" };
+      return Result.err({ kind: "csrf" });
     }
     return this.refresh(result.value);
   }
 
-  private async refresh(
-    value: AuthenticatedConnectSession,
-  ): Promise<ConnectSessionAuthResult> {
+  private async refresh(value: AuthenticatedConnectSession) {
     const now = this.clock.now();
     const absolute = new Date(value.session.absolute_expires_at);
     const idleExpiry = new Date(
       Math.min(now.getTime() + this.policy.idleSessionMs, absolute.getTime()),
     ).toISOString();
-    await this.sessionRepo.touchSession({
+    const touched = await this.sessionRepo.touchSession({
       session_id: value.session.session_id,
       last_seen_at: now.toISOString(),
       idle_expires_at: idleExpiry,
     });
-    return {
-      ok: true,
-      value: {
-        ...value,
-        session: {
-          ...value.session,
-          last_seen_at: now.toISOString(),
-          idle_expires_at: idleExpiry,
-        },
+    if (!touched.ok) return touched;
+    return Result.ok({
+      ...value,
+      session: {
+        ...value.session,
+        last_seen_at: now.toISOString(),
+        idle_expires_at: idleExpiry,
       },
-    };
+    });
   }
 
   async authorizeLogout(
     sessionToken: string | null,
     csrfCookie: string | null,
     csrfHeader: string | null,
-  ): Promise<ConnectSessionAuthResult> {
+  ) {
     const result = await this.load(sessionToken, true);
     if (!result.ok) return result;
     if (!this.validCsrf(result.value.session, csrfCookie, csrfHeader)) {
-      return { ok: false, reason: "csrf" };
+      return Result.err({ kind: "csrf" });
     }
     return result;
   }
@@ -98,16 +97,15 @@ export default class ConnectSessionAuthService {
       && this.credentials.matchesHash(csrfHeader, session.csrf_token_hash);
   }
 
-  private async load(
-    sessionToken: string | null,
-    allowRevoked: boolean,
-  ): Promise<ConnectSessionAuthResult> {
-    if (!sessionToken) return { ok: false, reason: "unauthorized" };
-    const session = await this.sessionRepo.findByTokenHash({
+  private async load(sessionToken: string | null, allowRevoked: boolean) {
+    if (!sessionToken) return Result.err({ kind: "unauthorized" });
+    const found = await this.sessionRepo.findByTokenHash({
       session_token_hash: this.credentials.hashToken(sessionToken),
     });
+    if (!found.ok) return found;
+    const session = found.value;
     if (!session || (!allowRevoked && session.status !== "active")) {
-      return { ok: false, reason: "unauthorized" };
+      return Result.err({ kind: "unauthorized" });
     }
     const now = this.clock.now().getTime();
     if (
@@ -115,17 +113,20 @@ export default class ConnectSessionAuthService {
       || new Date(session.absolute_expires_at).getTime() <= now
     ) {
       if (session.status === "active") {
-        await this.sessionRepo.revokeSession({
+        const revoked = await this.sessionRepo.revokeSession({
           session_id: session.session_id,
           revoked_at: this.clock.now().toISOString(),
         });
+        if (!revoked.ok) return revoked;
       }
-      return { ok: false, reason: "unauthorized" };
+      return Result.err({ kind: "unauthorized" });
     }
-    const account = await this.accountRepo.findByUserId({ user_id: session.user_id });
+    const accountLookup = await this.accountRepo.findByUserId({ user_id: session.user_id });
+    if (!accountLookup.ok) return accountLookup;
+    const account = accountLookup.value;
     if (!account || account.status !== "active") {
-      return { ok: false, reason: "unauthorized" };
+      return Result.err({ kind: "unauthorized" });
     }
-    return { ok: true, value: { account, session } };
+    return Result.ok({ account, session });
   }
 }

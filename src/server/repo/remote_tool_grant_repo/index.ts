@@ -1,4 +1,5 @@
 import { Component, LoadAs } from "@noego/ioc";
+import { Trust } from "@noego/trust";
 import { Query, QueryBinder, Single, run } from "sqlstack";
 
 export interface RemoteToolGrant {
@@ -20,7 +21,7 @@ export interface RemoteToolGrant {
 @Component({ scope: LoadAs.Singleton })
 export default class RemoteToolGrantRepo {
   @Query()
-  createGrant(_params: {
+  async createGrant(_params: {
     grant_id: string;
     owner_user_id: string;
     executor_id: string;
@@ -29,28 +30,43 @@ export default class RemoteToolGrantRepo {
     token_hash: string;
     created_at: string;
     expires_at: string | null;
-  }): Promise<void> {
-    return run();
+  }) {
+    return Trust.tryAsync(
+      () => run<void>(),
+      (cause) => ({ kind: "write_failed", cause }),
+    );
   }
 
   @Single
   @Query()
-  findByTokenHash(_params: { token_hash: string }): Promise<RemoteToolGrant | null> {
-    return run();
+  async findByTokenHash(_params: { token_hash: string }) {
+    return Trust.tryAsync(
+      () => run<RemoteToolGrant | null>(),
+      (cause) => ({ kind: "query_failed", cause }),
+    );
   }
 
   @Query()
-  listByOwner(_params: { owner_user_id: string }): Promise<RemoteToolGrant[]> {
-    return run();
+  async listByOwner(_params: { owner_user_id: string }) {
+    return Trust.tryAsync(
+      () => run<RemoteToolGrant[]>(),
+      (cause) => ({ kind: "query_failed", cause }),
+    );
   }
 
   @Query()
-  revokeGrant(_params: { grant_id: string; owner_user_id: string; revoked_at: string }): Promise<void> {
-    return run();
+  async revokeGrant(_params: { grant_id: string; owner_user_id: string; revoked_at: string }) {
+    return Trust.tryAsync(
+      () => run<void>(),
+      (cause) => ({ kind: "write_failed", cause }),
+    );
   }
 
   @Query()
-  touchLastUsed(_params: { grant_id: string; last_used_at: string }): Promise<void> {
-    return run();
+  async touchLastUsed(_params: { grant_id: string; last_used_at: string }) {
+    return Trust.tryAsync(
+      () => run<void>(),
+      (cause) => ({ kind: "write_failed", cause }),
+    );
   }
 }

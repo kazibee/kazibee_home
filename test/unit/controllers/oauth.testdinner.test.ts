@@ -15,9 +15,12 @@ import { createHash } from 'node:crypto';
 import path from 'node:path';
 import { testApp } from '@noego/app';
 import { test as control, resourceCase } from '@noego/testing';
+import { Result } from '@noego/trust';
 import OAuthRepo from '../../../src/server/repo/oauth_repo';
 
 const CONFIG = path.resolve(__dirname, '../../../apps/mcp/noego.config.yml');
+/** A repository call that succeeds with `value`. */
+const ok = (value: unknown) => control.returns(Promise.resolve(Result.ok(value)));
 
 const RESOURCE = 'https://mcp-dev.kazibee.com/mcp';
 const CODE_VERIFIER = 'test-verifier-0123456789-0123456789-0123456789';
@@ -125,12 +128,12 @@ describe('oauth token/metadata/register routes through testDinner (no server, no
 
   it('authorization_code exchange mints a Bearer token pair (real PKCE, real form_body)', resourceCase(async () => {
     const env = await testApp(CONFIG).select({ server: { module: ['oauth'] } })
-      .method(OAuthRepo, 'consumeCode', control.once(control.returns(Promise.resolve(codeRow()))))
+      .method(OAuthRepo, 'consumeCode', control.once(ok(codeRow())))
       .method(OAuthRepo, 'findActiveConnectionById', control.once(
-        control.returns(Promise.resolve(activeConnection)),
+        ok(activeConnection),
       ))
       // Access token + refresh token: two writes.
-      .method(OAuthRepo, 'createToken', control.returns(Promise.resolve(undefined)))
+      .method(OAuthRepo, 'createToken', ok(undefined))
       .build();
     const response = await env.request({
       method: 'POST',
@@ -160,7 +163,7 @@ describe('oauth token/metadata/register routes through testDinner (no server, no
   it('authorization_code exchange for the wrong client is a 401 invalid_client', resourceCase(async () => {
     const env = await testApp(CONFIG).select({ server: { module: ['oauth'] } })
       .method(OAuthRepo, 'consumeCode', control.once(
-        control.returns(Promise.resolve(codeRow({ client_id: 'oac_someone_else' }))),
+        ok(codeRow({ client_id: 'oac_someone_else' })),
       ))
       .method(OAuthRepo, 'createToken', control.never())
       .build();
@@ -183,7 +186,7 @@ describe('oauth token/metadata/register routes through testDinner (no server, no
 
   it('POST /oauth/register registers a dynamic client and echoes its metadata', resourceCase(async () => {
     const env = await testApp(CONFIG).select({ server: { module: ['oauth'] } })
-      .method(OAuthRepo, 'createClient', control.once(control.returns(Promise.resolve(undefined))))
+      .method(OAuthRepo, 'createClient', control.once(ok(undefined)))
       .build();
     const response = await env.request({
       method: 'POST',

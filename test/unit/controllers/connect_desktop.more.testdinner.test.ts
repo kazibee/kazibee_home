@@ -23,6 +23,7 @@ import path from 'node:path';
 import { createHash } from 'node:crypto';
 import { testApp, type AppTestBuilder } from '@noego/app';
 import { test as control, testStub, resourceCase } from '@noego/testing';
+import { Result } from '@noego/trust';
 import type { CompatRequest } from '@noego/dinner';
 import ConnectDesktopController from '../../../src/server/controller/connect_desktop.controller';
 import ConnectDesktopService from '../../../src/server/services/connect_desktop_service';
@@ -112,9 +113,15 @@ const browserQuery = { sessionId: SESSION_ID, correlationId: CORRELATION };
 const okActor = testStub()
   .method(ConnectDesktopActorResolver, 'browser', control.returns(Promise.resolve({ ok: true, actor: browserActor })));
 
-/** Sequential control: call N resolves to value N. */
+/** A repository call that succeeds with `value`. */
+const ok = (value: unknown) => control.returns(Promise.resolve(Result.ok(value)));
+/** A repository call that fails the way the repos report it: a named kind carrying the cause. */
+const fails = (kind: 'query_failed' | 'write_failed', cause: unknown) =>
+  control.returns(Promise.resolve(Result.err({ kind, cause })));
+
+/** Sequential repository control: call N succeeds with value N. */
 const seq = <T extends readonly unknown[]>(...values: T) =>
-  control.calls(values.map((value) => control.returns(Promise.resolve(value))));
+  control.calls(values.map((value) => ok(value)));
 
 /** Fake response sink for direct controller calls (below the OpenAPI validator). */
 const fakeRes = () => {
@@ -392,7 +399,7 @@ describe('connect desktop controller mutation branches (logic stubbed above the 
   describe('read endpoints (list/detail/review/claimStatus) remaining branches', () => {
     it('GET / lists the owner devices as summaries', resourceCase(async () => {
       const env = await testApp(CONFIG).select(SELECT).use(okActor)
-        .method(ConnectDesktopDeviceRepo, 'listByOwner', control.once(control.returns(Promise.resolve([device]))))
+        .method(ConnectDesktopDeviceRepo, 'listByOwner', control.once(ok([device])))
         .build();
       const response = await env.request({
         method: 'GET', path: '/v1/connect/desktops/', query: browserQuery,
@@ -523,7 +530,7 @@ describe('ConnectDesktopService directly (undecorated bodies, repos stubbed)', (
   // side effect when no transaction exists; no fake Database entry is needed.
   const serviceBoundaries = testStub()
     .method(ConnectClock, 'now', control.returns(NOW))
-    .method(ConnectWebsiteDeploymentIdentityService, 'get', control.returns(Promise.resolve('dep_00000001')));
+    .method(ConnectWebsiteDeploymentIdentityService, 'get', ok('dep_00000001'));
 
   const service = (env: Env) => env.get<ConnectDesktopService>(ConnectDesktopService);
 
@@ -536,14 +543,14 @@ describe('ConnectDesktopService directly (undecorated bodies, repos stubbed)', (
   it('createClaim creates the device, claim, and audit trail for a fresh envelope', resourceCase(async () => {
     const created: Record<string, unknown>[] = [];
     const env = await testApp(CONFIG).select(SELECT).use(serviceBoundaries)
-      .method(ConnectDesktopClaimRepo, 'findByIdempotencyKey', control.returns(Promise.resolve(null)))
+      .method(ConnectDesktopClaimRepo, 'findByIdempotencyKey', ok(null))
       .method(ConnectDesktopClaimRepo, 'findByClaimId', seq(null, claim))
       .method(ConnectDesktopClaimRepo, 'createClaim', control.watch(() => (input: Record<string, unknown>) => {
-        created.push(input); return Promise.resolve();
+        created.push(input); return Promise.resolve(Result.ok(undefined));
       }))
-      .method(ConnectDesktopDeviceRepo, 'findByDeviceId', control.returns(Promise.resolve(device)))
-      .method(ConnectDesktopDeviceRepo, 'createDevice', control.once(control.returns(Promise.resolve())))
-      .method(ConnectDesktopAuditRepo, 'appendEvent', control.once(control.returns(Promise.resolve())))
+      .method(ConnectDesktopDeviceRepo, 'findByDeviceId', ok(device))
+      .method(ConnectDesktopDeviceRepo, 'createDevice', control.once(ok(undefined)))
+      .method(ConnectDesktopAuditRepo, 'appendEvent', control.once(ok(undefined)))
       .build();
     const result = await (await service(env)).createClaim(createBody as never, TOKEN);
     expect(result.outcome).toBe('created');
@@ -563,9 +570,9 @@ describe('ConnectDesktopService directly (undecorated bodies, repos stubbed)', (
 
   it('createClaim replays an identical pending envelope as a retry challenge', resourceCase(async () => {
     const env = await testApp(CONFIG).select(SELECT).use(serviceBoundaries)
-      .method(ConnectDesktopClaimRepo, 'findByIdempotencyKey', control.returns(Promise.resolve({ ...claim, envelope_hash: envelopeHash })))
+      .method(ConnectDesktopClaimRepo, 'findByIdempotencyKey', ok({ ...claim, envelope_hash: envelopeHash }))
       .method(ConnectDesktopClaimRepo, 'createClaim', control.never())
-      .method(ConnectDesktopDeviceRepo, 'findByDeviceId', control.returns(Promise.resolve(device)))
+      .method(ConnectDesktopDeviceRepo, 'findByDeviceId', ok(device))
       .method(ConnectDesktopDeviceRepo, 'createDevice', control.never())
       .build();
     const result = await (await service(env)).createClaim(createBody as never, TOKEN);
@@ -580,9 +587,9 @@ describe('ConnectDesktopService directly (undecorated bodies, repos stubbed)', (
       [{ ...claim, envelope_hash: envelopeHash }, null],
     ] as const) {
       const env = await testApp(CONFIG).select(SELECT).use(serviceBoundaries)
-        .method(ConnectDesktopClaimRepo, 'findByIdempotencyKey', control.returns(Promise.resolve(existing)))
+        .method(ConnectDesktopClaimRepo, 'findByIdempotencyKey', ok(existing))
         .method(ConnectDesktopClaimRepo, 'createClaim', control.never())
-        .method(ConnectDesktopDeviceRepo, 'findByDeviceId', control.returns(Promise.resolve(existingDevice)))
+        .method(ConnectDesktopDeviceRepo, 'findByDeviceId', ok(existingDevice))
         .build();
       expect(await (await service(env)).createClaim(createBody as never, TOKEN)).toEqual({ outcome: 'conflict' });
     }
@@ -590,12 +597,12 @@ describe('ConnectDesktopService directly (undecorated bodies, repos stubbed)', (
 
   it('createClaim maps unique-constraint failures to conflict and other errors to failed', resourceCase(async () => {
     const unique = await testApp(CONFIG).select(SELECT).use(serviceBoundaries)
-      .method(ConnectDesktopClaimRepo, 'findByIdempotencyKey', control.throws(new Error('UNIQUE constraint failed: claims')))
+      .method(ConnectDesktopClaimRepo, 'findByIdempotencyKey', fails('query_failed', new Error('UNIQUE constraint failed: claims')))
       .build();
     expect(await (await service(unique)).createClaim(createBody as never, TOKEN)).toEqual({ outcome: 'conflict' });
 
     const broken = await testApp(CONFIG).select(SELECT).use(serviceBoundaries)
-      .method(ConnectDesktopClaimRepo, 'findByIdempotencyKey', control.throws(new Error('disk full')))
+      .method(ConnectDesktopClaimRepo, 'findByIdempotencyKey', fails('query_failed', new Error('disk full')))
       .build();
     expect(await (await service(broken)).createClaim(createBody as never, TOKEN)).toEqual({ outcome: 'failed' });
   }));
@@ -603,9 +610,9 @@ describe('ConnectDesktopService directly (undecorated bodies, repos stubbed)', (
   it('status returns the full accepted credential payload when every guard passes', resourceCase(async () => {
     const accepted = { ...claim, status: 'accepted' as const, decided_by_user_id: USER_ID };
     const env = await testApp(CONFIG).select(SELECT).use(serviceBoundaries)
-      .method(ConnectDesktopClaimRepo, 'findByClaimId', control.returns(Promise.resolve(accepted)))
-      .method(ConnectDesktopDeviceRepo, 'findByDeviceId', control.returns(Promise.resolve(device)))
-      .method(ConnectDesktopCredentialRepo, 'findByTokenHash', control.returns(Promise.resolve(credential)))
+      .method(ConnectDesktopClaimRepo, 'findByClaimId', ok(accepted))
+      .method(ConnectDesktopDeviceRepo, 'findByDeviceId', ok(device))
+      .method(ConnectDesktopCredentialRepo, 'findByTokenHash', ok(credential))
       .build();
     expect(await (await service(env)).status(CLAIM_ID, TOKEN)).toEqual({
       outcome: 'status', status: 'accepted', deviceId: DEVICE_ID,
@@ -625,9 +632,9 @@ describe('ConnectDesktopService directly (undecorated bodies, repos stubbed)', (
       [device, { ...credential, generation: 2 }],
     ] as const) {
       const env = await testApp(CONFIG).select(SELECT).use(serviceBoundaries)
-        .method(ConnectDesktopClaimRepo, 'findByClaimId', control.returns(Promise.resolve(accepted)))
-        .method(ConnectDesktopDeviceRepo, 'findByDeviceId', control.returns(Promise.resolve(dev)))
-        .method(ConnectDesktopCredentialRepo, 'findByTokenHash', control.returns(Promise.resolve(cred)))
+        .method(ConnectDesktopClaimRepo, 'findByClaimId', ok(accepted))
+        .method(ConnectDesktopDeviceRepo, 'findByDeviceId', ok(dev))
+        .method(ConnectDesktopCredentialRepo, 'findByTokenHash', ok(cred))
         .build();
       expect(await (await service(env)).status(CLAIM_ID, TOKEN)).toEqual({ outcome: 'unauthorized' });
     }
@@ -635,30 +642,30 @@ describe('ConnectDesktopService directly (undecorated bodies, repos stubbed)', (
 
   it('status reports denied claims verbatim and repo failures as failed', resourceCase(async () => {
     const denied = await testApp(CONFIG).select(SELECT).use(serviceBoundaries)
-      .method(ConnectDesktopClaimRepo, 'findByClaimId', control.returns(Promise.resolve({ ...claim, status: 'denied' })))
+      .method(ConnectDesktopClaimRepo, 'findByClaimId', ok({ ...claim, status: 'denied' }))
       .build();
     expect(await (await service(denied)).status(CLAIM_ID, TOKEN)).toEqual({ outcome: 'status', status: 'denied' });
 
     const broken = await testApp(CONFIG).select(SELECT).use(serviceBoundaries)
-      .method(ConnectDesktopClaimRepo, 'findByClaimId', control.throws(new Error('boom')))
+      .method(ConnectDesktopClaimRepo, 'findByClaimId', fails('query_failed', new Error('boom')))
       .build();
     expect(await (await service(broken)).status(CLAIM_ID, TOKEN)).toEqual({ outcome: 'failed' });
   }));
 
   it('review reports not-found for a missing claim or orphaned device, failed on errors', resourceCase(async () => {
     const missing = await testApp(CONFIG).select(SELECT).use(serviceBoundaries)
-      .method(ConnectDesktopClaimRepo, 'findByClaimId', control.returns(Promise.resolve(null)))
+      .method(ConnectDesktopClaimRepo, 'findByClaimId', ok(null))
       .build();
     expect(await (await service(missing)).review({ claimId: CLAIM_ID })).toEqual({ outcome: 'not-found' });
 
     const orphaned = await testApp(CONFIG).select(SELECT).use(serviceBoundaries)
-      .method(ConnectDesktopClaimRepo, 'findByClaimId', control.returns(Promise.resolve(claim)))
-      .method(ConnectDesktopDeviceRepo, 'findByDeviceId', control.returns(Promise.resolve(null)))
+      .method(ConnectDesktopClaimRepo, 'findByClaimId', ok(claim))
+      .method(ConnectDesktopDeviceRepo, 'findByDeviceId', ok(null))
       .build();
     expect(await (await service(orphaned)).review({ claimId: CLAIM_ID })).toEqual({ outcome: 'not-found' });
 
     const broken = await testApp(CONFIG).select(SELECT).use(serviceBoundaries)
-      .method(ConnectDesktopClaimRepo, 'findByCodeHash', control.throws(new Error('boom')))
+      .method(ConnectDesktopClaimRepo, 'findByCodeHash', fails('query_failed', new Error('boom')))
       .build();
     expect(await (await service(broken)).review({ code: 'ABCD-EFGH' })).toEqual({ outcome: 'failed' });
   }));
@@ -670,11 +677,11 @@ describe('ConnectDesktopService directly (undecorated bodies, repos stubbed)', (
     };
     const env = await testApp(CONFIG).select(SELECT).use(serviceBoundaries)
       .method(ConnectDesktopClaimRepo, 'findByClaimId', seq(claim, decided))
-      .method(ConnectDesktopClaimRepo, 'acceptPending', control.once(control.returns(Promise.resolve())))
-      .method(ConnectDesktopDeviceRepo, 'acceptOwner', control.once(control.returns(Promise.resolve())))
-      .method(ConnectDesktopDeviceRepo, 'findByDeviceId', control.returns(Promise.resolve(device)))
-      .method(ConnectDesktopCredentialRepo, 'createCredential', control.once(control.returns(Promise.resolve())))
-      .method(ConnectDesktopAuditRepo, 'appendEvent', control.once(control.returns(Promise.resolve())))
+      .method(ConnectDesktopClaimRepo, 'acceptPending', control.once(ok(undefined)))
+      .method(ConnectDesktopDeviceRepo, 'acceptOwner', control.once(ok(undefined)))
+      .method(ConnectDesktopDeviceRepo, 'findByDeviceId', ok(device))
+      .method(ConnectDesktopCredentialRepo, 'createCredential', control.once(ok(undefined)))
+      .method(ConnectDesktopAuditRepo, 'appendEvent', control.once(ok(undefined)))
       .build();
     const result = await (await service(env)).decide(browserActor, decisionBody as never);
     expect(result).toEqual({
@@ -689,8 +696,8 @@ describe('ConnectDesktopService directly (undecorated bodies, repos stubbed)', (
     const decided = { ...claim, status: 'denied' as const, decided_by_user_id: USER_ID };
     const env = await testApp(CONFIG).select(SELECT).use(serviceBoundaries)
       .method(ConnectDesktopClaimRepo, 'findByClaimId', seq(claim, decided))
-      .method(ConnectDesktopClaimRepo, 'denyPending', control.once(control.returns(Promise.resolve())))
-      .method(ConnectDesktopAuditRepo, 'appendEvent', control.once(control.returns(Promise.resolve())))
+      .method(ConnectDesktopClaimRepo, 'denyPending', control.once(ok(undefined)))
+      .method(ConnectDesktopAuditRepo, 'appendEvent', control.once(ok(undefined)))
       .build();
     expect(await (await service(env)).decide(browserActor, { ...decisionBody, decision: 'deny' } as never))
       .toEqual({ outcome: 'denied' });
@@ -702,24 +709,24 @@ describe('ConnectDesktopService directly (undecorated bodies, repos stubbed)', (
     expect(await (await service(nonBrowser)).decide(desktopActor, decisionBody as never)).toEqual({ outcome: 'not-found' });
 
     const missing = await testApp(CONFIG).select(SELECT).use(serviceBoundaries)
-      .method(ConnectDesktopClaimRepo, 'findByClaimId', control.returns(Promise.resolve(null)))
+      .method(ConnectDesktopClaimRepo, 'findByClaimId', ok(null))
       .build();
     expect(await (await service(missing)).decide(browserActor, decisionBody as never)).toEqual({ outcome: 'not-found' });
 
     const expired = await testApp(CONFIG).select(SELECT).use(serviceBoundaries)
-      .method(ConnectDesktopClaimRepo, 'findByClaimId', control.returns(Promise.resolve({ ...claim, expires_at: NOW_ISO })))
+      .method(ConnectDesktopClaimRepo, 'findByClaimId', ok({ ...claim, expires_at: NOW_ISO }))
       .build();
     expect(await (await service(expired)).decide(browserActor, decisionBody as never)).toEqual({ outcome: 'expired' });
 
     // deny raced by someone else: the re-read shows a different decider.
     const raced = await testApp(CONFIG).select(SELECT).use(serviceBoundaries)
       .method(ConnectDesktopClaimRepo, 'findByClaimId', seq(claim, { ...claim, status: 'denied', decided_by_user_id: 'usr_other0001' }))
-      .method(ConnectDesktopClaimRepo, 'denyPending', control.returns(Promise.resolve()))
+      .method(ConnectDesktopClaimRepo, 'denyPending', ok(undefined))
       .build();
     expect(await (await service(raced)).decide(browserActor, { ...decisionBody, decision: 'deny' } as never)).toEqual({ outcome: 'replayed' });
 
     const broken = await testApp(CONFIG).select(SELECT).use(serviceBoundaries)
-      .method(ConnectDesktopClaimRepo, 'findByClaimId', control.throws(new Error('boom')))
+      .method(ConnectDesktopClaimRepo, 'findByClaimId', fails('query_failed', new Error('boom')))
       .build();
     expect(await (await service(broken)).decide(browserActor, decisionBody as never)).toEqual({ outcome: 'failed' });
   }));
@@ -730,9 +737,9 @@ describe('ConnectDesktopService directly (undecorated bodies, repos stubbed)', (
       decision_idempotency_key: IDEM,
     };
     const idempotent = await testApp(CONFIG).select(SELECT).use(serviceBoundaries)
-      .method(ConnectDesktopClaimRepo, 'findByClaimId', control.returns(Promise.resolve(settled)))
-      .method(ConnectDesktopDeviceRepo, 'findByDeviceId', control.returns(Promise.resolve(device)))
-      .method(ConnectDesktopCredentialRepo, 'findByTokenHash', control.returns(Promise.resolve(credential)))
+      .method(ConnectDesktopClaimRepo, 'findByClaimId', ok(settled))
+      .method(ConnectDesktopDeviceRepo, 'findByDeviceId', ok(device))
+      .method(ConnectDesktopCredentialRepo, 'findByTokenHash', ok(credential))
       .build();
     expect(await (await service(idempotent)).decide(browserActor, decisionBody as never)).toEqual({
       outcome: 'accepted', deviceId: DEVICE_ID, credentialExpiresAt: LATER_ISO,
@@ -741,15 +748,15 @@ describe('ConnectDesktopService directly (undecorated bodies, repos stubbed)', (
 
     // Different idempotency key on a settled claim is a replay.
     const replayed = await testApp(CONFIG).select(SELECT).use(serviceBoundaries)
-      .method(ConnectDesktopClaimRepo, 'findByClaimId', control.returns(Promise.resolve({ ...settled, decision_idempotency_key: 'idem_bbbbbbbbbbbbbbbb' })))
+      .method(ConnectDesktopClaimRepo, 'findByClaimId', ok({ ...settled, decision_idempotency_key: 'idem_bbbbbbbbbbbbbbbb' }))
       .build();
     expect(await (await service(replayed)).decide(browserActor, decisionBody as never)).toEqual({ outcome: 'replayed' });
 
     // Idempotent denial replays denied.
     const denied = await testApp(CONFIG).select(SELECT).use(serviceBoundaries)
-      .method(ConnectDesktopClaimRepo, 'findByClaimId', control.returns(Promise.resolve({
+      .method(ConnectDesktopClaimRepo, 'findByClaimId', ok({
         ...settled, status: 'denied' as const,
-      })))
+      }))
       .build();
     expect(await (await service(denied)).decide(browserActor, { ...decisionBody, decision: 'deny' } as never)).toEqual({ outcome: 'denied' });
   }));
@@ -758,8 +765,8 @@ describe('ConnectDesktopService directly (undecorated bodies, repos stubbed)', (
     const renamed = { ...device, display_name: 'Renamed' };
     const env = await testApp(CONFIG).select(SELECT).use(serviceBoundaries)
       .method(ConnectDesktopDeviceRepo, 'findByDeviceId', seq(device, renamed))
-      .method(ConnectDesktopDeviceRepo, 'renameOwned', control.once(control.returns(Promise.resolve())))
-      .method(ConnectDesktopAuditRepo, 'appendEvent', control.once(control.returns(Promise.resolve())))
+      .method(ConnectDesktopDeviceRepo, 'renameOwned', control.once(ok(undefined)))
+      .method(ConnectDesktopAuditRepo, 'appendEvent', control.once(ok(undefined)))
       .build();
     expect(await (await service(env)).rename(browserActor, renameBody as never))
       .toEqual({ outcome: 'renamed', device: renamed });
@@ -771,20 +778,20 @@ describe('ConnectDesktopService directly (undecorated bodies, repos stubbed)', (
     expect(await (await service(nonBrowser)).rename(desktopActor, renameBody as never)).toEqual({ outcome: 'not-found' });
 
     const revoked = await testApp(CONFIG).select(SELECT).use(serviceBoundaries)
-      .method(ConnectDesktopDeviceRepo, 'findByDeviceId', control.returns(Promise.resolve({ ...device, state: 'revoked' })))
+      .method(ConnectDesktopDeviceRepo, 'findByDeviceId', ok({ ...device, state: 'revoked' }))
       .method(ConnectDesktopDeviceRepo, 'renameOwned', control.never())
       .build();
     expect(await (await service(revoked)).rename(browserActor, renameBody as never)).toEqual({ outcome: 'not-found' });
 
     const lost = await testApp(CONFIG).select(SELECT).use(serviceBoundaries)
-      .method(ConnectDesktopDeviceRepo, 'findByDeviceId', control.returns(Promise.resolve(device)))
-      .method(ConnectDesktopDeviceRepo, 'renameOwned', control.returns(Promise.resolve()))
+      .method(ConnectDesktopDeviceRepo, 'findByDeviceId', ok(device))
+      .method(ConnectDesktopDeviceRepo, 'renameOwned', ok(undefined))
       .build();
     expect(await (await service(lost)).rename(browserActor, renameBody as never)).toEqual({ outcome: 'not-found' });
 
     const broken = await testApp(CONFIG).select(SELECT).use(serviceBoundaries)
-      .method(ConnectDesktopDeviceRepo, 'findByDeviceId', control.returns(Promise.resolve(device)))
-      .method(ConnectDesktopDeviceRepo, 'renameOwned', control.throws(new Error('boom')))
+      .method(ConnectDesktopDeviceRepo, 'findByDeviceId', ok(device))
+      .method(ConnectDesktopDeviceRepo, 'renameOwned', fails('write_failed', new Error('boom')))
       .build();
     expect(await (await service(broken)).rename(browserActor, renameBody as never)).toEqual({ outcome: 'failed' });
   }));
@@ -794,9 +801,9 @@ describe('ConnectDesktopService directly (undecorated bodies, repos stubbed)', (
     const relayed: string[] = [];
     const env = await testApp(CONFIG).select(SELECT).use(serviceBoundaries)
       .method(ConnectDesktopDeviceRepo, 'findByDeviceId', seq(device, revoked))
-      .method(ConnectDesktopDeviceRepo, 'revokeOwned', control.once(control.returns(Promise.resolve())))
-      .method(ConnectDesktopCredentialRepo, 'revokeForDevice', control.once(control.returns(Promise.resolve())))
-      .method(ConnectDesktopAuditRepo, 'appendEvent', control.once(control.returns(Promise.resolve())))
+      .method(ConnectDesktopDeviceRepo, 'revokeOwned', control.once(ok(undefined)))
+      .method(ConnectDesktopCredentialRepo, 'revokeForDevice', control.once(ok(undefined)))
+      .method(ConnectDesktopAuditRepo, 'appendEvent', control.once(ok(undefined)))
       .method(ConnectClientRelayService, 'revokeDesktop', control.watch(() => (deviceId: string) => { relayed.push(deviceId); }))
       .build();
     expect(await (await service(env)).revoke(browserActor, revokeBody as never))
@@ -808,7 +815,7 @@ describe('ConnectDesktopService directly (undecorated bodies, repos stubbed)', (
   it('revoke is idempotent on an already-revoked device and fails on a broken fence', resourceCase(async () => {
     const alreadyRevoked = { ...device, state: 'revoked' as const, credential_generation: 2 };
     const idempotent = await testApp(CONFIG).select(SELECT).use(serviceBoundaries)
-      .method(ConnectDesktopDeviceRepo, 'findByDeviceId', control.returns(Promise.resolve(alreadyRevoked)))
+      .method(ConnectDesktopDeviceRepo, 'findByDeviceId', ok(alreadyRevoked))
       .method(ConnectDesktopDeviceRepo, 'revokeOwned', control.never())
       .build();
     expect(await (await service(idempotent)).revoke(browserActor, revokeBody as never)).toEqual({ outcome: 'revoked', device: alreadyRevoked });
@@ -817,8 +824,8 @@ describe('ConnectDesktopService directly (undecorated bodies, repos stubbed)', (
     // Fence invariant: generation did not advance → failed.
     const broken = await testApp(CONFIG).select(SELECT).use(serviceBoundaries)
       .method(ConnectDesktopDeviceRepo, 'findByDeviceId', seq(device, { ...device, state: 'revoked' }))
-      .method(ConnectDesktopDeviceRepo, 'revokeOwned', control.returns(Promise.resolve()))
-      .method(ConnectDesktopCredentialRepo, 'revokeForDevice', control.returns(Promise.resolve()))
+      .method(ConnectDesktopDeviceRepo, 'revokeOwned', ok(undefined))
+      .method(ConnectDesktopCredentialRepo, 'revokeForDevice', ok(undefined))
       .build();
     expect(await (await service(broken)).revoke(browserActor, revokeBody as never)).toEqual({ outcome: 'failed' });
 
@@ -826,14 +833,14 @@ describe('ConnectDesktopService directly (undecorated bodies, repos stubbed)', (
     expect(await (await service(nonBrowser)).revoke(desktopActor, revokeBody as never)).toEqual({ outcome: 'not-found' });
 
     const missing = await testApp(CONFIG).select(SELECT).use(serviceBoundaries)
-      .method(ConnectDesktopDeviceRepo, 'findByDeviceId', control.returns(Promise.resolve(null)))
+      .method(ConnectDesktopDeviceRepo, 'findByDeviceId', ok(null))
       .build();
     expect(await (await service(missing)).revoke(browserActor, revokeBody as never)).toEqual({ outcome: 'not-found' });
   }));
 
   it('detail maps repo failures to failed', resourceCase(async () => {
     const env = await testApp(CONFIG).select(SELECT).use(serviceBoundaries)
-      .method(ConnectDesktopDeviceRepo, 'findByDeviceId', control.throws(new Error('boom')))
+      .method(ConnectDesktopDeviceRepo, 'findByDeviceId', fails('query_failed', new Error('boom')))
       .build();
     expect(await (await service(env)).detail(browserActor, DEVICE_ID)).toEqual({ outcome: 'failed' });
   }));
@@ -941,7 +948,7 @@ describe('ConnectDesktopActorResolver directly', () => {
   const asReq = (value: Record<string, unknown>) => value as unknown as CompatRequest;
   const session = { session_id: SESSION_ID };
   const account = { user_id: USER_ID };
-  const authed = { ok: true, value: { session, account } };
+  const authed = Result.ok({ session, account });
 
   /** Reusable description shared by every resolver case: the fixed clock. */
   const resolverBoundaries = testStub().method(ConnectClock, 'now', control.returns(NOW));
@@ -978,7 +985,7 @@ describe('ConnectDesktopActorResolver directly', () => {
 
   it('browser passes auth failures through and treats malformed cookie jars as no token', resourceCase(async () => {
     const failing = await testApp(CONFIG).select(SELECT).use(resolverBoundaries)
-      .method(ConnectSessionAuthService, 'authenticate', control.returns(Promise.resolve({ ok: false, reason: 'unauthorized' })))
+      .method(ConnectSessionAuthService, 'authenticate', control.returns(Promise.resolve(Result.err({ kind: 'unauthorized' }))))
       .build();
     const r = await resolver(failing);
     expect(await r.browser(asReq({ cookies: null, headers: {} }), SESSION_ID, false))
@@ -996,8 +1003,8 @@ describe('ConnectDesktopActorResolver directly', () => {
       'X-Kazi-Protocol-Version', '1.0',
     ];
     const env = await testApp(CONFIG).select(SELECT).use(resolverBoundaries)
-      .method(ConnectDesktopCredentialRepo, 'findByTokenHash', control.returns(Promise.resolve(credential)))
-      .method(ConnectDesktopDeviceRepo, 'findByDeviceId', control.returns(Promise.resolve(device)))
+      .method(ConnectDesktopCredentialRepo, 'findByTokenHash', ok(credential))
+      .method(ConnectDesktopDeviceRepo, 'findByDeviceId', ok(device))
       .build();
     const r = await resolver(env);
     expect(await r.relay(asReq({ rawHeaders }))).toEqual({
@@ -1027,8 +1034,8 @@ describe('ConnectDesktopActorResolver directly', () => {
       [credential, { ...device, credential_generation: 2 }],
     ] as const) {
       const env = await testApp(CONFIG).select(SELECT).use(resolverBoundaries)
-        .method(ConnectDesktopCredentialRepo, 'findByTokenHash', control.returns(Promise.resolve(cred)))
-        .method(ConnectDesktopDeviceRepo, 'findByDeviceId', control.returns(Promise.resolve(dev)))
+        .method(ConnectDesktopCredentialRepo, 'findByTokenHash', ok(cred))
+        .method(ConnectDesktopDeviceRepo, 'findByDeviceId', ok(dev))
         .build();
       expect(await (await resolver(env)).relay(asReq({ rawHeaders }))).toEqual({ ok: false });
     }

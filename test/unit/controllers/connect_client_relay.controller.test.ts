@@ -10,6 +10,7 @@ import { describe, expect, it } from "vitest";
 import path from "node:path";
 import { testApp } from "@noego/app";
 import { test as control, testStub, resourceCase, type TestResourceScope } from "@noego/testing";
+import { Result } from "@noego/trust";
 import type { CompatRequest as Request, CompatResponse as Response } from "@noego/dinner";
 import ConnectClientRelayController from "../../../src/server/controller/connect_client_relay.controller";
 import ConnectClientRelayRequestParser from "../../../src/server/services/connect_client_relay_request_parser";
@@ -62,7 +63,7 @@ const logic = (outcome?: CommandDispatchResult) => testStub()
   .method(ConnectClientRelayLogic, "command", control.returns(
     Promise.resolve(outcome ?? { outcome: "accepted", frame: { kind: "command.accepted" } }),
   ))
-  .method(ConnectClientRelayLogic, "listExecutors", control.returns(Promise.resolve([{ executorId: command.executorId }])))
+  .method(ConnectClientRelayLogic, "listExecutors", control.returns(Promise.resolve(Result.ok([{ executorId: command.executorId }]))))
   .method(ConnectClientRelayLogic, "open", control.returns("fen_clientctrl1"))
   .method(ConnectClientRelayLogic, "close", control.returns(undefined));
 

@@ -1,7 +1,9 @@
 import { Component, Inject, LoadAs } from "@noego/ioc";
+import { Result } from "@noego/trust";
 import type { SseSink as Response } from "./sse_stream";
 import ConnectDesktopDeviceRepo from "../repo/connect_desktop_device_repo";
 import ConnectExecutorRepo from "../repo/connect_executor_repo";
+import type { RepoFailure } from "../repo/repo_failure";
 import TraceAdapter, { type TracePort } from "../observability/trace_adapter";
 import {
   ConnectClock, ConnectIdGenerator, ConnectScheduler, type ConnectScheduledTask,
@@ -14,7 +16,9 @@ import RemoteToolDispatchService from "./remote_tool_dispatch_service";
 import ConnectExecutorConnectionRegistry from "./connect_executor_connection_registry";
 import type { ExecutorOutboundFrame } from "./connect_relay_request_parser";
 import type { ClientCommandFrame } from "./connect_client_relay_request_parser";
-import ConnectWebsiteDeploymentIdentityService from "./connect_website_deployment_identity_service";
+import ConnectWebsiteDeploymentIdentityService, {
+  type DeploymentIdentityFailure,
+} from "./connect_website_deployment_identity_service";
 
 const PROTOCOL = "1.0";
 const ACCEPT_TIMEOUT_MS = 5_000;
@@ -56,7 +60,9 @@ interface PendingAccept {
 }
 export type CommandDispatchResult =
   | { outcome: "accepted"; frame: AcceptedFrame }
-  | { outcome: "executor-offline" | "backpressure" | "accept-timeout" | "unauthorized" | "overloaded" | "website-deployment-mismatch" | "invalid-envelope" };
+  | { outcome: "executor-offline" | "backpressure" | "accept-timeout" | "unauthorized" | "overloaded" | "website-deployment-mismatch" | "invalid-envelope" }
+  /** The deployment identity could not be read: nothing was routed. */
+  | { outcome: "unavailable"; failure: DeploymentIdentityFailure };
 export interface ClientExecutorSummary {
   executorId: string;
   displayName: string;
@@ -140,12 +146,14 @@ export default class ConnectClientRelayService {
     this.removeDesktopRoutes(deviceId, fence, "disconnect");
   }
 
-  async listExecutors(actor: ClientRelayActor): Promise<ClientExecutorSummary[]> {
+  /** The actor owner's executors with live presence, or `query_failed`. */
+  async listExecutors(actor: ClientRelayActor) {
     const executors = await this.executorRepo.listByOwner({
       owner_user_id: actor.ownerUserId,
       limit: 100,
     });
-    return Promise.all(executors.map(async (executor) => {
+    if (!executors.ok) return executors;
+    const summaries: ClientExecutorSummary[] = await Promise.all(executors.value.map(async (executor) => {
       const presence = await this.dispatchRouting.presence(executor.executor_id)
         ?? this.executors.presence(executor.executor_id);
       return {
@@ -157,6 +165,7 @@ export default class ConnectClientRelayService {
         protocolVersion: PROTOCOL,
       };
     }));
+    return Result.ok(summaries);
   }
 
   revokeDesktop(deviceId: string, correlationId: string): void {
@@ -190,7 +199,9 @@ export default class ConnectClientRelayService {
   async command(
     actor: ClientRelayActor, frame: ClientCommandFrame, byteCount: number,
   ): Promise<CommandDispatchResult> {
-    if (frame.websiteDeploymentId !== await this.deploymentIdentity.get()) {
+    const deployment = await this.deploymentIdentity.get();
+    if (!deployment.ok) return { outcome: "unavailable", failure: deployment.error };
+    if (frame.websiteDeploymentId !== deployment.value) {
       return { outcome: "website-deployment-mismatch" };
     }
     const nestedFence = this.nestedTargetFence(frame);
@@ -202,16 +213,15 @@ export default class ConnectClientRelayService {
       return { outcome: "unauthorized" };
     }
     if (!this.takeRate(actor.deviceId)) return { outcome: "overloaded" };
-    let ownerUserId;
-    let executor;
-    try {
-      [ownerUserId, executor] = await Promise.all([
-        this.sourceOwner(actor),
-        this.executorRepo.findByExecutorId({ executor_id: frame.executorId }),
-      ]);
-    } catch {
-      return { outcome: "executor-offline" };
-    }
+    const [ownerLookup, executorLookup] = await Promise.all([
+      this.sourceOwner(actor),
+      this.executorRepo.findByExecutorId({ executor_id: frame.executorId }),
+    ]);
+    // A lookup that cannot be answered routes nothing: the target reads as offline.
+    if (!ownerLookup.ok) return this.routingLookupFailed(frame, ownerLookup.error);
+    if (!executorLookup.ok) return this.routingLookupFailed(frame, executorLookup.error);
+    const ownerUserId = ownerLookup.value;
+    const executor = executorLookup.value;
     if (this.desktops.get(actor.deviceId) !== connection) return { outcome: "unauthorized" };
     if (!ownerUserId || !executor || executor.state !== "active"
       || executor.owner_user_id !== ownerUserId
@@ -357,17 +367,32 @@ export default class ConnectClientRelayService {
    * Desktop credentials keep their expiring-row contract; executor credentials
    * are validated against the executor row (device + generation fence).
    */
-  private async sourceOwner(actor: ClientRelayActor): Promise<string | null> {
+  private async sourceOwner(actor: ClientRelayActor) {
     if (actor.audience === "executor-relay") {
-      const source = await this.executorRepo.findByExecutorId({ executor_id: actor.executorId });
-      return source && source.state === "active" && source.owner_user_id
+      const lookup = await this.executorRepo.findByExecutorId({ executor_id: actor.executorId });
+      if (!lookup.ok) return lookup;
+      const source = lookup.value;
+      return Result.ok(source && source.state === "active" && source.owner_user_id
         && source.device_id === actor.deviceId && source.credential_generation === actor.generation
-        ? source.owner_user_id : null;
+        ? source.owner_user_id : null);
     }
-    const desktop = await this.desktopRepo.findByDeviceId({ device_id: actor.deviceId });
-    return desktop && desktop.state === "active" && desktop.owner_user_id
+    const lookup = await this.desktopRepo.findByDeviceId({ device_id: actor.deviceId });
+    if (!lookup.ok) return lookup;
+    const desktop = lookup.value;
+    return Result.ok(desktop && desktop.state === "active" && desktop.owner_user_id
       && desktop.credential_generation === actor.generation
-      ? desktop.owner_user_id : null;
+      ? desktop.owner_user_id : null);
+  }
+
+  /** An owner or executor lookup failed while routing a command: logged, answered offline. */
+  private routingLookupFailed(frame: ClientCommandFrame, failure: RepoFailure): CommandDispatchResult {
+    const context = {
+      commandId: frame.commandId, correlationId: frame.correlationId, executorId: frame.executorId,
+      kind: failure.kind, observedAt: this.clock.now().toISOString(),
+    };
+    this.logger.warn("command-routing-lookup-failed", context);
+    this.trace.warn("command-routing-lookup-failed", context);
+    return { outcome: "executor-offline" };
   }
 
   /** A live link may only be replaced by the same credential authority (kind and executor). */

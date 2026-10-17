@@ -9,6 +9,7 @@ import { describe, it, expect } from 'vitest';
 import path from 'node:path';
 import { testApp } from '@noego/app';
 import { test as control, resourceCase } from '@noego/testing';
+import { Result } from '@noego/trust';
 import OAuthClientService from '../../../src/server/services/oauth_client_service';
 import OAuthFlowService from '../../../src/server/services/oauth_flow_service';
 import OAuthRepo from '../../../src/server/repo/oauth_repo';
@@ -48,7 +49,7 @@ describe('oauth registration negative metadata arms', () => {
 
   it('registers a client without a client_name (stored name is null)', resourceCase(async () => {
     const env = await testApp(CONFIG).select({ server: { module: ['oauth'] } })
-      .method(OAuthRepo, 'createClient', control.once(control.returns(Promise.resolve(undefined))))
+      .method(OAuthRepo, 'createClient', control.once(control.returns(Promise.resolve(Result.ok(undefined)))))
       .build();
     const response = await env.request({
       method: 'POST',

@@ -15,6 +15,7 @@ import { createHash } from 'node:crypto';
 import path from 'node:path';
 import { testApp } from '@noego/app';
 import { test as control, testStub, resourceCase } from '@noego/testing';
+import { Result } from '@noego/trust';
 import ConnectExecutorClaimRepo from '../../../src/server/repo/connect_executor_claim_repo';
 import ConnectExecutorRepo from '../../../src/server/repo/connect_executor_repo';
 import ConnectBrowserSessionRepo from '../../../src/server/repo/connect_browser_session_repo';
@@ -91,18 +92,21 @@ const accountRow = () => ({
   updated_at: '2026-01-01T00:00:00.000Z',
 });
 
+/** A repository read/write that succeeds with `value`. */
+const ok = (value: unknown) => control.returns(Promise.resolve(Result.ok(value)));
+
 // Session-authenticated repos: cookie hash → session row → account row.
 // A reusable replacement description (same tokens/slots/descriptors/order as
 // before), not an application constructor.
 const browserSession = () => testStub()
-  .method(ConnectBrowserSessionRepo, 'findByTokenHash', control.returns(Promise.resolve(sessionRow())))
-  .method(ConnectBrowserSessionRepo, 'touchSession', control.returns(Promise.resolve(undefined)))
-  .method(ConnectAccountRepo, 'findByUserId', control.returns(Promise.resolve(accountRow())));
+  .method(ConnectBrowserSessionRepo, 'findByTokenHash', ok(sessionRow()))
+  .method(ConnectBrowserSessionRepo, 'touchSession', ok(undefined))
+  .method(ConnectAccountRepo, 'findByUserId', ok(accountRow()));
 
 describe('connect executor routes through testDinner (no server, no database)', () => {
   it('GET claim status reports pending when the bootstrap token matches the claim', resourceCase(async () => {
     const env = await testApp(CONFIG).select({ server: { module: ['connectExecutors'] } })
-      .method(ConnectExecutorClaimRepo, 'findByClaimId', control.once(control.returns(Promise.resolve(pendingClaim()))))
+      .method(ConnectExecutorClaimRepo, 'findByClaimId', control.once(ok(pendingClaim())))
       .build();
     const response = await env.request({
       method: 'GET',
@@ -123,7 +127,7 @@ describe('connect executor routes through testDinner (no server, no database)', 
 
   it('GET claim status answers 401 revoked when the bootstrap token does not match', resourceCase(async () => {
     const env = await testApp(CONFIG).select({ server: { module: ['connectExecutors'] } })
-      .method(ConnectExecutorClaimRepo, 'findByClaimId', control.once(control.returns(Promise.resolve(pendingClaim()))))
+      .method(ConnectExecutorClaimRepo, 'findByClaimId', control.once(ok(pendingClaim())))
       .build();
     const response = await env.request({
       method: 'GET',
@@ -138,7 +142,7 @@ describe('connect executor routes through testDinner (no server, no database)', 
 
   it('GET claim status answers 404 for an unknown claim', resourceCase(async () => {
     const env = await testApp(CONFIG).select({ server: { module: ['connectExecutors'] } })
-      .method(ConnectExecutorClaimRepo, 'findByClaimId', control.once(control.returns(Promise.resolve(null))))
+      .method(ConnectExecutorClaimRepo, 'findByClaimId', control.once(ok(null)))
       .build();
     const response = await env.request({
       method: 'GET',
@@ -154,8 +158,8 @@ describe('connect executor routes through testDinner (no server, no database)', 
   it('GET claim review returns the safe review payload for a signed-in owner', resourceCase(async () => {
     const env = await testApp(CONFIG).select({ server: { module: ['connectExecutors'] } })
       .use(browserSession())
-      .method(ConnectExecutorClaimRepo, 'findByClaimId', control.once(control.returns(Promise.resolve(pendingClaim()))))
-      .method(ConnectExecutorRepo, 'findByExecutorId', control.once(control.returns(Promise.resolve(executorRow()))))
+      .method(ConnectExecutorClaimRepo, 'findByClaimId', control.once(ok(pendingClaim())))
+      .method(ConnectExecutorRepo, 'findByExecutorId', control.once(ok(executorRow())))
       .build();
     const response = await env.request({
       method: 'GET',
@@ -183,7 +187,7 @@ describe('connect executor routes through testDinner (no server, no database)', 
   it('GET executor list returns owner executors with live (offline) presence', resourceCase(async () => {
     const env = await testApp(CONFIG).select({ server: { module: ['connectExecutors'] } })
       .use(browserSession())
-      .method(ConnectExecutorRepo, 'listByOwner', control.once(control.returns(Promise.resolve([executorRow()]))))
+      .method(ConnectExecutorRepo, 'listByOwner', control.once(ok([executorRow()])))
       .build();
     const response = await env.request({
       method: 'GET',
@@ -210,7 +214,7 @@ describe('connect executor routes through testDinner (no server, no database)', 
 
   it('GET executor list answers 401 revoked when the session cookie resolves to nothing', resourceCase(async () => {
     const env = await testApp(CONFIG).select({ server: { module: ['connectExecutors'] } })
-      .method(ConnectBrowserSessionRepo, 'findByTokenHash', control.once(control.returns(Promise.resolve(null))))
+      .method(ConnectBrowserSessionRepo, 'findByTokenHash', control.once(ok(null)))
       .method(ConnectExecutorRepo, 'listByOwner', control.never())
       .build();
     const response = await env.request({

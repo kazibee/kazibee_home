@@ -13,6 +13,7 @@ import { describe, it, expect, vi } from 'vitest';
 import path from 'node:path';
 import { testApp } from '@noego/app';
 import { resourceCase, test as control } from '@noego/testing';
+import { Result } from '@noego/trust';
 import type { CompatRequest as Request } from '@noego/dinner';
 import type { SseSink as Response } from '../../../src/server/services/sse_stream';
 import Env from '../../../src/server/services/env';
@@ -39,6 +40,8 @@ const DEVICE_ID = 'dev_abcdefgh';
 const DEVICE_TOKEN = 'T'.repeat(43);
 
 const returns = (value: unknown) => control.returns(Promise.resolve(value));
+/** A repository read that succeeds with `value`. */
+const ok = (value: unknown) => returns(Result.ok(value));
 
 // Environment data for one case: a caller-built Env loaded with exactly the
 // case's variables; process.env is never mutated.
@@ -78,12 +81,9 @@ describe('ConnectExecutorPolicy.claimBaseUrl', () => {
 });
 
 describe('ConnectExecutorActorResolver', () => {
-  const sessionRow = (sessionId: string) => ({
-    ok: true as const,
-    value: {
-      session: { session_id: sessionId },
-      account: { user_id: 'usr_owner001' },
-    },
+  const sessionRow = (sessionId: string) => Result.ok({
+    session: { session_id: sessionId },
+    account: { user_id: 'usr_owner001' },
   });
 
   const request = (cookies: unknown) =>
@@ -102,7 +102,7 @@ describe('ConnectExecutorActorResolver', () => {
   it('treats a non-record cookie jar as an absent session cookie', resourceCase(async () => {
     const env = await testApp(CONFIG).select(SELECT)
       .method(ConnectSessionAuthService, 'authenticate',
-        control.times(2, returns({ ok: false as const, reason: 'unauthorized' as const })))
+        control.times(2, returns(Result.err({ kind: 'unauthorized' as const }))))
       .build();
     const subject = await env.get<ConnectExecutorActorResolver>(ConnectExecutorActorResolver);
     expect(await subject.browser(request(['not', 'a', 'jar']), SESSION_ID, false))
@@ -128,8 +128,8 @@ describe('ConnectExecutorActorResolver', () => {
   it('rejects a device whose credential is missing or inactive', resourceCase(async () => {
     const env = await testApp(CONFIG).select(SELECT)
       .method(ConnectExecutorCredentialRepo, 'findByTokenHash', control.calls([
-        returns(null),
-        returns({ executor_id: EXECUTOR_ID, generation: 1, status: 'revoked' }),
+        ok(null),
+        ok({ executor_id: EXECUTOR_ID, generation: 1, status: 'revoked' }),
       ]))
       .method(ConnectExecutorRepo, 'findByExecutorId', control.never())
       .build();
@@ -142,11 +142,11 @@ describe('ConnectExecutorActorResolver', () => {
   it('rejects a device whose executor is missing, inactive, or generation-fenced', resourceCase(async () => {
     const env = await testApp(CONFIG).select(SELECT)
       .method(ConnectExecutorCredentialRepo, 'findByTokenHash',
-        control.times(3, returns({ executor_id: EXECUTOR_ID, generation: 1, status: 'active' })))
+        control.times(3, ok({ executor_id: EXECUTOR_ID, generation: 1, status: 'active' })))
       .method(ConnectExecutorRepo, 'findByExecutorId', control.calls([
-        returns(null),
-        returns({ executor_id: EXECUTOR_ID, device_id: DEVICE_ID, state: 'revoked', credential_generation: 1 }),
-        returns({ executor_id: EXECUTOR_ID, device_id: DEVICE_ID, state: 'active', credential_generation: 2 }),
+        ok(null),
+        ok({ executor_id: EXECUTOR_ID, device_id: DEVICE_ID, state: 'revoked', credential_generation: 1 }),
+        ok({ executor_id: EXECUTOR_ID, device_id: DEVICE_ID, state: 'active', credential_generation: 2 }),
       ]))
       .build();
     const subject = await env.get<ConnectExecutorActorResolver>(ConnectExecutorActorResolver);

@@ -1,17 +1,21 @@
 import { Component, Inject, LoadAs } from "@noego/ioc";
 import { createHash } from "node:crypto";
+import { Result } from "@noego/trust";
 import { currentAppTransaction } from "../repo/current_transaction";
 import ConnectExecutorRepo, { type ConnectExecutor } from "../repo/connect_executor_repo";
 import ConnectExecutorClaimRepo, { type ConnectExecutorClaim } from "../repo/connect_executor_claim_repo";
 import ConnectExecutorCredentialRepo from "../repo/connect_executor_credential_repo";
 import ConnectExecutorAuditRepo, { type ConnectExecutorAuditKind } from "../repo/connect_executor_audit_repo";
+import type { RepoFailure } from "../repo/repo_failure";
 import { ConnectClock, ConnectCredentials, ConnectIdGenerator, WebsiteLoggerAdapter, type WebsiteLoggerPort } from "./connect_auth_primitives";
 import ConnectExecutorPolicy from "./connect_executor_policy";
 import type { ClaimCreateInput, ClaimDecisionInput, RenameInput, RevokeInput } from "./connect_executor_request_parser";
 import type { ConnectExecutorActor } from "./connect_executor_actor_resolver";
 import TraceAdapter, { type TracePort } from "../observability/trace_adapter";
 import ConnectExecutorConnectionRegistry, { type ExecutorPresence } from "./connect_executor_connection_registry";
-import ConnectWebsiteDeploymentIdentityService from "./connect_website_deployment_identity_service";
+import ConnectWebsiteDeploymentIdentityService, {
+  type DeploymentIdentityFailure,
+} from "./connect_website_deployment_identity_service";
 import RemoteToolDispatchService from "./remote_tool_dispatch_service";
 import ConnectClientRelayService from "./connect_client_relay_service";
 
@@ -50,6 +54,12 @@ export type OwnerMutationResult =
   | { outcome: "not-found" }
   | { outcome: "failed" };
 
+/**
+ * Executor claim and ownership flows. Repository failures are decided here,
+ * into each flow's existing `failed` outcome (or `conflict` for a unique
+ * violation while creating a claim), with the same logging and rollback-only
+ * marking a thrown error gets in that flow.
+ */
 @Component({ scope: LoadAs.Singleton })
 export default class ConnectExecutorService {
   private readonly logger: WebsiteLoggerPort;
@@ -80,10 +90,18 @@ export default class ConnectExecutorService {
     const tokenHash = this.credentials.hashToken(token);
     const envelopeHash = this.envelopeHash(input, tokenHash);
     try {
-      const existing = await this.claims.findByIdempotencyKey({ idempotency_key: input.idempotencyKey })
-        ?? await this.claims.findByClaimId({ claim_id: input.claimId });
+      const byIdempotencyKey = await this.claims.findByIdempotencyKey({ idempotency_key: input.idempotencyKey });
+      if (!byIdempotencyKey.ok) return this.createFailed(input, byIdempotencyKey.error);
+      let existing = byIdempotencyKey.value;
+      if (!existing) {
+        const byClaimId = await this.claims.findByClaimId({ claim_id: input.claimId });
+        if (!byClaimId.ok) return this.createFailed(input, byClaimId.error);
+        existing = byClaimId.value;
+      }
       if (existing) {
-        const executor = await this.executors.findByExecutorId({ executor_id: existing.executor_id });
+        const existingExecutor = await this.executors.findByExecutorId({ executor_id: existing.executor_id });
+        if (!existingExecutor.ok) return this.createFailed(input, existingExecutor.error);
+        const executor = existingExecutor.value;
         if (!executor || existing.envelope_hash !== envelopeHash || existing.bootstrap_token_hash !== tokenHash
           || existing.claim_id !== input.claimId || existing.executor_id !== input.executorId
           || existing.status !== "pending") return { outcome: "conflict" };
@@ -96,71 +114,81 @@ export default class ConnectExecutorService {
       // A machine that registered but was never accepted may legitimately
       // restart and claim again: refresh its row and replace the stale
       // pending claim. Owned or revoked executors cannot be re-claimed.
-      const registered = await this.executors.findByExecutorId({ executor_id: input.executorId });
+      const registeredLookup = await this.executors.findByExecutorId({ executor_id: input.executorId });
+      if (!registeredLookup.ok) return this.createFailed(input, registeredLookup.error);
+      const registered = registeredLookup.value;
       if (registered) {
         if (registered.state !== "pending") return { outcome: "conflict" };
-        await this.executors.refreshPending({
+        const refreshed = await this.executors.refreshPending({
           executor_id: input.executorId, device_id: input.deviceId, display_name: input.displayName,
           platform: input.platform, architecture: input.architecture,
           executor_version: input.executorVersion, key_fingerprint: input.keyFingerprint,
           updated_at: createdAt, last_seen_at: createdAt,
         });
-        await this.claims.deletePendingByExecutorId({ executor_id: input.executorId });
+        if (!refreshed.ok) return this.createFailed(input, refreshed.error);
+        const replaced = await this.claims.deletePendingByExecutorId({ executor_id: input.executorId });
+        if (!replaced.ok) return this.createFailed(input, replaced.error);
       } else {
-        await this.executors.createExecutor({
+        const created = await this.executors.createExecutor({
           executor_id: input.executorId, device_id: input.deviceId, display_name: input.displayName,
           platform: input.platform, architecture: input.architecture,
           executor_version: input.executorVersion, key_fingerprint: input.keyFingerprint,
           created_at: createdAt, updated_at: createdAt, last_seen_at: createdAt,
         });
+        if (!created.ok) return this.createFailed(input, created.error);
       }
-      await this.claims.createClaim({
+      const claimCreated = await this.claims.createClaim({
         claim_id: input.claimId, executor_id: input.executorId, bootstrap_token_hash: tokenHash,
         short_code_hash: this.hash(shortCode), idempotency_key: input.idempotencyKey,
         envelope_hash: envelopeHash, created_at: createdAt, expires_at: expiresAt,
       });
-      await this.appendAudit("claim.created", input.executorId, input.claimId, null, 0, input.correlationId, createdAt);
+      if (!claimCreated.ok) return this.createFailed(input, claimCreated.error);
+      const audited = await this.appendAudit("claim.created", input.executorId, input.claimId, null, 0, input.correlationId, createdAt);
+      if (!audited.ok) return this.createFailed(input, audited.error);
       this.completed("claim-create", input.correlationId, input.executorId, "created");
-      const claim = await this.claims.findByClaimId({ claim_id: input.claimId });
-      const executor = await this.executors.findByExecutorId({ executor_id: input.executorId });
+      const claimLookup = await this.claims.findByClaimId({ claim_id: input.claimId });
+      if (!claimLookup.ok) return this.createFailed(input, claimLookup.error);
+      const executorLookup = await this.executors.findByExecutorId({ executor_id: input.executorId });
+      if (!executorLookup.ok) return this.createFailed(input, executorLookup.error);
+      const claim = claimLookup.value;
+      const executor = executorLookup.value;
       if (!claim || !executor) throw new Error("Claim persistence invariant failed");
       return { outcome: "created", challenge: this.challenge(claim, executor, token) };
     } catch (error) {
-      const uniqueViolation = error instanceof Error
-        && (error.message.toLowerCase().includes("unique constraint failed")
-          || error.message.toLowerCase().includes("duplicate key value violates unique constraint"));
-      if (uniqueViolation) {
-        (await currentAppTransaction())?.rollbackOnly(error);
-        return { outcome: "conflict" };
-      }
-      this.failed("claim-create", input.correlationId, error);
-      (await currentAppTransaction())?.rollbackOnly(error instanceof Error ? error : new Error("Claim creation failed"));
-      return { outcome: "failed" };
+      return this.claimCreateError(input, error);
     }
   }
 
   async status(claimId: string, token: string | null): Promise<ClaimStatusResult> {
     try {
-      const claim = await this.claims.findByClaimId({ claim_id: claimId });
+      const claimLookup = await this.claims.findByClaimId({ claim_id: claimId });
+      if (!claimLookup.ok) return this.lookupFailed("claim-status", claimLookup.error);
+      const claim = claimLookup.value;
       if (!claim) return { outcome: "not-found" };
       if (!token || !this.credentials.matchesHash(token, claim.bootstrap_token_hash)) {
         return { outcome: "unauthorized" };
       }
       if (claim.status === "accepted") {
-        const executor = await this.executors.findByExecutorId({ executor_id: claim.executor_id });
-        const credential = await this.credentialsRepo.findByTokenHash({
+        const executorLookup = await this.executors.findByExecutorId({ executor_id: claim.executor_id });
+        if (!executorLookup.ok) return this.lookupFailed("claim-status", executorLookup.error);
+        const credentialLookup = await this.credentialsRepo.findByTokenHash({
           token_hash: claim.bootstrap_token_hash,
         });
+        if (!credentialLookup.ok) return this.lookupFailed("claim-status", credentialLookup.error);
+        const executor = executorLookup.value;
+        const credential = credentialLookup.value;
         if (!executor || executor.state !== "active" || !credential
           || credential.status !== "active"
           || credential.generation !== executor.credential_generation) {
           return { outcome: "unauthorized" };
         }
         if (!executor.owner_user_id) return { outcome: "unauthorized" };
+        const deployment = await this.deploymentIdentity.get();
+        if (!deployment.ok) return this.lookupFailed("claim-status", deployment.error);
         return {
           outcome: "status",
           status: "accepted",
-          websiteDeploymentId: await this.deploymentIdentity.get(),
+          websiteDeploymentId: deployment.value,
           executorId: executor.executor_id,
           deviceId: executor.device_id,
           credentialGeneration: credential.generation,
@@ -177,11 +205,15 @@ export default class ConnectExecutorService {
 
   async review(lookup: { claimId?: string; code?: string }): Promise<ClaimReviewResult> {
     try {
-      const claim = lookup.claimId
+      const claimLookup = lookup.claimId
         ? await this.claims.findByClaimId({ claim_id: lookup.claimId })
         : await this.claims.findByCodeHash({ short_code_hash: this.hash(lookup.code!) });
+      if (!claimLookup.ok) return this.lookupFailed("claim-review", claimLookup.error);
+      const claim = claimLookup.value;
       if (!claim) return { outcome: "not-found" };
-      const executor = await this.executors.findByExecutorId({ executor_id: claim.executor_id });
+      const executorLookup = await this.executors.findByExecutorId({ executor_id: claim.executor_id });
+      if (!executorLookup.ok) return this.lookupFailed("claim-review", executorLookup.error);
+      const executor = executorLookup.value;
       return executor
         ? { outcome: "found", claim, executor, status: this.claimStatus(claim) }
         : { outcome: "not-found" };
@@ -193,7 +225,9 @@ export default class ConnectExecutorService {
   async decide(actor: ConnectExecutorActor, input: ClaimDecisionInput): Promise<ClaimDecisionResult> {
     if (actor.role !== "browser_session") return { outcome: "not-found" };
     try {
-      const claim = await this.claims.findByClaimId({ claim_id: input.claimId });
+      const claimLookup = await this.claims.findByClaimId({ claim_id: input.claimId });
+      if (!claimLookup.ok) return this.decisionFailed(input, claimLookup.error);
+      const claim = claimLookup.value;
       if (!claim) return { outcome: "not-found" };
       if (claim.status !== "pending") return this.terminalDecision(claim, actor.userId, input);
       const now = this.clock.now().toISOString();
@@ -201,9 +235,7 @@ export default class ConnectExecutorService {
       if (input.decision === "deny") return this.denyClaim(claim, actor.userId, input, now);
       return this.acceptClaim(claim, actor.userId, input, now);
     } catch (error) {
-      this.failed("claim-decision", input.correlationId, error);
-      (await currentAppTransaction())?.rollbackOnly(error instanceof Error ? error : new Error("Claim decision failed"));
-      return { outcome: "failed" };
+      return this.decisionError(input, error);
     }
   }
 
@@ -215,57 +247,71 @@ export default class ConnectExecutorService {
       && claim.decision_idempotency_key === input.idempotencyKey
       && claim.status === expected;
     if (!idempotent) return { outcome: "replayed" };
-    return claim.status === "accepted"
-      ? { outcome: "accepted", websiteDeploymentId: await this.deploymentIdentity.get() }
-      : { outcome: "denied" };
+    if (claim.status !== "accepted") return { outcome: "denied" };
+    const deployment = await this.deploymentIdentity.get();
+    if (!deployment.ok) return this.decisionFailed(input, deployment.error);
+    return { outcome: "accepted", websiteDeploymentId: deployment.value };
   }
 
   private async denyClaim(
     claim: ConnectExecutorClaim, userId: string, input: ClaimDecisionInput, now: string,
   ): Promise<ClaimDecisionResult> {
-    await this.claims.denyPending({
+    const denied = await this.claims.denyPending({
       claim_id: claim.claim_id, decided_at: now, decided_by_user_id: userId,
       decision_idempotency_key: input.idempotencyKey,
     });
-    const decided = await this.claims.findByClaimId({ claim_id: claim.claim_id });
+    if (!denied.ok) return this.decisionFailed(input, denied.error);
+    const decidedLookup = await this.claims.findByClaimId({ claim_id: claim.claim_id });
+    if (!decidedLookup.ok) return this.decisionFailed(input, decidedLookup.error);
+    const decided = decidedLookup.value;
     if (!decided || decided.status !== "denied" || decided.decided_by_user_id !== userId) {
       return { outcome: "replayed" };
     }
-    await this.appendAudit("claim.denied", claim.executor_id, claim.claim_id, userId, 0, input.correlationId, now);
+    const audited = await this.appendAudit("claim.denied", claim.executor_id, claim.claim_id, userId, 0, input.correlationId, now);
+    if (!audited.ok) return this.decisionFailed(input, audited.error);
     return { outcome: "denied" };
   }
 
   private async acceptClaim(
     claim: ConnectExecutorClaim, userId: string, input: ClaimDecisionInput, now: string,
   ): Promise<ClaimDecisionResult> {
-      await this.claims.acceptPending({
+      const accepted = await this.claims.acceptPending({
         claim_id: claim.claim_id, decided_at: now, decided_by_user_id: userId,
         decision_idempotency_key: input.idempotencyKey,
       });
-      const decided = await this.claims.findByClaimId({ claim_id: claim.claim_id });
+      if (!accepted.ok) return this.decisionFailed(input, accepted.error);
+      const decidedLookup = await this.claims.findByClaimId({ claim_id: claim.claim_id });
+      if (!decidedLookup.ok) return this.decisionFailed(input, decidedLookup.error);
+      const decided = decidedLookup.value;
       if (!decided || decided.status !== "accepted" || decided.decided_by_user_id !== userId
         || decided.decision_idempotency_key !== input.idempotencyKey) return { outcome: "replayed" };
-      await this.executors.acceptOwner({
+      const owned = await this.executors.acceptOwner({
         executor_id: claim.executor_id, owner_user_id: userId, claimed_at: now,
       });
-      const executor = await this.executors.findByExecutorId({ executor_id: claim.executor_id });
+      if (!owned.ok) return this.decisionFailed(input, owned.error);
+      const executorLookup = await this.executors.findByExecutorId({ executor_id: claim.executor_id });
+      if (!executorLookup.ok) return this.decisionFailed(input, executorLookup.error);
+      const executor = executorLookup.value;
       if (!executor || executor.owner_user_id !== userId || executor.state !== "active"
         || executor.credential_generation !== 1) throw new Error("Claim owner invariant failed");
-      await this.credentialsRepo.createCredential({
+      const credentialCreated = await this.credentialsRepo.createCredential({
         credential_id: this.ids.credentialId(), executor_id: executor.executor_id,
         generation: 1, token_hash: claim.bootstrap_token_hash, created_at: now,
       });
-      await this.appendAudit("claim.accepted", executor.executor_id, claim.claim_id, userId, 1, input.correlationId, now);
+      if (!credentialCreated.ok) return this.decisionFailed(input, credentialCreated.error);
+      const audited = await this.appendAudit("claim.accepted", executor.executor_id, claim.claim_id, userId, 1, input.correlationId, now);
+      if (!audited.ok) return this.decisionFailed(input, audited.error);
+      const deployment = await this.deploymentIdentity.get();
+      if (!deployment.ok) return this.decisionFailed(input, deployment.error);
       return {
         outcome: "accepted",
-        websiteDeploymentId: await this.deploymentIdentity.get(),
+        websiteDeploymentId: deployment.value,
       };
   }
 
-  async list(actor: ConnectExecutorActor): Promise<ConnectExecutor[]> {
-    return actor.role === "browser_session"
-      ? this.executors.listByOwner({ owner_user_id: actor.userId, limit: this.policy.ownerListLimit })
-      : [];
+  async list(actor: ConnectExecutorActor) {
+    if (actor.role !== "browser_session") return Result.ok<ConnectExecutor[]>([]);
+    return this.executors.listByOwner({ owner_user_id: actor.userId, limit: this.policy.ownerListLimit });
   }
 
   async presence(executorId: string): Promise<ExecutorPresence> {
@@ -279,7 +325,9 @@ export default class ConnectExecutorService {
 
   async detail(actor: ConnectExecutorActor, executorId: string): Promise<OwnerResult> {
     try {
-      const executor = await this.executors.findByExecutorId({ executor_id: executorId });
+      const executorLookup = await this.executors.findByExecutorId({ executor_id: executorId });
+      if (!executorLookup.ok) return this.lookupFailed("executor-detail", executorLookup.error);
+      const executor = executorLookup.value;
       return actor.role === "browser_session" && executor?.owner_user_id === actor.userId
         ? { outcome: "found", executor } : { outcome: "not-found" };
     } catch {
@@ -291,22 +339,27 @@ export default class ConnectExecutorService {
     if (actor.role !== "browser_session") return { outcome: "not-found" };
     try {
       const before = await this.detail(actor, input.executorId);
+      // A lookup that could not be answered is `failed` (already logged by detail), not a missing executor.
+      if (before.outcome === "failed") return before;
       if (before.outcome !== "found" || before.executor.state !== "active") return { outcome: "not-found" };
       const now = this.clock.now().toISOString();
-      await this.executors.renameOwned({
+      const renamed = await this.executors.renameOwned({
         executor_id: input.executorId, owner_user_id: actor.userId,
         display_name: input.displayName, updated_at: now,
       });
-      const after = await this.executors.findByExecutorId({ executor_id: input.executorId });
+      if (!renamed.ok) return this.mutationFailed(renamed.error, "Rename failed");
+      const afterLookup = await this.executors.findByExecutorId({ executor_id: input.executorId });
+      if (!afterLookup.ok) return this.mutationFailed(afterLookup.error, "Rename failed");
+      const after = afterLookup.value;
       if (!after || after.owner_user_id !== actor.userId || after.display_name !== input.displayName) {
         return { outcome: "not-found" };
       }
-      await this.appendAudit("executor.renamed", after.executor_id, null, actor.userId,
+      const audited = await this.appendAudit("executor.renamed", after.executor_id, null, actor.userId,
         after.credential_generation, input.correlationId, now);
+      if (!audited.ok) return this.mutationFailed(audited.error, "Rename failed");
       return { outcome: "renamed", executor: after };
     } catch (error) {
-      (await currentAppTransaction())?.rollbackOnly(error instanceof Error ? error : new Error("Rename failed"));
-      return { outcome: "failed" };
+      return this.mutationAborted(error instanceof Error ? error : new Error("Rename failed"));
     }
   }
 
@@ -314,29 +367,81 @@ export default class ConnectExecutorService {
     if (actor.role !== "browser_session") return { outcome: "not-found" };
     try {
       const before = await this.detail(actor, input.executorId);
+      // A lookup that could not be answered is `failed` (already logged by detail), not a missing executor.
+      if (before.outcome === "failed") return before;
       if (before.outcome !== "found") return { outcome: "not-found" };
       if (before.executor.state === "revoked") return { outcome: "revoked", executor: before.executor };
       const now = this.clock.now().toISOString();
-      await this.executors.revokeOwned({
+      const revoked = await this.executors.revokeOwned({
         executor_id: input.executorId, owner_user_id: actor.userId, updated_at: now,
       });
-      await this.credentialsRepo.revokeForExecutor({ executor_id: input.executorId, revoked_at: now });
-      const after = await this.executors.findByExecutorId({ executor_id: input.executorId });
+      if (!revoked.ok) return this.mutationFailed(revoked.error, "Revoke failed");
+      const fenced = await this.credentialsRepo.revokeForExecutor({ executor_id: input.executorId, revoked_at: now });
+      if (!fenced.ok) return this.mutationFailed(fenced.error, "Revoke failed");
+      const afterLookup = await this.executors.findByExecutorId({ executor_id: input.executorId });
+      if (!afterLookup.ok) return this.mutationFailed(afterLookup.error, "Revoke failed");
+      const after = afterLookup.value;
       if (!after || after.owner_user_id !== actor.userId || after.state !== "revoked"
         || after.credential_generation !== before.executor.credential_generation + 1) {
         throw new Error("Credential fence invariant failed");
       }
-      await this.appendAudit("executor.revoked", after.executor_id, null, actor.userId,
+      const audited = await this.appendAudit("executor.revoked", after.executor_id, null, actor.userId,
         after.credential_generation, input.correlationId, now);
+      if (!audited.ok) return this.mutationFailed(audited.error, "Revoke failed");
       this.connections.revoke(after.executor_id, input.correlationId);
       // Desktop clients admitted through this executor's credential lose their
       // relay link too, whether or not the executor channel was connected.
       this.clientRelay.revokeExecutor(after.executor_id, input.correlationId);
       return { outcome: "revoked", executor: after };
     } catch (error) {
-      (await currentAppTransaction())?.rollbackOnly(error instanceof Error ? error : new Error("Revoke failed"));
-      return { outcome: "failed" };
+      return this.mutationAborted(error instanceof Error ? error : new Error("Revoke failed"));
     }
+  }
+
+  /** A repository failure while creating a claim: handled exactly like a thrown one. */
+  private createFailed(input: ClaimCreateInput, failure: RepoFailure) {
+    return this.claimCreateError(input, failure.cause);
+  }
+
+  /** A unique violation is a lost race (conflict); anything else fails the claim. Both roll back. */
+  private async claimCreateError(input: ClaimCreateInput, error: unknown): Promise<ClaimCreateResult> {
+    const uniqueViolation = error instanceof Error
+      && (error.message.toLowerCase().includes("unique constraint failed")
+        || error.message.toLowerCase().includes("duplicate key value violates unique constraint"));
+    if (uniqueViolation) {
+      (await currentAppTransaction())?.rollbackOnly(error);
+      return { outcome: "conflict" };
+    }
+    this.failed("claim-create", input.correlationId, error);
+    (await currentAppTransaction())?.rollbackOnly(error instanceof Error ? error : new Error("Claim creation failed"));
+    return { outcome: "failed" };
+  }
+
+  /** A failure inside the decision transaction: logged, rolled back, `failed`. */
+  private decisionFailed(input: ClaimDecisionInput, failure: DeploymentIdentityFailure) {
+    return this.decisionError(input, "cause" in failure ? failure.cause : new Error(failure.kind));
+  }
+
+  private async decisionError(input: ClaimDecisionInput, error: unknown): Promise<ClaimDecisionResult> {
+    this.failed("claim-decision", input.correlationId, error);
+    (await currentAppTransaction())?.rollbackOnly(error instanceof Error ? error : new Error("Claim decision failed"));
+    return { outcome: "failed" };
+  }
+
+  /** A repository failure inside a rename/revoke transaction: rolled back, `failed`. */
+  private mutationFailed(failure: RepoFailure, fallback: string) {
+    return this.mutationAborted(failure.cause instanceof Error ? failure.cause : new Error(fallback));
+  }
+
+  private async mutationAborted(error: Error): Promise<OwnerMutationResult> {
+    (await currentAppTransaction())?.rollbackOnly(error);
+    return { outcome: "failed" };
+  }
+
+  /** A read-only lookup failed: logged once here, answered `failed`. */
+  private lookupFailed(action: string, failure: DeploymentIdentityFailure) {
+    this.failed(action, undefined, "cause" in failure ? failure.cause : new Error(failure.kind));
+    return { outcome: "failed" as const };
   }
 
   private claimStatus(claim: ConnectExecutorClaim): "pending" | "accepted" | "denied" | "expired" {
@@ -379,7 +484,7 @@ export default class ConnectExecutorService {
     event_kind: ConnectExecutorAuditKind, executor_id: string, claim_id: string | null,
     actor_user_id: string | null, credential_generation: number,
     correlation_id: string, occurred_at: string,
-  ): Promise<void> {
+  ) {
     return this.audit.appendEvent({
       audit_event_id: this.ids.auditEventId(), executor_id, claim_id, actor_user_id,
       event_kind, credential_generation, occurred_at, correlation_id,
@@ -390,7 +495,7 @@ export default class ConnectExecutorService {
     this.logger.info("connect.executors.completed", context);
     this.trace.info("completed", context);
   }
-  private failed(action: string, correlationId: string, error: unknown): void {
+  private failed(action: string, correlationId: string | undefined, error: unknown): void {
     const context = { route: "/v1/connect/executors", action, correlationId, outcome: "failed",
       errorType: error instanceof Error ? error.name : "unknown",
       errorMessage: error instanceof Error ? error.message.slice(0, 300) : String(error).slice(0, 300),

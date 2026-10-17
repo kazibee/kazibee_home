@@ -1,4 +1,5 @@
 import { Component, LoadAs } from "@noego/ioc";
+import { Trust } from "@noego/trust";
 import { Query, QueryBinder, Single, run } from "sqlstack";
 
 export interface ConnectWebsiteDeploymentIdentity {
@@ -11,16 +12,22 @@ export interface ConnectWebsiteDeploymentIdentity {
 @Component({ scope: LoadAs.Singleton })
 export default class ConnectWebsiteDeploymentIdentityRepo {
   @Query()
-  createIfMissing(_params: {
+  async createIfMissing(_params: {
     website_deployment_id: string;
     created_at: string;
-  }): Promise<void> {
-    return run();
+  }) {
+    return Trust.tryAsync(
+      () => run<void>(),
+      (cause) => ({ kind: "write_failed", cause }),
+    );
   }
 
   @Single
   @Query()
-  findSingleton(): Promise<ConnectWebsiteDeploymentIdentity | null> {
-    return run();
+  async findSingleton() {
+    return Trust.tryAsync(
+      () => run<ConnectWebsiteDeploymentIdentity | null>(),
+      (cause) => ({ kind: "query_failed", cause }),
+    );
   }
 }

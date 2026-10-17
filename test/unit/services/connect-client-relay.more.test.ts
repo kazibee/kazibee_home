@@ -15,6 +15,7 @@ import { describe, expect, it } from "vitest";
 import path from "node:path";
 import { testApp } from "@noego/app";
 import { resourceCase, test as control, testStub } from "@noego/testing";
+import { Result } from "@noego/trust";
 import type { SseSink } from "../../../src/server/services/sse_stream";
 import ConnectClientRelayService from "../../../src/server/services/connect_client_relay_service";
 import ConnectExecutorConnectionRegistry from "../../../src/server/services/connect_executor_connection_registry";
@@ -120,22 +121,23 @@ const result: ExecutorOutboundFrame = {
 interface BoundaryOptions {
   desktopRow?: ConnectDesktopDevice | null;
   executorRow?: ConnectExecutor | null;
-  desktopThrows?: boolean;
+  /** The desktop lookup fails in the repository (a `query_failed` Result). */
+  desktopFails?: boolean;
 }
 
 // Repo / deployment-identity boundaries: a reusable replacement description
 // (singular method controls on the actual tokens), not an application constructor.
 const boundaries = (options: BoundaryOptions = {}) => testStub()
-  .method(ConnectDesktopDeviceRepo, "findByDeviceId", options.desktopThrows
-    ? control.throws(new Error("db down"))
-    : control.returns(Promise.resolve(options.desktopRow === undefined ? desktop : options.desktopRow)))
-  .method(ConnectExecutorRepo, "findByExecutorId", control.returns(Promise.resolve(
+  .method(ConnectDesktopDeviceRepo, "findByDeviceId", control.returns(Promise.resolve(options.desktopFails
+    ? Result.err({ kind: "query_failed" as const, cause: new Error("db down") })
+    : Result.ok(options.desktopRow === undefined ? desktop : options.desktopRow))))
+  .method(ConnectExecutorRepo, "findByExecutorId", control.returns(Promise.resolve(Result.ok(
     options.executorRow === undefined ? executor : options.executorRow,
-  )))
-  .method(ConnectExecutorRepo, "listByOwner", control.returns(Promise.resolve([executor])))
-  .method(ConnectWebsiteDeploymentIdentityRepo, "findSingleton", control.returns(Promise.resolve({
+  ))))
+  .method(ConnectExecutorRepo, "listByOwner", control.returns(Promise.resolve(Result.ok([executor]))))
+  .method(ConnectWebsiteDeploymentIdentityRepo, "findSingleton", control.returns(Promise.resolve(Result.ok({
     website_deployment_id: command.websiteDeploymentId, created_at: T0,
-  })));
+  }))));
 
 // The real subjects resolved from the caller-built root (never constructed here).
 async function subjects(env: AppEnv) {
@@ -282,7 +284,7 @@ describe("ConnectClientRelayService failure paths", () => {
   it("maps a repo failure to executor-offline", resourceCase(async (scope) => {
     const env = scope.environment(await testApp(CONFIG).select(SELECT)
       .class(ConnectClock, Clock).class(ConnectIdGenerator, Ids).class(ConnectScheduler, Scheduler)
-      .use(boundaries({ desktopThrows: true }))
+      .use(boundaries({ desktopFails: true }))
       .build());
     const { service, registry } = await subjects(env);
     openExecutor(scope, registry);

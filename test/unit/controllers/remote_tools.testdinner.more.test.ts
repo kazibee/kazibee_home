@@ -16,6 +16,7 @@ import { createHash } from 'node:crypto';
 import path from 'node:path';
 import { testApp, type AppTestBuilder } from '@noego/app';
 import { test as control, testStub, resourceCase } from '@noego/testing';
+import { Result } from '@noego/trust';
 import RemoteToolDispatchService from '../../../src/server/services/remote_tool_dispatch_service';
 import OAuthRepo from '../../../src/server/repo/oauth_repo';
 import RemoteToolGrantRepo from '../../../src/server/repo/remote_tool_grant_repo';
@@ -51,6 +52,8 @@ const RESOURCE_TAG = createHash('sha256').update(RESOURCE, 'utf8').digest('base6
 const OAUTH_TOKEN = `${'O'.repeat(27)}${RESOURCE_TAG}`;
 
 const returns = (value: unknown) => control.returns(Promise.resolve(value));
+/** A repository call that succeeds with `value`. */
+const ok = (value: unknown) => returns(Result.ok(value));
 
 const grantRow = () => ({
   grant_id: GRANT_ID, owner_user_id: USER_ID, executor_id: EXECUTOR_ID,
@@ -104,17 +107,17 @@ const connectionRow = (overrides: Record<string, unknown> = {}) => ({
 // Reusable replacement descriptions (same tokens/slots/descriptors as before),
 // not application constructors.
 const patAuth = () => testStub()
-  .method(RemoteToolGrantRepo, 'findByTokenHash', returns(grantRow()))
-  .method(RemoteToolGrantRepo, 'touchLastUsed', returns(undefined));
+  .method(RemoteToolGrantRepo, 'findByTokenHash', ok(grantRow()))
+  .method(RemoteToolGrantRepo, 'touchLastUsed', ok(undefined));
 
 const oauthAuth = (executors: unknown[] = [executorRow()]) => testStub()
-  .method(OAuthRepo, 'findActiveTokenWithConnection', returns(tokenRecord()))
-  .method(ConnectExecutorRepo, 'listByOwner', returns(executors));
+  .method(OAuthRepo, 'findActiveTokenWithConnection', ok(tokenRecord()))
+  .method(ConnectExecutorRepo, 'listByOwner', ok(executors));
 
 const browserSession = () => testStub()
-  .method(ConnectBrowserSessionRepo, 'findByTokenHash', returns(sessionRow()))
-  .method(ConnectBrowserSessionRepo, 'touchSession', returns(undefined))
-  .method(ConnectAccountRepo, 'findByUserId', returns(accountRow()));
+  .method(ConnectBrowserSessionRepo, 'findByTokenHash', ok(sessionRow()))
+  .method(ConnectBrowserSessionRepo, 'touchSession', ok(undefined))
+  .method(ConnectAccountRepo, 'findByUserId', ok(accountRow()));
 
 const ownerHeaders = () => ({
   cookie: `kazi_connect_session=${SESSION_TOKEN}; kazi_connect_csrf=${CSRF_TOKEN}`,
@@ -214,7 +217,7 @@ describe('MCP over a PAT grant with stubbed dispatch', () => {
 describe('MCP over an OAuth connection bearer', () => {
   it('rejects a well-shaped but unknown OAuth token with 401', resourceCase(async () => {
     const env = await testApp(CONFIG).select(SELECT)
-      .method(OAuthRepo, 'findActiveTokenWithConnection', control.once(returns(null)))
+      .method(OAuthRepo, 'findActiveTokenWithConnection', control.once(ok(null)))
       .method(RemoteToolGrantRepo, 'findByTokenHash', control.never())
       .build();
     const { status, payload } = await mcp(env, rpc('initialize'), OAUTH_TOKEN);
@@ -277,10 +280,10 @@ describe('MCP over an OAuth connection bearer', () => {
 
   it('list_machines includes a machine linked after consent on the next call', resourceCase(async () => {
     const env = await testApp(CONFIG).select(SELECT)
-      .method(OAuthRepo, 'findActiveTokenWithConnection', control.times(2, returns(tokenRecord())))
+      .method(OAuthRepo, 'findActiveTokenWithConnection', control.times(2, ok(tokenRecord())))
       .method(ConnectExecutorRepo, 'listByOwner', control.calls([
-        returns([executorRow()]),
-        returns([
+        ok([executorRow()]),
+        ok([
           executorRow(),
           executorRow({
             executor_id: EXECUTOR_ID_2,
@@ -316,7 +319,7 @@ describe('MCP over an OAuth connection bearer', () => {
   it('routes an rws_ workspace call to its owner machine and translates the id back', resourceCase(async () => {
     const env = await testApp(CONFIG).select(SELECT)
       .use(oauthAuth())
-      .method(RemoteWorkspaceRepo, 'findRemoteWorkspace', control.once(returns({
+      .method(RemoteWorkspaceRepo, 'findRemoteWorkspace', control.once(ok({
         remote_workspace_id: RWS_ID, user_id: USER_ID, executor_id: EXECUTOR_ID,
         local_workspace_id: 'wrk_local0001', display_name: 'Site',
         created_at: '2026-01-01T00:00:00.000Z', updated_at: '2026-01-01T00:00:00.000Z',
@@ -335,7 +338,7 @@ describe('MCP over an OAuth connection bearer', () => {
   it('rejects an unknown rws_ workspace id as WORKSPACE_UNAVAILABLE', resourceCase(async () => {
     const env = await testApp(CONFIG).select(SELECT)
       .use(oauthAuth())
-      .method(RemoteWorkspaceRepo, 'findRemoteWorkspace', control.once(returns(null)))
+      .method(RemoteWorkspaceRepo, 'findRemoteWorkspace', control.once(ok(null)))
       .method(RemoteToolDispatchService, 'callTarget', control.never())
       .build();
     const { payload } = await mcp(env, rpc('tools/call', { name: 'list_files', arguments: { workspaceId: RWS_ID } }), OAUTH_TOKEN);
@@ -347,7 +350,7 @@ describe('MCP over an OAuth connection bearer', () => {
   it('rejects an rws_ workspace whose machine is no longer owned and active', resourceCase(async () => {
     const env = await testApp(CONFIG).select(SELECT)
       .use(oauthAuth([executorRow({ state: 'revoked' })]))
-      .method(RemoteWorkspaceRepo, 'findRemoteWorkspace', control.once(returns({
+      .method(RemoteWorkspaceRepo, 'findRemoteWorkspace', control.once(ok({
         remote_workspace_id: RWS_ID, user_id: USER_ID, executor_id: EXECUTOR_ID,
         local_workspace_id: 'wrk_local0001', display_name: 'Site',
         created_at: '2026-01-01T00:00:00.000Z', updated_at: '2026-01-01T00:00:00.000Z',
@@ -385,7 +388,7 @@ describe('MCP over an OAuth connection bearer', () => {
         payload: { workspaces: [{ workspaceId: 'wrk_local0001', name: 'Site' }, { broken: true }] },
         effectState: 'none',
       })))
-      .method(RemoteWorkspaceRepo, 'upsertRemoteWorkspace', control.once(returns({
+      .method(RemoteWorkspaceRepo, 'upsertRemoteWorkspace', control.once(ok({
         remote_workspace_id: RWS_ID, user_id: USER_ID, executor_id: EXECUTOR_ID,
         local_workspace_id: 'wrk_local0001', display_name: 'Site',
         created_at: '2026-01-01T00:00:00.000Z', updated_at: '2026-01-01T00:00:00.000Z',
@@ -447,7 +450,7 @@ describe('grant management', () => {
   it('GET /grants lists owner grants without tokens', resourceCase(async () => {
     const env = await testApp(CONFIG).select(SELECT)
       .use(browserSession())
-      .method(RemoteToolGrantRepo, 'listByOwner', control.once(returns([grantRow()])))
+      .method(RemoteToolGrantRepo, 'listByOwner', control.once(ok([grantRow()])))
       .build();
     const { status, payload } = await request(env, {
       method: 'GET', path: '/v1/remote-tools/grants',
@@ -467,7 +470,7 @@ describe('grant management', () => {
   it('POST /grants rejects an executor the owner does not hold', resourceCase(async () => {
     const env = await testApp(CONFIG).select(SELECT)
       .use(browserSession())
-      .method(ConnectExecutorRepo, 'findByExecutorId', control.once(returns(null)))
+      .method(ConnectExecutorRepo, 'findByExecutorId', control.once(ok(null)))
       .method(RemoteToolGrantRepo, 'createGrant', control.never())
       .build();
     const { status, payload } = await request(env, {
@@ -482,7 +485,7 @@ describe('grant management', () => {
   it('POST /grants/{grantId}/revoke revokes the owner grant', resourceCase(async () => {
     const env = await testApp(CONFIG).select(SELECT)
       .use(browserSession())
-      .method(RemoteToolGrantRepo, 'revokeGrant', control.once(returns(undefined)))
+      .method(RemoteToolGrantRepo, 'revokeGrant', control.once(ok(undefined)))
       .build();
     const { status, payload } = await request(env, {
       method: 'POST', path: `/v1/remote-tools/grants/${GRANT_ID}/revoke`,
@@ -494,7 +497,7 @@ describe('grant management', () => {
 
   it('POST /grants/{grantId}/revoke answers 401 for a mutation without a session', resourceCase(async () => {
     const env = await testApp(CONFIG).select(SELECT)
-      .method(ConnectBrowserSessionRepo, 'findByTokenHash', control.once(returns(null)))
+      .method(ConnectBrowserSessionRepo, 'findByTokenHash', control.once(ok(null)))
       .method(RemoteToolGrantRepo, 'revokeGrant', control.never())
       .build();
     const { status } = await request(env, {
@@ -509,10 +512,10 @@ describe('OAuth connection management', () => {
   it('GET /connections lists connections with live owner machines', resourceCase(async () => {
     const env = await testApp(CONFIG).select(SELECT)
       .use(browserSession())
-      .method(OAuthRepo, 'listConnectionsByUser', control.once(returns([
+      .method(OAuthRepo, 'listConnectionsByUser', control.once(ok([
         { ...connectionRow(), client_name: 'ChatGPT' },
       ])))
-      .method(ConnectExecutorRepo, 'listByOwner', control.once(returns([executorRow()])))
+      .method(ConnectExecutorRepo, 'listByOwner', control.once(ok([executorRow()])))
       .build();
     const { status, payload } = await request(env, {
       method: 'GET', path: '/v1/remote-tools/connections',
@@ -535,7 +538,7 @@ describe('OAuth connection management', () => {
 
   it('GET /connections answers 401 without a live session', resourceCase(async () => {
     const env = await testApp(CONFIG).select(SELECT)
-      .method(ConnectBrowserSessionRepo, 'findByTokenHash', control.once(returns(null)))
+      .method(ConnectBrowserSessionRepo, 'findByTokenHash', control.once(ok(null)))
       .method(OAuthRepo, 'listConnectionsByUser', control.never())
       .build();
     const { status } = await request(env, {
@@ -549,8 +552,8 @@ describe('OAuth connection management', () => {
   it('POST update changes the owner-scoped connection capabilities', resourceCase(async () => {
     const env = await testApp(CONFIG).select(SELECT)
       .use(browserSession())
-      .method(OAuthRepo, 'findActiveConnectionById', control.once(returns(connectionRow())))
-      .method(OAuthRepo, 'updateConnectionCapabilities', control.once(returns(undefined)))
+      .method(OAuthRepo, 'findActiveConnectionById', control.once(ok(connectionRow())))
+      .method(OAuthRepo, 'updateConnectionCapabilities', control.once(ok(undefined)))
       .build();
     const { status, payload } = await request(env, {
       method: 'POST', path: `/v1/remote-tools/connections/${CONNECTION_ID}/update`,
@@ -570,8 +573,8 @@ describe('OAuth connection management', () => {
   it('POST update keeps existing capabilities for an empty body', resourceCase(async () => {
     const env = await testApp(CONFIG).select(SELECT)
       .use(browserSession())
-      .method(OAuthRepo, 'findActiveConnectionById', control.once(returns(connectionRow({ approved_scope: 'read' }))))
-      .method(OAuthRepo, 'updateConnectionCapabilities', control.once(returns(undefined)))
+      .method(OAuthRepo, 'findActiveConnectionById', control.once(ok(connectionRow({ approved_scope: 'read' }))))
+      .method(OAuthRepo, 'updateConnectionCapabilities', control.once(ok(undefined)))
       .build();
     const { status, payload } = await request(env, {
       method: 'POST', path: `/v1/remote-tools/connections/${CONNECTION_ID}/update`,
@@ -585,7 +588,7 @@ describe('OAuth connection management', () => {
   it('POST update answers 404 for a connection the user does not own', resourceCase(async () => {
     const env = await testApp(CONFIG).select(SELECT)
       .use(browserSession())
-      .method(OAuthRepo, 'findActiveConnectionById', control.once(returns(connectionRow({ user_id: 'usr_other0001' }))))
+      .method(OAuthRepo, 'findActiveConnectionById', control.once(ok(connectionRow({ user_id: 'usr_other0001' }))))
       .method(OAuthRepo, 'updateConnectionCapabilities', control.never())
       .build();
     const { status } = await request(env, {
@@ -598,9 +601,9 @@ describe('OAuth connection management', () => {
   it('POST revoke kills the connection and all of its tokens', resourceCase(async () => {
     const env = await testApp(CONFIG).select(SELECT)
       .use(browserSession())
-      .method(OAuthRepo, 'findActiveConnectionById', control.once(returns(connectionRow())))
-      .method(OAuthRepo, 'revokeTokensByConnection', control.once(returns(undefined)))
-      .method(OAuthRepo, 'revokeConnection', control.once(returns(undefined)))
+      .method(OAuthRepo, 'findActiveConnectionById', control.once(ok(connectionRow())))
+      .method(OAuthRepo, 'revokeTokensByConnection', control.once(ok(undefined)))
+      .method(OAuthRepo, 'revokeConnection', control.once(ok(undefined)))
       .build();
     const { status, payload } = await request(env, {
       method: 'POST', path: `/v1/remote-tools/connections/${CONNECTION_ID}/revoke`,
@@ -613,7 +616,7 @@ describe('OAuth connection management', () => {
   it('POST revoke answers 404 for an unknown connection', resourceCase(async () => {
     const env = await testApp(CONFIG).select(SELECT)
       .use(browserSession())
-      .method(OAuthRepo, 'findActiveConnectionById', control.once(returns(null)))
+      .method(OAuthRepo, 'findActiveConnectionById', control.once(ok(null)))
       .method(OAuthRepo, 'revokeConnection', control.never())
       .build();
     const { status } = await request(env, {

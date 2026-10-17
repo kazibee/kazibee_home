@@ -1,10 +1,12 @@
 import { Component, Inject } from "@noego/ioc";
 import { randomBytes } from "node:crypto";
+import { getLogger } from "@noego/logger";
 import OAuthRepo, {
   type OAuthClientRecord,
   type OAuthConnectionScope,
 } from "../repo/oauth_repo";
 import ConnectExecutorRepo from "../repo/connect_executor_repo";
+import { repoUnavailable, type RepoUnavailable } from "../repo/repo_failure";
 import { ConnectClock } from "./connect_auth_primitives";
 import OAuthClientService from "./oauth_client_service";
 import OAuthFlowService from "./oauth_flow_service";
@@ -15,6 +17,8 @@ import {
   parseOAuthGrantScope,
   type OAuthGrantScope,
 } from "./oauth_scopes";
+
+const logger = getLogger("kazibee:oauth-authorize-service");
 
 export interface OAuthAuthorizationParams {
   response_type: string;
@@ -48,9 +52,11 @@ export interface OAuthAuthorizationSuccess {
   requestedScope: OAuthGrantScope;
 }
 
+/** A validated request, an OAuth error to report, or `unavailable` when a lookup failed. */
 export type OAuthAuthorizationValidation =
   | OAuthAuthorizationSuccess
-  | OAuthAuthorizationFailure;
+  | OAuthAuthorizationFailure
+  | RepoUnavailable;
 
 export interface GrantableExecutor {
   executor_id: string;
@@ -73,11 +79,13 @@ export interface OAuthConsentContext {
 
 export type OAuthConsentContextResult =
   | { ok: true; context: OAuthConsentContext }
-  | OAuthAuthorizationFailure;
+  | OAuthAuthorizationFailure
+  | RepoUnavailable;
 
 export type OAuthApproveResult =
   | { ok: true; redirectTo: string }
-  | OAuthAuthorizationFailure;
+  | OAuthAuthorizationFailure
+  | RepoUnavailable;
 
 @Component()
 export default class OAuthAuthorizeService {
@@ -112,6 +120,7 @@ export default class OAuthAuthorizeService {
 
     const resolved = await this.clients.resolveClient(params.client_id);
     if (!resolved.ok) {
+      if ("failure" in resolved) return resolved;
       return failure("invalid_client", "Missing or invalid client_id");
     }
 
@@ -173,7 +182,8 @@ export default class OAuthAuthorizeService {
       owner_user_id: userId,
       limit: 100,
     });
-    const active = owned.filter((executor) => executor.state === "active");
+    if (!owned.ok) return repoUnavailable(owned.error);
+    const active = owned.value.filter((executor) => executor.state === "active");
     const executors: GrantableExecutor[] = await Promise.all(
       active.map(async (executor) => {
         const detail = await this.routing.presenceDetail(executor.executor_id);
@@ -239,7 +249,7 @@ export default class OAuthAuthorizeService {
 
     const connectionId = `ocn_${randomBytes(16).toString("hex")}`;
     const createdAt = this.clock.now().toISOString();
-    await this.oauth.createConnection({
+    const connection = await this.oauth.createConnection({
       connection_id: connectionId,
       user_id: userId,
       client_id: validated.client.client_id,
@@ -250,23 +260,29 @@ export default class OAuthAuthorizeService {
       created_at: createdAt,
       revoked_at: null,
     });
+    if (!connection.ok) return repoUnavailable(connection.error);
 
-    let code: string;
-    try {
-      code = await this.flow.createAuthorizationCode({
-        connectionId,
-        clientId: validated.client.client_id,
-        redirectUri: validated.params.redirect_uri,
-        codeChallenge: validated.params.code_challenge,
-        codeChallengeMethod: "S256",
-        resource: this.origins.resource,
-      });
-    } catch (error) {
-      await this.oauth.revokeConnection({
+    const code = await this.flow.createAuthorizationCode({
+      connectionId,
+      clientId: validated.client.client_id,
+      redirectUri: validated.params.redirect_uri,
+      codeChallenge: validated.params.code_challenge,
+      codeChallengeMethod: "S256",
+      resource: this.origins.resource,
+    });
+    if (!code.ok) {
+      // Compensate: the fresh connection must not outlive its failed code.
+      // Best-effort, like the code write itself: the request still fails.
+      const revoked = await this.oauth.revokeConnection({
         connection_id: connectionId,
         revoked_at: this.clock.now().toISOString(),
-      }).catch(() => undefined);
-      throw error;
+      });
+      if (!revoked.ok && revoked.error.kind === "write_failed") {
+        logger.warn("Could not revoke the connection of a failed authorization code", {
+          connectionId, error: revoked.error.cause,
+        });
+      }
+      return repoUnavailable(code.error);
     }
 
     // New consent supersedes the user's older connections from the same app.
@@ -282,14 +298,20 @@ export default class OAuthAuthorizeService {
         client_name: clientName,
         revoked_at: revokedAt,
       };
-      await this.oauth.revokeSupersededConnectionTokens(superseded).catch(() => undefined);
-      await this.oauth.revokeSupersededConnections(superseded).catch(() => undefined);
+      const tokens = await this.oauth.revokeSupersededConnectionTokens(superseded);
+      if (!tokens.ok && tokens.error.kind === "write_failed") {
+        logger.warn("Could not revoke superseded connection tokens", { connectionId, error: tokens.error.cause });
+      }
+      const connections = await this.oauth.revokeSupersededConnections(superseded);
+      if (!connections.ok && connections.error.kind === "write_failed") {
+        logger.warn("Could not revoke superseded connections", { connectionId, error: connections.error.cause });
+      }
     }
 
     return {
       ok: true,
       redirectTo: oauthRedirect(validated.params.redirect_uri, {
-        code,
+        code: code.value,
         state: validated.params.state,
         iss: this.origins.issuer,
       }),

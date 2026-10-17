@@ -13,6 +13,7 @@ import { createHash } from 'node:crypto';
 import bcrypt from 'bcryptjs';
 import { testApp } from '@noego/app';
 import { test as control, resourceCase } from '@noego/testing';
+import { Result } from '@noego/trust';
 import ConnectAuthLogic from '../../../src/server/logic/connect_auth.logic';
 import { GUEST_ACTOR } from '../../../src/server/types/actor';
 import ConnectAccountRepo from '../../../src/server/repo/connect_account_repo';
@@ -24,6 +25,11 @@ const CONFIG = path.resolve(__dirname, '../../../noego.config.yml');
 
 const NOW = new Date('2026-01-01T00:00:00.000Z');
 const sha256 = (value: string) => createHash('sha256').update(value, 'utf8').digest('hex');
+/** A repository call that succeeds with `value`. */
+const ok = (value: unknown) => control.returns(Promise.resolve(Result.ok(value)));
+/** A repository call that fails the way the repos report it: a named kind carrying the cause. */
+const fails = (kind: 'query_failed' | 'write_failed', cause: unknown) =>
+  control.returns(Promise.resolve(Result.err({ kind, cause })));
 
 const signupBody = {
   kind: 'auth.signup.request',
@@ -38,8 +44,8 @@ const signupBody = {
 describe('connect auth routes through testDinner (no server, no database)', () => {
   it('POST /signup creates an account when the email is unknown', resourceCase(async () => {
     const env = await testApp(CONFIG).select({ server: { module: ['connectAuth'] } })
-      .method(ConnectAccountRepo, 'findPasswordlessByEmail', control.once(control.returns(Promise.resolve(null))))
-      .method(ConnectAccountRepo, 'createAccount', control.once(control.returns(Promise.resolve())))
+      .method(ConnectAccountRepo, 'findPasswordlessByEmail', control.once(ok(null)))
+      .method(ConnectAccountRepo, 'createAccount', control.once(ok(undefined)))
       .method(ConnectIdGenerator, 'userId', control.returns('usr_fixed0001'))
       .method(ConnectClock, 'now', control.returns(NOW))
       .build();
@@ -66,8 +72,8 @@ describe('connect auth routes through testDinner (no server, no database)', () =
       code: '23505',
     });
     const env = await testApp(CONFIG).select({ server: { module: ['connectAuth'] } })
-      .method(ConnectAccountRepo, 'findPasswordlessByEmail', control.once(control.returns(Promise.resolve(null))))
-      .method(ConnectAccountRepo, 'createAccount', control.once(control.throws(violation)))
+      .method(ConnectAccountRepo, 'findPasswordlessByEmail', control.once(ok(null)))
+      .method(ConnectAccountRepo, 'createAccount', control.once(fails('write_failed', violation)))
       .method(ConnectClock, 'now', control.returns(NOW))
       .build();
     const response = await env.request({
@@ -96,12 +102,12 @@ describe('connect auth routes through testDinner (no server, no database)', () =
     const password = 'a-long-password-123';
     const passwordHash = await bcrypt.hash(password, 4);
     const env = await testApp(CONFIG).select({ server: { module: ['connectAuth'] } })
-      .method(ConnectAccountRepo, 'findByUsername', control.once(control.returns(Promise.resolve({
+      .method(ConnectAccountRepo, 'findByUsername', control.once(ok({
         user_id: 'usr_existing01', username: 'shavyg2', email: 'shavyg2@gmail.com',
         email_verified_at: null, password_hash: passwordHash, status: 'active',
         created_at: NOW.toISOString(), updated_at: NOW.toISOString(),
-      }))))
-      .method(ConnectBrowserSessionRepo, 'createSession', control.once(control.returns(Promise.resolve())))
+      })))
+      .method(ConnectBrowserSessionRepo, 'createSession', control.once(ok(undefined)))
       .method(ConnectIdGenerator, 'sessionId', control.returns('ses_fixed0001'))
       .method(ConnectClock, 'now', control.returns(NOW))
       .build();
@@ -129,7 +135,7 @@ describe('connect auth routes through testDinner (no server, no database)', () =
 
   it('POST /login for an unknown identifier is a uniform 401', resourceCase(async () => {
     const env = await testApp(CONFIG).select({ server: { module: ['connectAuth'] } })
-      .method(ConnectAccountRepo, 'findByUsername', control.once(control.returns(Promise.resolve(null))))
+      .method(ConnectAccountRepo, 'findByUsername', control.once(ok(null)))
       .method(ConnectBrowserSessionRepo, 'createSession', control.never())
       .build();
     const response = await env.request({
@@ -147,7 +153,7 @@ describe('connect auth routes through testDinner (no server, no database)', () =
 
   it('login repo failures degrade to a structured 500, not a leak', resourceCase(async () => {
     const env = await testApp(CONFIG).select({ server: { module: ['connectAuth'] } })
-      .method(ConnectAccountRepo, 'findByUsername', control.once(control.throws(new Error('connection refused'))))
+      .method(ConnectAccountRepo, 'findByUsername', control.once(fails('query_failed', new Error('connection refused'))))
       .build();
     const response = await env.request({
       method: 'POST', path: '/v1/connect/auth/login',
@@ -164,7 +170,7 @@ describe('connect auth routes through testDinner (no server, no database)', () =
 
   it('logic-depth session check: unknown session token is unauthorized', resourceCase(async () => {
     const env = await testApp(CONFIG).select({ server: { module: ['connectAuth'] } })
-      .method(ConnectBrowserSessionRepo, 'findByTokenHash', control.once(control.returns(Promise.resolve(null))))
+      .method(ConnectBrowserSessionRepo, 'findByTokenHash', control.once(ok(null)))
       .method(ConnectAccountRepo, 'findByUserId', control.never())
       .build();
     const logic = await env.get<ConnectAuthLogic>(ConnectAuthLogic);
@@ -188,13 +194,13 @@ describe('connect auth routes through testDinner (no server, no database)', () =
       absolute_expires_at: new Date(NOW.getTime() + 60_000).toISOString(),
     };
     const env = await testApp(CONFIG).select({ server: { module: ['connectAuth'] } })
-      .method(ConnectBrowserSessionRepo, 'findByTokenHash', control.once(control.returns(Promise.resolve(session))))
+      .method(ConnectBrowserSessionRepo, 'findByTokenHash', control.once(ok(session)))
       .method(ConnectBrowserSessionRepo, 'revokeSession', control.never())
-      .method(ConnectAccountRepo, 'findByUserId', control.once(control.returns(Promise.resolve({
+      .method(ConnectAccountRepo, 'findByUserId', control.once(ok({
         user_id: 'usr_existing01', username: 'shavyg2', email: 'shavyg2@gmail.com',
         email_verified_at: null, password_hash: 'x', status: 'active',
         created_at: NOW.toISOString(), updated_at: NOW.toISOString(),
-      }))))
+      })))
       .method(ConnectClock, 'now', control.returns(NOW))
       .build();
     const logic = await env.get<ConnectAuthLogic>(ConnectAuthLogic);

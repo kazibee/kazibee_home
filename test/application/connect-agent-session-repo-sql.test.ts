@@ -7,6 +7,7 @@
 import { describe, expect, it } from 'vitest';
 import { testApp } from '@noego/app';
 import { resourceCase } from '@noego/testing';
+import type { Result } from '@noego/trust';
 import { testPostgres, DEFAULT_ADMIN_URL } from 'sqlstack/testing';
 import ConnectAgentSessionRepo from '../../src/server/repo/connect_agent_session_repo';
 import Env from '../../src/server/services/env';
@@ -18,6 +19,13 @@ const PAST = "2000-01-01T00:00:00.000Z";
 const USER = "usr_agent00001";
 const EXECUTOR = "exe_agentsession001";
 const hash64 = (pair: string) => pair.repeat(32);
+
+/** The value of a repository call that must succeed; a failed call fails the case with its kind. */
+async function succeeded<T>(call: Promise<Result<T, { kind: string; cause: unknown }>>): Promise<T> {
+  const result = await call;
+  if (!result.ok) throw new Error(`Repository call failed: ${result.error.kind}`, { cause: result.error.cause });
+  return result.value;
+}
 
 const schema = { version: 1, dialect: 'postgres', tables: {
   connect_accounts: { columns: { user_id: { type: 'text', primary: true } } },
@@ -56,17 +64,17 @@ describe("ConnectAgentSessionRepo handoffs", () => {
       .function(Env, () => { const env = new Env(); env.load({ DATABASE_URL: fixture.url }); return env; }).build();
     const repo = await app.get<ConnectAgentSessionRepo>(ConnectAgentSessionRepo);
 
-    await repo.createHandoff({
+    await succeeded(repo.createHandoff({
       token_hash: hash64("a1"), user_id: USER, executor_id: EXECUTOR,
       created_at: NOW, expires_at: FUTURE,
-    });
+    }));
 
-    const consumed = await repo.consumeHandoff({ token_hash: hash64("a1"), consumed_at: LATER });
+    const consumed = await succeeded(repo.consumeHandoff({ token_hash: hash64("a1"), consumed_at: LATER }));
     expect(consumed).toMatchObject({ token_hash: hash64("a1"), user_id: USER, executor_id: EXECUTOR });
     expect(consumed?.consumed_at).not.toBeNull();
 
     // Replay: already consumed.
-    expect(await repo.consumeHandoff({ token_hash: hash64("a1"), consumed_at: LATER })).toBeNull();
+    expect(await succeeded(repo.consumeHandoff({ token_hash: hash64("a1"), consumed_at: LATER }))).toBeNull();
   }));
 
   it("never consumes expired or unknown handoffs", resourceCase(async () => {
@@ -77,12 +85,12 @@ describe("ConnectAgentSessionRepo handoffs", () => {
       .function(Env, () => { const env = new Env(); env.load({ DATABASE_URL: fixture.url }); return env; }).build();
     const repo = await app.get<ConnectAgentSessionRepo>(ConnectAgentSessionRepo);
 
-    await repo.createHandoff({
+    await succeeded(repo.createHandoff({
       token_hash: hash64("a2"), user_id: USER, executor_id: EXECUTOR,
       created_at: PAST, expires_at: PAST,
-    });
-    expect(await repo.consumeHandoff({ token_hash: hash64("a2"), consumed_at: NOW })).toBeNull();
-    expect(await repo.consumeHandoff({ token_hash: hash64("a9"), consumed_at: NOW })).toBeNull();
+    }));
+    expect(await succeeded(repo.consumeHandoff({ token_hash: hash64("a2"), consumed_at: NOW }))).toBeNull();
+    expect(await succeeded(repo.consumeHandoff({ token_hash: hash64("a9"), consumed_at: NOW }))).toBeNull();
   }));
 });
 
@@ -95,7 +103,7 @@ describe("ConnectAgentSessionRepo sessions", () => {
       .function(Env, () => { const env = new Env(); env.load({ DATABASE_URL: fixture.url }); return env; }).build();
     const repo = await app.get<ConnectAgentSessionRepo>(ConnectAgentSessionRepo);
 
-    await repo.createSession({
+    await succeeded(repo.createSession({
       session_id: "ags_" + "1".repeat(32),
       session_token_hash: hash64("b1"),
       user_id: USER,
@@ -104,23 +112,23 @@ describe("ConnectAgentSessionRepo sessions", () => {
       last_seen_at: NOW,
       idle_expires_at: LATER,
       expires_at: FUTURE,
-    });
+    }));
 
-    const found = await repo.findByTokenHash({ session_token_hash: hash64("b1") });
+    const found = await succeeded(repo.findByTokenHash({ session_token_hash: hash64("b1") }));
     expect(found).toMatchObject({
       session_id: "ags_" + "1".repeat(32),
       user_id: USER,
       executor_id: EXECUTOR,
       revoked_at: null,
     });
-    expect(await repo.findByTokenHash({ session_token_hash: hash64("b9") })).toBeNull();
+    expect(await succeeded(repo.findByTokenHash({ session_token_hash: hash64("b9") }))).toBeNull();
 
-    await repo.touchSession({
+    await succeeded(repo.touchSession({
       session_id: "ags_" + "1".repeat(32),
       last_seen_at: LATER,
       idle_expires_at: FUTURE,
-    });
-    const touched = await repo.findByTokenHash({ session_token_hash: hash64("b1") });
+    }));
+    const touched = await succeeded(repo.findByTokenHash({ session_token_hash: hash64("b1") }));
     expect(new Date(String(touched?.last_seen_at)).toISOString()).toBe(LATER);
     expect(new Date(String(touched?.idle_expires_at)).toISOString()).toBe(FUTURE);
   }));

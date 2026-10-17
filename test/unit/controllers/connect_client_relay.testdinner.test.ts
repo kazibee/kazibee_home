@@ -17,6 +17,7 @@ import { createHash } from 'node:crypto';
 import path from 'node:path';
 import { testApp } from '@noego/app';
 import { test as control, testStub, resourceCase } from '@noego/testing';
+import { Result } from '@noego/trust';
 import ConnectClientRelayLogic from '../../../src/server/logic/connect_client_relay.logic';
 import type { DesktopRelayActor } from '../../../src/server/services/connect_desktop_actor_resolver';
 import type { SseSink } from '../../../src/server/services/sse_stream';
@@ -30,6 +31,8 @@ import ConnectDesktopDeviceRepo from '../../../src/server/repo/connect_desktop_d
 const CONFIG = path.resolve(__dirname, '../../../noego.config.yml');
 
 const sha256 = (value: string) => createHash('sha256').update(value, 'utf8').digest('hex');
+/** A repository read that succeeds with `value`. */
+const ok = (value: unknown) => control.returns(Promise.resolve(Result.ok(value)));
 
 const TOKEN = 'D'.repeat(43);
 const DEVICE_ID = 'dev_desktop01';
@@ -97,8 +100,8 @@ const executorRow = () => ({
 // row. A reusable replacement description (same tokens/slots/descriptors/
 // order as before), not an application constructor.
 const desktopAuth = () => testStub()
-  .method(ConnectDesktopCredentialRepo, 'findByTokenHash', control.returns(Promise.resolve(credentialRow())))
-  .method(ConnectDesktopDeviceRepo, 'findByDeviceId', control.returns(Promise.resolve(deviceRow())));
+  .method(ConnectDesktopCredentialRepo, 'findByTokenHash', ok(credentialRow()))
+  .method(ConnectDesktopDeviceRepo, 'findByDeviceId', ok(deviceRow()));
 
 const commandFrame = () => ({
   kind: 'command.post',
@@ -128,7 +131,7 @@ describe('connect client relay routes through testDinner (no server, no database
   it('GET /executors returns the owner-filtered executor list for a valid Desktop credential', resourceCase(async () => {
     const env = await testApp(CONFIG).select({ server: { module: ['connectClientRelay'] } })
       .use(desktopAuth())
-      .method(ConnectExecutorRepo, 'listByOwner', control.once(control.returns(Promise.resolve([executorRow()]))))
+      .method(ConnectExecutorRepo, 'listByOwner', control.once(ok([executorRow()])))
       .build();
     const response = await env.request({
       method: 'GET',
@@ -156,7 +159,7 @@ describe('connect client relay routes through testDinner (no server, no database
 
   it('GET /executors answers 401 revoked when the credential row is unknown', resourceCase(async () => {
     const env = await testApp(CONFIG).select({ server: { module: ['connectClientRelay'] } })
-      .method(ConnectDesktopCredentialRepo, 'findByTokenHash', control.once(control.returns(Promise.resolve(null))))
+      .method(ConnectDesktopCredentialRepo, 'findByTokenHash', control.once(ok(null)))
       .method(ConnectExecutorRepo, 'listByOwner', control.never())
       .build();
     const response = await env.request({
@@ -192,7 +195,7 @@ describe('connect client relay routes through testDinner (no server, no database
 
   it('POST /commands answers 401 revoked before parsing when authentication fails', resourceCase(async () => {
     const env = await testApp(CONFIG).select({ server: { module: ['connectClientRelay'] } })
-      .method(ConnectDesktopCredentialRepo, 'findByTokenHash', control.once(control.returns(Promise.resolve(null))))
+      .method(ConnectDesktopCredentialRepo, 'findByTokenHash', control.once(ok(null)))
       .build();
     const response = await env.request({
       method: 'POST',
@@ -250,11 +253,11 @@ describe('connect client relay routes through testDinner (no server, no database
   it('POST /commands reports executor-offline (503, retryable) when the target executor has no live channel', resourceCase(async () => {
     const env = await testApp(CONFIG).select({ server: { module: ['connectClientRelay'] } })
       .use(desktopAuth())
-      .method(ConnectWebsiteDeploymentIdentityRepo, 'findSingleton', control.returns(Promise.resolve({
+      .method(ConnectWebsiteDeploymentIdentityRepo, 'findSingleton', ok({
         website_deployment_id: WDP,
         created_at: '2026-01-01T00:00:00.000Z',
-      })))
-      .method(ConnectExecutorRepo, 'findByExecutorId', control.returns(Promise.resolve(executorRow())))
+      }))
+      .method(ConnectExecutorRepo, 'findByExecutorId', ok(executorRow()))
       .build();
     // The command path requires the Desktop's own events channel to be open;
     // open it directly through the real logic/service with an inert sink.
@@ -285,7 +288,7 @@ describe('connect client relay routes through testDinner (no server, no database
 
   it('GET /events answers 401 revoked instead of opening a stream when authentication fails', resourceCase(async () => {
     const env = await testApp(CONFIG).select({ server: { module: ['connectClientRelay'] } })
-      .method(ConnectDesktopCredentialRepo, 'findByTokenHash', control.once(control.returns(Promise.resolve(null))))
+      .method(ConnectDesktopCredentialRepo, 'findByTokenHash', control.once(ok(null)))
       .build();
     const response = await env.request({
       method: 'GET',

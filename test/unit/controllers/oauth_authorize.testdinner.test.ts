@@ -16,11 +16,14 @@ import { createHash } from 'node:crypto';
 import path from 'node:path';
 import { testApp } from '@noego/app';
 import { test as control, resourceCase } from '@noego/testing';
+import { Result } from '@noego/trust';
 import OAuthRepo from '../../../src/server/repo/oauth_repo';
 import ConnectBrowserSessionRepo from '../../../src/server/repo/connect_browser_session_repo';
 import ConnectAccountRepo from '../../../src/server/repo/connect_account_repo';
 
 const CONFIG = path.resolve(__dirname, '../../../noego.config.yml');
+/** A repository call that succeeds with `value`. */
+const ok = (value: unknown) => control.returns(Promise.resolve(Result.ok(value)));
 
 const RESOURCE = 'https://mcp-dev.kazibee.com/mcp';
 const REDIRECT_URI = 'https://client.example/callback';
@@ -92,7 +95,7 @@ describe('oauth authorize/consent routes through testDinner (no server, no datab
 
   it('a fully valid authorization request serves the consent application shell', resourceCase(async () => {
     const env = await testApp(CONFIG).select({ server: { module: ['oauthAuthorization'] } })
-      .method(OAuthRepo, 'findClientById', control.once(control.returns(Promise.resolve(dcrClient))))
+      .method(OAuthRepo, 'findClientById', control.once(ok(dcrClient)))
       .build();
     const response = await env.request({
       method: 'GET',
@@ -108,7 +111,7 @@ describe('oauth authorize/consent routes through testDinner (no server, no datab
 
   it('a validated client with a bad response_type gets a 302 error redirect carrying state and iss', resourceCase(async () => {
     const env = await testApp(CONFIG).select({ server: { module: ['oauthAuthorization'] } })
-      .method(OAuthRepo, 'findClientById', control.once(control.returns(Promise.resolve(dcrClient))))
+      .method(OAuthRepo, 'findClientById', control.once(ok(dcrClient)))
       .build();
     const response = await env.request({
       method: 'GET',
@@ -144,8 +147,8 @@ describe('oauth authorize/consent routes through testDinner (no server, no datab
 
   it('POST /oauth/consent/approve with a valid session but no CSRF token is 403', resourceCase(async () => {
     const env = await testApp(CONFIG).select({ server: { module: ['oauthAuthorization'] } })
-      .method(ConnectBrowserSessionRepo, 'findByTokenHash', control.once(control.returns(Promise.resolve(activeSession))))
-      .method(ConnectAccountRepo, 'findByUserId', control.once(control.returns(Promise.resolve(activeAccount))))
+      .method(ConnectBrowserSessionRepo, 'findByTokenHash', control.once(ok(activeSession)))
+      .method(ConnectAccountRepo, 'findByUserId', control.once(ok(activeAccount)))
       .method(OAuthRepo, 'createConnection', control.never())
       .build();
     const response = await env.request({
@@ -167,10 +170,10 @@ describe('oauth authorize/consent routes through testDinner (no server, no datab
 
   it('POST /oauth/consent/deny with real session+CSRF auth returns the access_denied redirect', resourceCase(async () => {
     const env = await testApp(CONFIG).select({ server: { module: ['oauthAuthorization'] } })
-      .method(ConnectBrowserSessionRepo, 'findByTokenHash', control.once(control.returns(Promise.resolve(activeSession))))
-      .method(ConnectBrowserSessionRepo, 'touchSession', control.once(control.returns(Promise.resolve(undefined))))
-      .method(ConnectAccountRepo, 'findByUserId', control.once(control.returns(Promise.resolve(activeAccount))))
-      .method(OAuthRepo, 'findClientById', control.once(control.returns(Promise.resolve(dcrClient))))
+      .method(ConnectBrowserSessionRepo, 'findByTokenHash', control.once(ok(activeSession)))
+      .method(ConnectBrowserSessionRepo, 'touchSession', control.once(ok(undefined)))
+      .method(ConnectAccountRepo, 'findByUserId', control.once(ok(activeAccount)))
+      .method(OAuthRepo, 'findClientById', control.once(ok(dcrClient)))
       .method(OAuthRepo, 'createConnection', control.never())
       .build();
     const response = await env.request({
@@ -196,9 +199,9 @@ describe('oauth authorize/consent routes through testDinner (no server, no datab
 
   it('POST /oauth/consent/deny with authenticated user but invalid OAuth params is a 400 JSON error', resourceCase(async () => {
     const env = await testApp(CONFIG).select({ server: { module: ['oauthAuthorization'] } })
-      .method(ConnectBrowserSessionRepo, 'findByTokenHash', control.once(control.returns(Promise.resolve(activeSession))))
-      .method(ConnectBrowserSessionRepo, 'touchSession', control.once(control.returns(Promise.resolve(undefined))))
-      .method(ConnectAccountRepo, 'findByUserId', control.once(control.returns(Promise.resolve(activeAccount))))
+      .method(ConnectBrowserSessionRepo, 'findByTokenHash', control.once(ok(activeSession)))
+      .method(ConnectBrowserSessionRepo, 'touchSession', control.once(ok(undefined)))
+      .method(ConnectAccountRepo, 'findByUserId', control.once(ok(activeAccount)))
       .method(OAuthRepo, 'findClientById', control.never())
       .build();
     const response = await env.request({

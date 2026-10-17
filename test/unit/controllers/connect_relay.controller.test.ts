@@ -10,6 +10,7 @@ import { describe, expect, it } from "vitest";
 import path from "node:path";
 import { testApp } from "@noego/app";
 import { test as control, testStub, resourceCase, type TestResourceScope } from "@noego/testing";
+import { Result } from "@noego/trust";
 import type { CompatRequest as Request, CompatResponse as Response } from "@noego/dinner";
 import ConnectRelayController from "../../../src/server/controller/connect_relay.controller";
 import ConnectRelayLogic from "../../../src/server/logic/connect_relay.logic";
@@ -58,10 +59,10 @@ const auth = (verifiedActor: Record<string, unknown> | null = actor) => testStub
     Promise.resolve(verifiedActor ? { ok: true, actor: verifiedActor } : { ok: false }),
   ));
 // The hello/heartbeat acknowledgement the faked logic answered before; output
-// frames are answered with null per case.
+// frames are answered with null per case. The logic resolves a trust Result.
 const ack = (kind: string) => ({ kind: "channel.ack", acknowledgedKind: kind });
 const logic = (receive: unknown) => testStub()
-  .method(ConnectRelayLogic, "receive", control.returns(Promise.resolve(receive)))
+  .method(ConnectRelayLogic, "receive", control.returns(Promise.resolve(Result.ok(receive))))
   .method(ConnectRelayLogic, "open", control.returns("fen_relayctrl01"));
 
 describe("ConnectRelayController.post", () => {

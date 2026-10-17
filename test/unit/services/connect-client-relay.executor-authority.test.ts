@@ -13,6 +13,7 @@ import { describe, expect, it } from "vitest";
 import path from "node:path";
 import { testApp } from "@noego/app";
 import { resourceCase, test as control, testStub } from "@noego/testing";
+import { Result } from "@noego/trust";
 import type { CompatRequest as Request } from "@noego/dinner";
 import type { SseSink } from "../../../src/server/services/sse_stream";
 import ConnectClientRelayService from "../../../src/server/services/connect_client_relay_service";
@@ -126,16 +127,16 @@ interface Rows { source?: ConnectExecutor | null; target?: ConnectExecutor | nul
 // actor opt into the desktop row).
 const boundaries = (rows: Rows = {}) => testStub()
   .method(ConnectDesktopDeviceRepo, "findByDeviceId",
-    rows.desktop ? control.returns(Promise.resolve(desktopRow)) : control.never())
+    rows.desktop ? control.returns(Promise.resolve(Result.ok(desktopRow))) : control.never())
   .method(ConnectExecutorRepo, "findByExecutorId", control.watch(() =>
-    async ({ executor_id }: { executor_id: string }): Promise<ConnectExecutor | null> => {
-      if (executor_id === source.executor_id) return rows.source === undefined ? source : rows.source;
-      if (executor_id === target.executor_id) return rows.target === undefined ? target : rows.target;
-      return null;
+    async ({ executor_id }: { executor_id: string }) => {
+      if (executor_id === source.executor_id) return Result.ok(rows.source === undefined ? source : rows.source);
+      if (executor_id === target.executor_id) return Result.ok(rows.target === undefined ? target : rows.target);
+      return Result.ok(null);
     }))
-  .method(ConnectWebsiteDeploymentIdentityRepo, "findSingleton", control.returns(Promise.resolve({
+  .method(ConnectWebsiteDeploymentIdentityRepo, "findSingleton", control.returns(Promise.resolve(Result.ok({
     website_deployment_id: command.websiteDeploymentId, created_at: T0,
-  })));
+  }))));
 
 async function subjects(env: AppEnv) {
   const service = await env.get<ConnectClientRelayService>(ConnectClientRelayService);
@@ -173,7 +174,7 @@ describe("ConnectClientRelayService executor authority", () => {
       .method(ConnectExecutorRepo, "findByExecutorId", control.watch(() =>
         async ({ executor_id }: { executor_id: string }) => {
           await gate;
-          return executor_id === source.executor_id ? source : target;
+          return Result.ok(executor_id === source.executor_id ? source : target);
         })).build());
     const { service, registry } = await subjects(env);
     const targetSink = openTarget(scope, registry);
@@ -295,8 +296,8 @@ describe("ConnectDesktopRelayActorResolver executor-relay admission", () => {
   const admission = (cred: unknown = credential, row: unknown = source) => testStub()
     .method(ConnectDesktopCredentialRepo, "findByTokenHash", control.never())
     .method(ConnectDesktopDeviceRepo, "findByDeviceId", control.never())
-    .method(ConnectExecutorCredentialRepo, "findByTokenHash", control.returns(Promise.resolve(cred)))
-    .method(ConnectExecutorRepo, "findByExecutorId", control.returns(Promise.resolve(row)));
+    .method(ConnectExecutorCredentialRepo, "findByTokenHash", control.returns(Promise.resolve(Result.ok(cred))))
+    .method(ConnectExecutorRepo, "findByExecutorId", control.returns(Promise.resolve(Result.ok(row))));
   const resolver = (env: AppEnv) =>
     env.get<ConnectDesktopRelayActorResolver>(ConnectDesktopRelayActorResolver);
 
@@ -339,15 +340,16 @@ describe("ConnectDesktopRelayActorResolver executor-relay admission", () => {
 });
 
 describe("ConnectExecutorService.revoke fences the client relay", () => {
-  const returns = (value: unknown) => control.returns(Promise.resolve(value));
+  /** A repository call that succeeds with `value`. */
+  const ok = (value: unknown) => control.returns(Promise.resolve(Result.ok(value)));
   it("asks the client relay to fence the revoked executor's clients", resourceCase(async () => {
     const env = await testApp(CONFIG).select(EXECUTORS)
       .method(ConnectExecutorRepo, "findByExecutorId", control.calls([
-        returns(source), returns({ ...source, state: "revoked", credential_generation: 4 }),
+        ok(source), ok({ ...source, state: "revoked", credential_generation: 4 }),
       ]))
-      .method(ConnectExecutorRepo, "revokeOwned", control.once(returns(undefined)))
-      .method(ConnectExecutorCredentialRepo, "revokeForExecutor", control.once(returns(undefined)))
-      .method(ConnectExecutorAuditRepo, "appendEvent", control.once(returns(undefined)))
+      .method(ConnectExecutorRepo, "revokeOwned", control.once(ok(undefined)))
+      .method(ConnectExecutorCredentialRepo, "revokeForExecutor", control.once(ok(undefined)))
+      .method(ConnectExecutorAuditRepo, "appendEvent", control.once(ok(undefined)))
       .method(ConnectClientRelayService, "revokeExecutor", control.once(control.returns(undefined)))
       .build();
     const service = await env.get<ConnectExecutorService>(ConnectExecutorService);
@@ -367,11 +369,13 @@ describe("ConnectExecutorService.revoke fences the client relay", () => {
   it.each(["online", "offline", "stale"] as const)("uses coordinator %s instead of the process registry", (presence) => resourceCase(async (scope) => {
     const env = scope.environment(await testApp(CONFIG).select(RELAY)
       .use(boundaries())
-      .method(ConnectExecutorRepo, "listByOwner", control.returns(Promise.resolve([target])))
+      .method(ConnectExecutorRepo, "listByOwner", control.returns(Promise.resolve(Result.ok([target]))))
       .method(RemoteToolDispatchService, "presence", control.returns(Promise.resolve(presence)))
       .build());
     const { service } = await subjects(env);
     const result = await service.listExecutors(executorActor);
-    expect(result[0]).toMatchObject({ executorId: target.executor_id, presence, online: presence === "online" });
+    expect(result).toMatchObject({
+      ok: true, value: [{ executorId: target.executor_id, presence, online: presence === "online" }],
+    });
   })());
 });

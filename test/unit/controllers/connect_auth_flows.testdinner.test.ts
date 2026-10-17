@@ -12,6 +12,7 @@ import path from 'node:path';
 import { createHash } from 'node:crypto';
 import { testApp } from '@noego/app';
 import { test as control, testStub, resourceCase } from '@noego/testing';
+import { Result } from '@noego/trust';
 import Env from '../../../src/server/services/env';
 import ConnectGoogleTokenInfoClient from '../../../src/server/services/connect_google_token_info_client';
 import ConnectAuthRequestParser from '../../../src/server/services/connect_auth_request_parser';
@@ -25,6 +26,11 @@ const CONFIG = path.resolve(__dirname, '../../../noego.config.yml');
 
 const NOW = new Date('2026-01-01T00:00:00.000Z');
 const sha256 = (value: string) => createHash('sha256').update(value, 'utf8').digest('hex');
+/** A repository call that succeeds with `value`. */
+const ok = (value: unknown) => control.returns(Promise.resolve(Result.ok(value)));
+/** A repository call that fails the way the repos report it: a named kind carrying the cause. */
+const fails = (kind: 'query_failed' | 'write_failed', cause: unknown) =>
+  control.returns(Promise.resolve(Result.err({ kind, cause })));
 
 const GOOGLE_CLIENT_ID = 'test-google-client-id.apps.googleusercontent.com';
 
@@ -67,12 +73,12 @@ describe('connect auth google route (real verifier, stubbed fetch)', () => {
     const env = await testApp(CONFIG).select({ server: { module: ['connectAuth'] } })
       .use(tokeninfo({ ...validClaims, email }))
       .method(ConnectAccountRepo, 'findByEmail', control.calls([
-        control.returns(Promise.resolve(null)),
-        control.returns(Promise.resolve({ ...account, user_id: 'usr_fixed0001', username: 'usr_fixed0001', email })),
+        ok(null),
+        ok({ ...account, user_id: 'usr_fixed0001', username: 'usr_fixed0001', email }),
       ]))
-      .method(ConnectAccountRepo, 'createAccount', control.once(control.returns(Promise.resolve())))
-      .method(ConnectIdentityRepo, 'linkGoogle', control.once(control.returns(Promise.resolve())))
-      .method(ConnectBrowserSessionRepo, 'createSession', control.once(control.returns(Promise.resolve())))
+      .method(ConnectAccountRepo, 'createAccount', control.once(ok(undefined)))
+      .method(ConnectIdentityRepo, 'linkGoogle', control.once(ok(undefined)))
+      .method(ConnectBrowserSessionRepo, 'createSession', control.once(ok(undefined)))
       .method(ConnectIdGenerator, 'userId', control.returns('usr_fixed0001'))
       .method(ConnectIdGenerator, 'identityId', control.returns('idn_fixed0001'))
       .method(ConnectIdGenerator, 'sessionId', control.returns('ses_fixed0001'))
@@ -100,10 +106,10 @@ describe('connect auth google route (real verifier, stubbed fetch)', () => {
 
     const env = await testApp(CONFIG).select({ server: { module: ['connectAuth'] } })
       .use(tokeninfo(validClaims))
-      .method(ConnectAccountRepo, 'findByEmail', control.once(control.returns(Promise.resolve(account))))
+      .method(ConnectAccountRepo, 'findByEmail', control.once(ok(account)))
       .method(ConnectAccountRepo, 'createAccount', control.never())
-      .method(ConnectIdentityRepo, 'linkGoogle', control.once(control.returns(Promise.resolve())))
-      .method(ConnectBrowserSessionRepo, 'createSession', control.once(control.returns(Promise.resolve())))
+      .method(ConnectIdentityRepo, 'linkGoogle', control.once(ok(undefined)))
+      .method(ConnectBrowserSessionRepo, 'createSession', control.once(ok(undefined)))
       .method(ConnectIdGenerator, 'identityId', control.returns('idn_fixed0001'))
       .method(ConnectIdGenerator, 'sessionId', control.returns('ses_fixed0001'))
       .method(ConnectClock, 'now', control.returns(NOW))
@@ -198,8 +204,8 @@ const signupBody = {
 describe('connect auth signup/login remaining branches', () => {
   it('signup links a password onto an existing password-less account', resourceCase(async () => {
     const env = await testApp(CONFIG).select({ server: { module: ['connectAuth'] } })
-      .method(ConnectAccountRepo, 'findPasswordlessByEmail', control.once(control.returns(Promise.resolve(account))))
-      .method(ConnectAccountRepo, 'setPassword', control.once(control.returns(Promise.resolve())))
+      .method(ConnectAccountRepo, 'findPasswordlessByEmail', control.once(ok(account)))
+      .method(ConnectAccountRepo, 'setPassword', control.once(ok(undefined)))
       .method(ConnectAccountRepo, 'createAccount', control.never())
       .method(ConnectClock, 'now', control.returns(NOW))
       .build();
@@ -220,8 +226,8 @@ describe('connect auth signup/login remaining branches', () => {
       code: '23505',
     });
     const env = await testApp(CONFIG).select({ server: { module: ['connectAuth'] } })
-      .method(ConnectAccountRepo, 'findPasswordlessByEmail', control.once(control.returns(Promise.resolve(null))))
-      .method(ConnectAccountRepo, 'createAccount', control.once(control.throws(violation)))
+      .method(ConnectAccountRepo, 'findPasswordlessByEmail', control.once(ok(null)))
+      .method(ConnectAccountRepo, 'createAccount', control.once(fails('write_failed', violation)))
       .method(ConnectClock, 'now', control.returns(NOW))
       .build();
     const response = await env.request({
@@ -234,11 +240,11 @@ describe('connect auth signup/login remaining branches', () => {
 
   it('login accepts the allowed email as identifier but a disabled account is still a 401', resourceCase(async () => {
     const env = await testApp(CONFIG).select({ server: { module: ['connectAuth'] } })
-      .method(ConnectAccountRepo, 'findByEmail', control.once(control.returns(Promise.resolve({
+      .method(ConnectAccountRepo, 'findByEmail', control.once(ok({
         ...account,
         password_hash: '$2b$04$invalidhashinvalidhashinvalidhashinvalidhashinvalid.',
         status: 'disabled',
-      }))))
+      })))
       .method(ConnectAccountRepo, 'findByUsername', control.never())
       .method(ConnectBrowserSessionRepo, 'createSession', control.never())
       .build();
@@ -257,7 +263,7 @@ describe('connect auth signup/login remaining branches', () => {
 
   it('a password-less account takes the canary verification path and stays a 401', resourceCase(async () => {
     const env = await testApp(CONFIG).select({ server: { module: ['connectAuth'] } })
-      .method(ConnectAccountRepo, 'findByUsername', control.once(control.returns(Promise.resolve(account))))
+      .method(ConnectAccountRepo, 'findByUsername', control.once(ok(account)))
       .method(ConnectBrowserSessionRepo, 'createSession', control.never())
       .build();
     const response = await env.request({
@@ -322,9 +328,9 @@ describe('connect auth session/logout HTTP routes', () => {
 
   it('GET /session with a valid cookie authenticates via the query envelope', resourceCase(async () => {
     const env = await testApp(CONFIG).select({ server: { module: ['connectAuth'] } })
-      .method(ConnectBrowserSessionRepo, 'findByTokenHash', control.once(control.returns(Promise.resolve(sessionRow))))
-      .method(ConnectBrowserSessionRepo, 'touchSession', control.returns(Promise.resolve()))
-      .method(ConnectAccountRepo, 'findByUserId', control.once(control.returns(Promise.resolve({ ...account, password_hash: 'x' }))))
+      .method(ConnectBrowserSessionRepo, 'findByTokenHash', control.once(ok(sessionRow)))
+      .method(ConnectBrowserSessionRepo, 'touchSession', ok(undefined))
+      .method(ConnectAccountRepo, 'findByUserId', control.once(ok({ ...account, password_hash: 'x' })))
       .build();
     const response = await env.request({
       method: 'GET', path: '/v1/connect/auth/session',
@@ -381,7 +387,7 @@ describe('connect auth session/logout HTTP routes', () => {
 
   it('a repo failure during session lookup degrades to a structured 500', resourceCase(async () => {
     const env = await testApp(CONFIG).select({ server: { module: ['connectAuth'] } })
-      .method(ConnectBrowserSessionRepo, 'findByTokenHash', control.once(control.throws(new Error('connection refused'))))
+      .method(ConnectBrowserSessionRepo, 'findByTokenHash', control.once(fails('query_failed', new Error('connection refused'))))
       .build();
     const response = await env.request({
       method: 'GET', path: '/v1/connect/auth/session',
@@ -394,10 +400,10 @@ describe('connect auth session/logout HTTP routes', () => {
 
   it('POST /logout with session + CSRF proof revokes the session and clears cookies', resourceCase(async () => {
     const env = await testApp(CONFIG).select({ server: { module: ['connectAuth'] } })
-      .method(ConnectBrowserSessionRepo, 'findByTokenHash', control.once(control.returns(Promise.resolve(sessionRow))))
-      .method(ConnectBrowserSessionRepo, 'touchSession', control.returns(Promise.resolve()))
-      .method(ConnectBrowserSessionRepo, 'revokeSession', control.once(control.returns(Promise.resolve())))
-      .method(ConnectAccountRepo, 'findByUserId', control.once(control.returns(Promise.resolve({ ...account, password_hash: 'x' }))))
+      .method(ConnectBrowserSessionRepo, 'findByTokenHash', control.once(ok(sessionRow)))
+      .method(ConnectBrowserSessionRepo, 'touchSession', ok(undefined))
+      .method(ConnectBrowserSessionRepo, 'revokeSession', control.once(ok(undefined)))
+      .method(ConnectAccountRepo, 'findByUserId', control.once(ok({ ...account, password_hash: 'x' })))
       .method(ConnectClock, 'now', control.returns(NOW))
       .build();
     const response = await env.request({
@@ -442,10 +448,10 @@ describe('connect auth session/logout HTTP routes', () => {
 
   it('a logout for a different sessionId than the cookie session is unauthorized', resourceCase(async () => {
     const env = await testApp(CONFIG).select({ server: { module: ['connectAuth'] } })
-      .method(ConnectBrowserSessionRepo, 'findByTokenHash', control.once(control.returns(Promise.resolve(sessionRow))))
-      .method(ConnectBrowserSessionRepo, 'touchSession', control.returns(Promise.resolve()))
+      .method(ConnectBrowserSessionRepo, 'findByTokenHash', control.once(ok(sessionRow)))
+      .method(ConnectBrowserSessionRepo, 'touchSession', ok(undefined))
       .method(ConnectBrowserSessionRepo, 'revokeSession', control.never())
-      .method(ConnectAccountRepo, 'findByUserId', control.once(control.returns(Promise.resolve({ ...account, password_hash: 'x' }))))
+      .method(ConnectAccountRepo, 'findByUserId', control.once(ok({ ...account, password_hash: 'x' })))
       .build();
     const response = await env.request({
       method: 'POST', path: '/v1/connect/auth/logout',

@@ -24,6 +24,10 @@ jobs:
       - name: Checkout website
         uses: actions/checkout@v4
 
+      # Refuse to deploy to production while any dev package is in use (scripts/check-release-deps.mjs).
+      - name: Block dev packages
+        run: node scripts/check-release-deps.mjs
+
       - name: Build image
         run: |
           docker build \

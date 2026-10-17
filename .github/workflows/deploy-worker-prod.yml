@@ -52,6 +52,10 @@ jobs:
         with:
           node-version: 22
 
+      # Refuse to deploy to production while any dev package is in use (scripts/check-release-deps.mjs).
+      - name: Block dev packages
+        run: node scripts/check-release-deps.mjs
+
       - name: Gate on internal registry credential
         env:
           KAZIBEE_INTERNAL_NPM_TOKEN: ${{ secrets.KAZIBEE_INTERNAL_NPM_TOKEN }}
